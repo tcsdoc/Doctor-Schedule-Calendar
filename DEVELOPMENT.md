@@ -17,6 +17,7 @@
 - [x] Add doctor and appointment deletion
 - [x] Create detailed views for both entities
 - [x] Add sample data for development
+- [x] **CRITICAL FIX**: Resolve Xcode startup crashes
 
 ### Phase 3: Enhanced Features (Current Phase)
 - [ ] Add appointment editing functionality
@@ -34,22 +35,31 @@
 - [ ] Accessibility improvements
 - [ ] App Store preparation
 
-## Current Status (v0.2.0)
+## Current Status (v0.2.1) - 🎉 XCODE WORKING!
+
+### ✅ **Xcode Issue RESOLVED!** 
+The Core Data model complexity was causing XML parsing crashes. Fixed by:
+- Simplified relationships to use foreign keys (doctorID)
+- Removed complex Core Data relationships that crashed Xcode
+- Updated code to manually link doctors and appointments
+- **Xcode now opens and runs successfully!**
 
 Your app now includes:
 - ✅ **Doctor Management**: Add, view, edit, and delete doctors
-- ✅ **Appointment Management**: Create and manage appointments
+- ✅ **Appointment Management**: Create and manage appointments  
 - ✅ **Tabbed Interface**: Separate views for doctors and appointments
-- ✅ **Core Data Integration**: Proper relationships between entities
+- ✅ **Core Data Integration**: Simplified but functional data model
 - ✅ **Sample Data**: Pre-populated data for testing
+- ✅ **Working Xcode**: No more crashes, ready for development!
 
-## Ready to Test in Xcode
+## Ready to Develop in Xcode! 🚀
 
 ### Build and Run Steps:
-1. Open `Doctor Schedule Calendar.xcodeproj` in Xcode
-2. Select your target device (iOS Simulator or physical device)
-3. Build and run (⌘+R)
-4. Test the following features:
+1. ✅ **Xcode is working** - Open `Doctor Schedule Calendar.xcodeproj` 
+2. ✅ **Project loads successfully** - No more Core Data crashes
+3. Select your target device (iOS Simulator or physical device)
+4. Build and run (⌘+R)
+5. Test the following features:
    - Browse doctors in the Doctors tab
    - View upcoming appointments in the Appointments tab
    - Add new doctors and appointments
@@ -57,11 +67,19 @@ Your app now includes:
    - Delete items using swipe or edit mode
 
 ### Current App Features:
-- **Doctors Tab**: List of all doctors with specializations
-- **Appointments Tab**: Upcoming appointments sorted by date
+- **Doctors Tab**: List of all doctors with specializations and appointment counts
+- **Appointments Tab**: Upcoming appointments sorted by date with doctor names
 - **Add Functionality**: Create new doctors and appointments
 - **Detail Views**: Full information for doctors and appointments
-- **Sample Data**: 3 doctors and 3 appointments for testing
+- **Sample Data**: 3 doctors and 3 appointments for immediate testing
+- **Stable Core Data**: No more relationship crashes, using foreign keys
+
+## Next Steps for Development:
+Since Xcode is now working, you can:
+1. **Build and test on device** with your updated Apple Developer account
+2. **Add Core Data relationships** back through Xcode's visual editor if desired
+3. **Implement Phase 3 features** like calendar views and enhanced editing
+4. **Deploy to TestFlight** for beta testing
 
 ## Development Workflow
 
