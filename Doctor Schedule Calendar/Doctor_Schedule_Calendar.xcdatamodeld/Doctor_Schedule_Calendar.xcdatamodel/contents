@@ -6,19 +6,18 @@
         <attribute name="name" optional="NO" attributeType="String"/>
         <attribute name="phone" optional="YES" attributeType="String"/>
         <attribute name="specialization" optional="NO" attributeType="String"/>
-        <relationship name="appointments" optional="YES" toMany="YES" deletionRule="Cascade" destinationEntity="Appointment" inverseName="doctor"/>
     </entity>
     <entity name="Appointment" representedClassName="Appointment" syncable="YES" codeGenerationType="class">
+        <attribute name="doctorID" optional="NO" attributeType="UUID" usesScalarValueType="NO"/>
         <attribute name="endDate" optional="NO" attributeType="Date" usesScalarValueType="NO"/>
         <attribute name="id" optional="NO" attributeType="UUID" usesScalarValueType="NO"/>
         <attribute name="notes" optional="YES" attributeType="String"/>
         <attribute name="patientName" optional="YES" attributeType="String"/>
         <attribute name="startDate" optional="NO" attributeType="Date" usesScalarValueType="NO"/>
         <attribute name="title" optional="NO" attributeType="String"/>
-        <relationship name="doctor" optional="NO" maxCount="1" deletionRule="Nullify" destinationEntity="Doctor" inverseName="appointments"/>
     </entity>
     <elements>
-        <element name="Doctor" positionX="-63" positionY="-18" width="128" height="133"/>
+        <element name="Doctor" positionX="-63" positionY="-18" width="128" height="118"/>
         <element name="Appointment" positionX="144" positionY="-18" width="128" height="148"/>
     </elements>
 </model>

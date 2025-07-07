@@ -49,7 +49,7 @@ struct PersistenceController {
         appointment1.startDate = calendar.date(bySettingHour: 9, minute: 0, second: 0, of: today) ?? today
         appointment1.endDate = calendar.date(bySettingHour: 10, minute: 0, second: 0, of: today) ?? today
         appointment1.notes = "Annual physical examination"
-        appointment1.doctor = doctor1
+        appointment1.doctorID = doctor1.id!
         
         // Appointment 2 - Today at 2:00 PM
         let appointment2 = Appointment(context: viewContext)
@@ -59,7 +59,7 @@ struct PersistenceController {
         appointment2.startDate = calendar.date(bySettingHour: 14, minute: 0, second: 0, of: today) ?? today
         appointment2.endDate = calendar.date(bySettingHour: 14, minute: 30, second: 0, of: today) ?? today
         appointment2.notes = "Check blood pressure medication effectiveness"
-        appointment2.doctor = doctor1
+        appointment2.doctorID = doctor1.id!
         
         // Appointment 3 - Tomorrow at 10:30 AM
         let tomorrow = calendar.date(byAdding: .day, value: 1, to: today) ?? today
@@ -70,7 +70,7 @@ struct PersistenceController {
         appointment3.startDate = calendar.date(bySettingHour: 10, minute: 30, second: 0, of: tomorrow) ?? tomorrow
         appointment3.endDate = calendar.date(bySettingHour: 11, minute: 15, second: 0, of: tomorrow) ?? tomorrow
         appointment3.notes = "6-month checkup for 2-year-old"
-        appointment3.doctor = doctor2
+        appointment3.doctorID = doctor2.id!
         
         do {
             try viewContext.save()

@@ -33,7 +33,7 @@ struct ContentView: View {
                         NavigationLink {
                             DoctorDetailView(doctor: doctor)
                         } label: {
-                            DoctorRowView(doctor: doctor)
+                            DoctorRowView(doctor: doctor, appointments: appointmentsForDoctor(doctor))
                         }
                     }
                     .onDelete(perform: deleteDoctors)
@@ -66,9 +66,9 @@ struct ContentView: View {
                     } else {
                         ForEach(upcomingAppointments) { appointment in
                             NavigationLink {
-                                AppointmentDetailView(appointment: appointment)
+                                AppointmentDetailView(appointment: appointment, doctors: doctors)
                             } label: {
-                                AppointmentRowView(appointment: appointment)
+                                AppointmentRowView(appointment: appointment, doctors: doctors)
                             }
                         }
                         .onDelete(perform: deleteAppointments)
@@ -92,6 +92,14 @@ struct ContentView: View {
             }
             .tag(1)
         }
+    }
+    
+    private func appointmentsForDoctor(_ doctor: Doctor) -> [Appointment] {
+        return upcomingAppointments.filter { $0.doctorID == doctor.id }
+    }
+    
+    private func doctorForAppointment(_ appointment: Appointment) -> Doctor? {
+        return doctors.first { $0.id == appointment.doctorID }
     }
 
     private func addDoctor() {
@@ -124,7 +132,7 @@ struct ContentView: View {
             newAppointment.title = "New Appointment"
             newAppointment.startDate = Date()
             newAppointment.endDate = Calendar.current.date(byAdding: .hour, value: 1, to: Date()) ?? Date()
-            newAppointment.doctor = firstDoctor
+            newAppointment.doctorID = firstDoctor.id!
 
             do {
                 try viewContext.save()
@@ -167,6 +175,7 @@ struct ContentView: View {
 
 struct DoctorRowView: View {
     let doctor: Doctor
+    let appointments: [Appointment]
     
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -175,8 +184,8 @@ struct DoctorRowView: View {
             Text(doctor.specialization ?? "Unknown Specialization")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
-            if let appointmentCount = doctor.appointments?.count, appointmentCount > 0 {
-                Text("\(appointmentCount) appointment\(appointmentCount == 1 ? "" : "s")")
+            if !appointments.isEmpty {
+                Text("\(appointments.count) appointment\(appointments.count == 1 ? "" : "s")")
                     .font(.caption)
                     .foregroundColor(.blue)
             }
@@ -186,6 +195,7 @@ struct DoctorRowView: View {
 
 struct AppointmentRowView: View {
     let appointment: Appointment
+    let doctors: FetchedResults<Doctor>
     
     private var timeFormatter: DateFormatter {
         let formatter = DateFormatter()
@@ -197,6 +207,11 @@ struct AppointmentRowView: View {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
         return formatter
+    }
+    
+    private var doctorName: String {
+        let doctor = doctors.first { $0.id == appointment.doctorID }
+        return doctor?.name ?? "Unknown Doctor"
     }
     
     var body: some View {
@@ -215,7 +230,7 @@ struct AppointmentRowView: View {
                     .font(.caption)
                     .foregroundColor(.blue)
                 Spacer()
-                Text(appointment.doctor?.name ?? "Unknown Doctor")
+                Text(doctorName)
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
@@ -254,12 +269,18 @@ struct DoctorDetailView: View {
 
 struct AppointmentDetailView: View {
     let appointment: Appointment
+    let doctors: FetchedResults<Doctor>
     
     private var dateFormatter: DateFormatter {
         let formatter = DateFormatter()
         formatter.dateStyle = .full
         formatter.timeStyle = .short
         return formatter
+    }
+    
+    private var doctorName: String {
+        let doctor = doctors.first { $0.id == appointment.doctorID }
+        return doctor?.name ?? "Unknown Doctor"
     }
     
     var body: some View {
@@ -273,7 +294,7 @@ struct AppointmentDetailView: View {
                 if let patientName = appointment.patientName {
                     Text("Patient: \(patientName)")
                 }
-                Text("Doctor: \(appointment.doctor?.name ?? "Unknown")")
+                Text("Doctor: \(doctorName)")
                 Text("Start: \(dateFormatter.string(from: appointment.startDate ?? Date()))")
                 Text("End: \(dateFormatter.string(from: appointment.endDate ?? Date()))")
                 if let notes = appointment.notes, !notes.isEmpty {
