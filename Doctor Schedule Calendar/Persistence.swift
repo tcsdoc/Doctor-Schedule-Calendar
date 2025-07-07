@@ -15,68 +15,102 @@ struct PersistenceController {
         let result = PersistenceController(inMemory: true)
         let viewContext = result.container.viewContext
         
-        // Create sample doctors
-        let doctor1 = Doctor(context: viewContext)
-        doctor1.id = UUID()
-        doctor1.name = "Dr. Sarah Johnson"
-        doctor1.specialization = "Cardiology"
-        doctor1.email = "sarah.johnson@hospital.com"
-        doctor1.phone = "(555) 123-4567"
+        // Create 2 Locations
+        let location1 = Location(context: viewContext)
+        location1.id = UUID()
+        location1.name = "Main Clinic"
+        location1.address = "123 Medical Center Dr, Suite 100"
+        location1.phone = "(555) 123-4567"
         
-        let doctor2 = Doctor(context: viewContext)
-        doctor2.id = UUID()
-        doctor2.name = "Dr. Michael Chen"
-        doctor2.specialization = "Pediatrics"
-        doctor2.email = "michael.chen@hospital.com"
-        doctor2.phone = "(555) 987-6543"
+        let location2 = Location(context: viewContext)
+        location2.id = UUID()
+        location2.name = "Satellite Office"
+        location2.address = "456 Health Plaza, Building B"
+        location2.phone = "(555) 987-6543"
         
-        let doctor3 = Doctor(context: viewContext)
-        doctor3.id = UUID()
-        doctor3.name = "Dr. Emily Rodriguez"
-        doctor3.specialization = "Dermatology"
-        doctor3.email = "emily.rodriguez@hospital.com"
-        doctor3.phone = "(555) 456-7890"
+        // Create 9 Providers
+        let providerNames = [
+            ("Dr. Sarah Johnson", "Cardiology"),
+            ("Dr. Michael Chen", "Pediatrics"),
+            ("Dr. Emily Rodriguez", "Dermatology"),
+            ("Dr. David Kim", "Internal Medicine"),
+            ("Dr. Lisa Thompson", "Family Practice"),
+            ("Dr. Robert Wilson", "Orthopedics"),
+            ("Dr. Maria Garcia", "Neurology"),
+            ("Dr. James Brown", "Radiology"),
+            ("Dr. Jennifer Davis", "Emergency Medicine")
+        ]
         
-        // Create sample appointments
+        var providers: [Provider] = []
+        for (name, specialty) in providerNames {
+            let provider = Provider(context: viewContext)
+            provider.id = UUID()
+            provider.name = name
+            provider.specialty = specialty
+            provider.email = "\(name.lowercased().replacingOccurrences(of: " ", with: ".").replacingOccurrences(of: "dr.", with: ""))@clinic.com"
+            provider.phone = "(555) \(Int.random(in: 100...999))-\(Int.random(in: 1000...9999))"
+            providers.append(provider)
+        }
+        
+        // Create sample schedules for next 3 months
         let calendar = Calendar.current
         let today = Date()
         
-        // Appointment 1 - Today at 9:00 AM
-        let appointment1 = Appointment(context: viewContext)
-        appointment1.id = UUID()
-        appointment1.title = "Routine Checkup"
-        appointment1.patientName = "John Smith"
-        appointment1.startDate = calendar.date(bySettingHour: 9, minute: 0, second: 0, of: today) ?? today
-        appointment1.endDate = calendar.date(bySettingHour: 10, minute: 0, second: 0, of: today) ?? today
-        appointment1.notes = "Annual physical examination"
-        appointment1.doctorID = doctor1.id!
-        
-        // Appointment 2 - Today at 2:00 PM
-        let appointment2 = Appointment(context: viewContext)
-        appointment2.id = UUID()
-        appointment2.title = "Follow-up Visit"
-        appointment2.patientName = "Lisa Wilson"
-        appointment2.startDate = calendar.date(bySettingHour: 14, minute: 0, second: 0, of: today) ?? today
-        appointment2.endDate = calendar.date(bySettingHour: 14, minute: 30, second: 0, of: today) ?? today
-        appointment2.notes = "Check blood pressure medication effectiveness"
-        appointment2.doctorID = doctor1.id!
-        
-        // Appointment 3 - Tomorrow at 10:30 AM
-        let tomorrow = calendar.date(byAdding: .day, value: 1, to: today) ?? today
-        let appointment3 = Appointment(context: viewContext)
-        appointment3.id = UUID()
-        appointment3.title = "Child Wellness Visit"
-        appointment3.patientName = "Emma Thompson"
-        appointment3.startDate = calendar.date(bySettingHour: 10, minute: 30, second: 0, of: tomorrow) ?? tomorrow
-        appointment3.endDate = calendar.date(bySettingHour: 11, minute: 15, second: 0, of: tomorrow) ?? tomorrow
-        appointment3.notes = "6-month checkup for 2-year-old"
-        appointment3.doctorID = doctor2.id!
+        // Sample daily schedules for demonstration
+        for monthOffset in 0..<3 {
+            guard let monthStart = calendar.date(byAdding: .month, value: monthOffset, to: today),
+                  let monthRange = calendar.range(of: .day, in: .month, for: monthStart) else { continue }
+            
+            // Create monthly notes
+            let monthlyNotes = MonthlyNotes(context: viewContext)
+            monthlyNotes.id = UUID()
+            monthlyNotes.month = Int16(calendar.component(.month, from: monthStart))
+            monthlyNotes.year = Int16(calendar.component(.year, from: monthStart))
+            monthlyNotes.line1 = monthOffset == 0 ? "Current month scheduling notes" : "Future planning notes"
+            monthlyNotes.line2 = "Holiday coverage: Check federal calendar"
+            monthlyNotes.line3 = "Training sessions: First Friday of month"
+            
+            // Create daily schedules for each day of the month
+            for day in 1...monthRange.count {
+                guard let date = calendar.date(byAdding: .day, value: day - 1, 
+                                             to: calendar.dateInterval(of: .month, for: monthStart)?.start ?? monthStart) else { continue }
+                
+                // Skip past dates
+                if date < calendar.startOfDay(for: today) { continue }
+                
+                // Create schedule entry for this day
+                let dailySchedule = DailySchedule(context: viewContext)
+                dailySchedule.id = UUID()
+                dailySchedule.date = date
+                
+                // Randomly assign providers and locations for demo data
+                let weekday = calendar.component(.weekday, from: date)
+                if weekday >= 2 && weekday <= 6 { // Monday to Friday
+                    let randomProvider = providers.randomElement()
+                    let randomLocation = [location1, location2].randomElement()
+                    
+                    dailySchedule.providerID = randomProvider?.id
+                    dailySchedule.locationID = randomLocation?.id
+                    dailySchedule.line1 = "\(randomProvider?.name ?? "TBD") at \(randomLocation?.name ?? "TBD")"
+                    dailySchedule.line2 = "8:00 AM - 5:00 PM"
+                    dailySchedule.line3 = "Regular clinic hours"
+                } else {
+                    // Weekend - limited coverage
+                    if weekday == 1 { // Sunday
+                        dailySchedule.line1 = "Emergency coverage only"
+                        dailySchedule.line2 = "On-call: \(providers.randomElement()?.name ?? "TBD")"
+                        dailySchedule.line3 = "Location: Main Clinic"
+                        dailySchedule.locationID = location1.id
+                    }
+                    // Saturday - no scheduled coverage in this demo
+                }
+            }
+        }
         
         do {
             try viewContext.save()
         } catch {
             // Replace this implementation with code to handle the error appropriately.
-            // fatalError() causes the application to generate a crash log and terminate. You should not use this function in a shipping application, although it may be useful during development.
             let nsError = error as NSError
             fatalError("Unresolved error \(nsError), \(nsError.userInfo)")
         }
