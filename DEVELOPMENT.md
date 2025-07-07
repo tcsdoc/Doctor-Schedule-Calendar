@@ -7,18 +7,24 @@
 - [x] Core Data integration
 - [x] Basic SwiftUI structure
 - [x] Fix bundle identifier
+- [x] Add development workflow and .gitignore
 
-### Phase 2: Core Features (Upcoming)
-- [ ] Create Doctor entity in Core Data model
-- [ ] Create Appointment entity with relationships
-- [ ] Design calendar UI components
-- [ ] Implement appointment creation
-- [ ] Add appointment editing/deletion
+### Phase 2: Core Features ✅
+- [x] Create Doctor entity in Core Data model
+- [x] Create Appointment entity with relationships
+- [x] Design tabbed UI with Doctors and Appointments views
+- [x] Implement doctor and appointment creation
+- [x] Add doctor and appointment deletion
+- [x] Create detailed views for both entities
+- [x] Add sample data for development
 
-### Phase 3: Enhanced Features
-- [ ] Patient management
-- [ ] Appointment scheduling logic
-- [ ] Notification system
+### Phase 3: Enhanced Features (Current Phase)
+- [ ] Add appointment editing functionality
+- [ ] Implement calendar view for appointments
+- [ ] Add appointment search and filtering
+- [ ] Patient management enhancements
+- [ ] Appointment scheduling conflict detection
+- [ ] Notification system for upcoming appointments
 - [ ] Export/import functionality
 
 ### Phase 4: Polish & Testing
@@ -26,6 +32,36 @@
 - [ ] UI tests for critical flows
 - [ ] Performance optimization
 - [ ] Accessibility improvements
+- [ ] App Store preparation
+
+## Current Status (v0.2.0)
+
+Your app now includes:
+- ✅ **Doctor Management**: Add, view, edit, and delete doctors
+- ✅ **Appointment Management**: Create and manage appointments
+- ✅ **Tabbed Interface**: Separate views for doctors and appointments
+- ✅ **Core Data Integration**: Proper relationships between entities
+- ✅ **Sample Data**: Pre-populated data for testing
+
+## Ready to Test in Xcode
+
+### Build and Run Steps:
+1. Open `Doctor Schedule Calendar.xcodeproj` in Xcode
+2. Select your target device (iOS Simulator or physical device)
+3. Build and run (⌘+R)
+4. Test the following features:
+   - Browse doctors in the Doctors tab
+   - View upcoming appointments in the Appointments tab
+   - Add new doctors and appointments
+   - Navigate to detail views
+   - Delete items using swipe or edit mode
+
+### Current App Features:
+- **Doctors Tab**: List of all doctors with specializations
+- **Appointments Tab**: Upcoming appointments sorted by date
+- **Add Functionality**: Create new doctors and appointments
+- **Detail Views**: Full information for doctors and appointments
+- **Sample Data**: 3 doctors and 3 appointments for testing
 
 ## Development Workflow
 
