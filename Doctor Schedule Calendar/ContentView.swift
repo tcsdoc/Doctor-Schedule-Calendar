@@ -7,6 +7,7 @@
 
 import SwiftUI
 import CoreData
+import UIKit
 
 struct ContentView: View {
     @Environment(\.managedObjectContext) private var viewContext
@@ -32,7 +33,15 @@ struct ContentView: View {
                     
                     Spacer()
                     
-                    HStack {
+                    HStack(spacing: 15) {
+                        Button(action: {
+                            printCalendar()
+                        }) {
+                            Image(systemName: "printer")
+                                .font(.title2)
+                                .foregroundColor(.blue)
+                        }
+                        
                         Text("Monthly Notes")
                             .font(.headline)
                         
@@ -66,6 +75,28 @@ struct ContentView: View {
         
         return (0..<3).compactMap { offset in
             calendar.date(byAdding: .month, value: offset, to: currentMonth)
+        }
+    }
+    
+    private func printCalendar() {
+        let printInfo = UIPrintInfo(dictionary: nil)
+        printInfo.outputType = .general
+        printInfo.jobName = "Provider Schedule Calendar"
+        
+        let printController = UIPrintInteractionController.shared
+        printController.printInfo = printInfo
+        
+        // Create a print formatter for the current view
+        let formatter = UIPrintPageRenderer()
+        formatter.addPrintFormatter(UISimpleTextPrintFormatter(text: "Provider Schedule Calendar"), startingAtPageAt: 0)
+        
+        printController.printPageRenderer = formatter
+        
+        // Present the print dialog
+        printController.present(animated: true) { controller, completed, error in
+            if let error = error {
+                print("Print error: \(error)")
+            }
         }
     }
 }
