@@ -87,9 +87,13 @@ struct ContentView: View {
         let printController = UIPrintInteractionController.shared
         printController.printInfo = printInfo
         
-        // Create a simple text formatter with all the calendar data
-        let calendarText = generateCalendarText()
-        let formatter = UISimpleTextPrintFormatter(text: calendarText)
+        // Create a print formatter that renders the visual calendar
+        let formatter = CalendarVisualPrintFormatter(
+            dailySchedules: dailySchedules,
+            monthlyNotes: monthlyNotes,
+            viewContext: viewContext,
+            currentDate: currentDate
+        )
         
         printController.printFormatter = formatter
         
@@ -101,101 +105,7 @@ struct ContentView: View {
         }
     }
     
-    private func generateCalendarText() -> String {
-        var text = "PROVIDER SCHEDULE\n\n"
-        
-        // Get months to display
-        let calendar = Calendar.current
-        let currentMonth = calendar.dateInterval(of: .month, for: currentDate)!.start
-        let months = (0..<3).compactMap { offset in
-            calendar.date(byAdding: .month, value: offset, to: currentMonth)
-        }
-        
-        for month in months {
-            let monthFormatter = DateFormatter()
-            monthFormatter.dateFormat = "MMMM yyyy"
-            let monthString = monthFormatter.string(from: month)
-            
-            text += "\(monthString)\n"
-            text += String(repeating: "=", count: monthString.count) + "\n\n"
-            
-            // Monthly notes
-            let monthValue = Int32(calendar.component(.month, from: month))
-            let yearValue = Int32(calendar.component(.year, from: month))
-            if let notes = monthlyNotes.first(where: { $0.month == monthValue && $0.year == yearValue }) {
-                if let line1 = notes.line1, !line1.isEmpty {
-                    text += "Monthly Note 1: \(line1)\n"
-                }
-                if let line2 = notes.line2, !line2.isEmpty {
-                    text += "Monthly Note 2: \(line2)\n"
-                }
-                if let line3 = notes.line3, !line3.isEmpty {
-                    text += "Monthly Note 3: \(line3)\n"
-                }
-                text += "\n"
-            }
-            
-            // Calendar grid
-            let daysInMonth = getDaysInMonth(for: month)
-            let weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
-            
-            // Header
-            text += weekdays.joined(separator: "\t") + "\n"
-            text += String(repeating: "-", count: 50) + "\n"
-            
-            // Calendar days
-            for (index, date) in daysInMonth.enumerated() {
-                let column = index % 7
-                let dayNumber = calendar.component(.day, from: date)
-                
-                if column == 0 && index > 0 {
-                    text += "\n"
-                }
-                
-                text += "\(dayNumber)"
-                
-                // Add schedule data if exists
-                let dayStart = calendar.startOfDay(for: date)
-                if let schedule = dailySchedules.first(where: { schedule in
-                    guard let scheduleDate = schedule.date else { return false }
-                    return calendar.isDate(scheduleDate, inSameDayAs: dayStart)
-                }) {
-                    if let line1 = schedule.line1, !line1.isEmpty {
-                        text += " (\(line1))"
-                    }
-                }
-                
-                text += "\t"
-            }
-            
-            text += "\n\n" + String(repeating: "=", count: 50) + "\n\n"
-        }
-        
-        return text
-    }
-    
-    private func getDaysInMonth(for month: Date) -> [Date] {
-        let calendar = Calendar.current
-        guard let monthInterval = calendar.dateInterval(of: .month, for: month) else {
-            return []
-        }
-        
-        let startOfMonth = monthInterval.start
-        guard let firstWeekday = calendar.dateInterval(of: .weekOfYear, for: startOfMonth)?.start else {
-            return []
-        }
-        
-        var days: [Date] = []
-        var currentDate = firstWeekday
-        
-        // Generate 6 weeks worth of dates
-        for _ in 0..<42 {
-            days.append(currentDate)
-            currentDate = calendar.date(byAdding: .day, value: 1, to: currentDate)!
-        }
-        
-        return days
-    }
+
     
 
 }
@@ -478,6 +388,193 @@ private let monthFormatter: DateFormatter = {
     formatter.dateFormat = "MMMM yyyy"
     return formatter
 }()
+
+// Visual print formatter that renders the calendar like the app
+class CalendarVisualPrintFormatter: UIPrintFormatter {
+    private let dailySchedules: FetchedResults<DailySchedule>
+    private let monthlyNotes: FetchedResults<MonthlyNotes>
+    private let viewContext: NSManagedObjectContext
+    private let currentDate: Date
+    
+    init(dailySchedules: FetchedResults<DailySchedule>, 
+         monthlyNotes: FetchedResults<MonthlyNotes>, 
+         viewContext: NSManagedObjectContext, 
+         currentDate: Date) {
+        self.dailySchedules = dailySchedules
+        self.monthlyNotes = monthlyNotes
+        self.viewContext = viewContext
+        self.currentDate = currentDate
+        super.init()
+    }
+    
+    override func draw(in printableRect: CGRect, forPageAt pageIndex: Int) {
+        guard let context = UIGraphicsGetCurrentContext() else { return }
+        
+        // Set up text attributes
+        let titleFont = UIFont.boldSystemFont(ofSize: 28)
+        let headerFont = UIFont.boldSystemFont(ofSize: 20)
+        let normalFont = UIFont.systemFont(ofSize: 14)
+        let smallFont = UIFont.systemFont(ofSize: 12)
+        let dayFont = UIFont.systemFont(ofSize: 16, weight: .semibold)
+        
+        let titleAttributes: [NSAttributedString.Key: Any] = [
+            .font: titleFont,
+            .foregroundColor: UIColor.black
+        ]
+        
+        let headerAttributes: [NSAttributedString.Key: Any] = [
+            .font: headerFont,
+            .foregroundColor: UIColor.black
+        ]
+        
+        let normalAttributes: [NSAttributedString.Key: Any] = [
+            .font: normalFont,
+            .foregroundColor: UIColor.black
+        ]
+        
+        let smallAttributes: [NSAttributedString.Key: Any] = [
+            .font: smallFont,
+            .foregroundColor: UIColor.black
+        ]
+        
+        let dayAttributes: [NSAttributedString.Key: Any] = [
+            .font: dayFont,
+            .foregroundColor: UIColor.black
+        ]
+        
+        var yPosition: CGFloat = printableRect.origin.y + 30
+        
+        // Draw title
+        let title = "PROVIDER SCHEDULE"
+        title.draw(at: CGPoint(x: printableRect.origin.x + 20, y: yPosition), withAttributes: titleAttributes)
+        yPosition += 50
+        
+        // Get months to display
+        let calendar = Calendar.current
+        let currentMonth = calendar.dateInterval(of: .month, for: currentDate)!.start
+        let months = (0..<3).compactMap { offset in
+            calendar.date(byAdding: .month, value: offset, to: currentMonth)
+        }
+        
+        // Draw each month
+        for month in months {
+            let monthFormatter = DateFormatter()
+            monthFormatter.dateFormat = "MMMM yyyy"
+            let monthString = monthFormatter.string(from: month)
+            
+            // Month header
+            monthString.draw(at: CGPoint(x: printableRect.origin.x + 20, y: yPosition), withAttributes: headerAttributes)
+            yPosition += 30
+            
+            // Monthly notes
+            let monthValue = Int32(calendar.component(.month, from: month))
+            let yearValue = Int32(calendar.component(.year, from: month))
+            if let notes = monthlyNotes.first(where: { $0.month == monthValue && $0.year == yearValue }) {
+                if let line1 = notes.line1, !line1.isEmpty {
+                    line1.draw(at: CGPoint(x: printableRect.origin.x + 40, y: yPosition), withAttributes: normalAttributes)
+                    yPosition += 20
+                }
+                if let line2 = notes.line2, !line2.isEmpty {
+                    line2.draw(at: CGPoint(x: printableRect.origin.x + 40, y: yPosition), withAttributes: normalAttributes)
+                    yPosition += 20
+                }
+                if let line3 = notes.line3, !line3.isEmpty {
+                    line3.draw(at: CGPoint(x: printableRect.origin.x + 40, y: yPosition), withAttributes: normalAttributes)
+                    yPosition += 20
+                }
+            }
+            yPosition += 15
+            
+            // Days of week header
+            let weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+            let dayWidth = (printableRect.width - 40) / 7
+            var xPosition = printableRect.origin.x + 20
+            
+            for day in weekdays {
+                day.draw(at: CGPoint(x: xPosition, y: yPosition), withAttributes: smallAttributes)
+                xPosition += dayWidth
+            }
+            yPosition += 25
+            
+            // Calendar grid - draw boxes like the app
+            let daysInMonth = getDaysInMonth(for: month)
+            var currentRow = 0
+            let dayHeight: CGFloat = 120
+            
+            for (index, date) in daysInMonth.enumerated() {
+                let column = index % 7
+                let row = index / 7
+                
+                if row != currentRow {
+                    yPosition += dayHeight
+                    currentRow = row
+                }
+                
+                let xPos = printableRect.origin.x + 20 + (CGFloat(column) * dayWidth)
+                let yPos = yPosition
+                
+                // Draw day box background
+                let dayRect = CGRect(x: xPos, y: yPos, width: dayWidth - 2, height: dayHeight - 2)
+                context.setFillColor(UIColor.white.cgColor)
+                context.setStrokeColor(UIColor.gray.withAlphaComponent(0.3).cgColor)
+                context.setLineWidth(0.5)
+                context.fill(dayRect)
+                context.stroke(dayRect)
+                
+                // Day number
+                let dayNumber = "\(calendar.component(.day, from: date))"
+                let dayNumberPoint = CGPoint(x: xPos + 5, y: yPos + 5)
+                dayNumber.draw(at: dayNumberPoint, withAttributes: dayAttributes)
+                
+                // Schedule data
+                let dayStart = calendar.startOfDay(for: date)
+                if let schedule = dailySchedules.first(where: { schedule in
+                    guard let scheduleDate = schedule.date else { return false }
+                    return calendar.isDate(scheduleDate, inSameDayAs: dayStart)
+                }) {
+                    var scheduleY = yPos + 30
+                    
+                    if let line1 = schedule.line1, !line1.isEmpty {
+                        line1.draw(at: CGPoint(x: xPos + 5, y: scheduleY), withAttributes: smallAttributes)
+                        scheduleY += 15
+                    }
+                    if let line2 = schedule.line2, !line2.isEmpty {
+                        line2.draw(at: CGPoint(x: xPos + 5, y: scheduleY), withAttributes: smallAttributes)
+                        scheduleY += 15
+                    }
+                    if let line3 = schedule.line3, !line3.isEmpty {
+                        line3.draw(at: CGPoint(x: xPos + 5, y: scheduleY), withAttributes: smallAttributes)
+                    }
+                }
+            }
+            
+            yPosition += dayHeight + 30 // Space between months
+        }
+    }
+    
+    private func getDaysInMonth(for month: Date) -> [Date] {
+        let calendar = Calendar.current
+        guard let monthInterval = calendar.dateInterval(of: .month, for: month) else {
+            return []
+        }
+        
+        let startOfMonth = monthInterval.start
+        guard let firstWeekday = calendar.dateInterval(of: .weekOfYear, for: startOfMonth)?.start else {
+            return []
+        }
+        
+        var days: [Date] = []
+        var currentDate = firstWeekday
+        
+        // Generate 6 weeks worth of dates
+        for _ in 0..<42 {
+            days.append(currentDate)
+            currentDate = calendar.date(byAdding: .day, value: 1, to: currentDate)!
+        }
+        
+        return days
+    }
+}
 
 
 
