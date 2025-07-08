@@ -26,28 +26,31 @@ struct ContentView: View {
     var body: some View {
         NavigationView {
             VStack {
-                HStack {
+                VStack(spacing: 10) {
                     Text("PROVIDER SCHEDULE")
                         .font(.title)
                         .fontWeight(.bold)
+                        .frame(maxWidth: .infinity)
                     
-                    Spacer()
-                    
-                    HStack(spacing: 15) {
-                        Button(action: {
-                            printCalendar()
-                        }) {
-                            Image(systemName: "printer")
-                                .font(.title2)
-                                .foregroundColor(.blue)
+                    HStack {
+                        Spacer()
+                        
+                        HStack(spacing: 15) {
+                            Button(action: {
+                                printCalendar()
+                            }) {
+                                Image(systemName: "printer")
+                                    .font(.title2)
+                                    .foregroundColor(.blue)
+                            }
+                            
+                            Text("Monthly Notes")
+                                .font(.headline)
+                            
+                            Text("v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "Unknown").\(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "Unknown")")
+                                .font(.caption)
+                                .foregroundColor(.gray)
                         }
-                        
-                        Text("Monthly Notes")
-                            .font(.headline)
-                        
-                        Text("Build 005")
-                            .font(.caption)
-                            .foregroundColor(.gray)
                     }
                 }
                 .padding()
@@ -73,7 +76,7 @@ struct ContentView: View {
         let calendar = Calendar.current
         let currentMonth = calendar.dateInterval(of: .month, for: currentDate)!.start
         
-        return (0..<3).compactMap { offset in
+        return (0..<12).compactMap { offset in
             calendar.date(byAdding: .month, value: offset, to: currentMonth)
         }
     }
@@ -104,7 +107,7 @@ struct ContentView: View {
     private func generateHTMLContent() -> String {
         let calendar = Calendar.current
         let currentMonth = calendar.dateInterval(of: .month, for: currentDate)!.start
-        let months = (0..<3).compactMap { offset in
+        let months = (0..<12).compactMap { offset in
             calendar.date(byAdding: .month, value: offset, to: currentMonth)
         }
         
@@ -258,44 +261,54 @@ struct MonthView: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            // Month header
-            Text(monthFormatter.string(from: month))
-                .font(.title2)
-                .fontWeight(.bold)
-                .padding(.bottom, 5)
-            
-            // Monthly notes section
-            MonthlyNotesView(month: month, monthlyNotes: monthlyNotes, viewContext: viewContext)
-            
-            // Days of week header
-            HStack {
-                ForEach(Calendar.current.shortWeekdaySymbols, id: \.self) { day in
-                    Text(day)
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .frame(maxWidth: .infinity)
-                }
-            }
-            .padding(.top, 10)
-            
-            // Calendar grid
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 7), spacing: 0) {
-                ForEach(daysInMonth, id: \.self) { date in
-                    if calendar.isDate(date, equalTo: month, toGranularity: .month) {
-                        DayCell(date: date, 
-                               dailySchedules: dailySchedules, 
-                               viewContext: viewContext)
-                    } else {
-                        Rectangle()
-                            .fill(Color.clear)
-                            .frame(minHeight: 250)
-                    }
-                }
-            }
+            monthHeader
+            notesSection
+            daysOfWeekHeader
+            calendarGrid
         }
         .padding()
         .background(Color.gray.opacity(0.1))
         .cornerRadius(10)
+    }
+    
+    private var monthHeader: some View {
+        Text(monthFormatter.string(from: month))
+            .font(.title2)
+            .fontWeight(.bold)
+            .frame(maxWidth: .infinity, alignment: .center)
+            .padding(.bottom, 5)
+    }
+    
+    private var notesSection: some View {
+        MonthlyNotesView(month: month, monthlyNotes: monthlyNotes, viewContext: viewContext)
+    }
+    
+    private var daysOfWeekHeader: some View {
+        HStack {
+            ForEach(Calendar.current.shortWeekdaySymbols, id: \.self) { day in
+                Text(day)
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .frame(maxWidth: .infinity)
+            }
+        }
+        .padding(.top, 10)
+    }
+    
+    private var calendarGrid: some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 7), spacing: 0) {
+            ForEach(daysInMonth, id: \.self) { date in
+                if calendar.isDate(date, equalTo: month, toGranularity: .month) {
+                    DayCell(date: date, 
+                           dailySchedules: dailySchedules, 
+                           viewContext: viewContext)
+                } else {
+                    Rectangle()
+                        .fill(Color.clear)
+                        .frame(minHeight: 250)
+                }
+            }
+        }
     }
     
     private var daysInMonth: [Date] {
@@ -339,91 +352,107 @@ struct DayCell: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            // Day number
-            Text("\(calendar.component(.day, from: date))")
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundColor(calendar.isDate(date, inSameDayAs: Date()) ? .red : .primary)
-                .padding(.bottom, 2)
-            
-            // Three text fields for scheduling
-            VStack(spacing: 8) {
-                TextField("", text: Binding(
+            dayNumber
+            scheduleFields
+        }
+        .frame(maxWidth: .infinity, minHeight: 250)
+        .background(background)
+        .onAppear {
+            loadSchedule()
+        }
+    }
+    
+    private var dayNumber: some View {
+        Text("\(calendar.component(.day, from: date))")
+            .font(.system(size: 16, weight: .semibold))
+            .foregroundColor(calendar.isDate(date, inSameDayAs: Date()) ? .red : .primary)
+            .padding(.bottom, 2)
+    }
+    
+    private var scheduleFields: some View {
+        VStack(spacing: 8) {
+            scheduleTextField(
+                text: Binding(
                     get: { schedule?.line1 ?? "" },
                     set: { newValue in
                         updateSchedule()
                         schedule?.line1 = newValue
                         saveContext()
                     }
-                ))
-                .font(.system(size: 14))
-                .frame(height: 32)
-                .padding(6)
-                .background(Color.blue.opacity(0.1))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 4)
-                        .stroke(Color.blue.opacity(0.6), lineWidth: 1.5)
-                )
-                .focused($focusedField, equals: .line1)
-                .onSubmit {
-                    focusedField = .line2
+                ),
+                color: .blue,
+                field: .line1,
+                onSubmit: { focusedField = .line2 },
+                onChange: { newValue in
+                    if newValue.count > 16 {
+                        schedule?.line1 = String(newValue.prefix(16))
+                        saveContext()
+                    }
                 }
-                
-                TextField("", text: Binding(
+            )
+            scheduleTextField(
+                text: Binding(
                     get: { schedule?.line2 ?? "" },
                     set: { newValue in
                         updateSchedule()
                         schedule?.line2 = newValue
                         saveContext()
                     }
-                ))
-                .font(.system(size: 14))
-                .frame(height: 32)
-                .padding(6)
-                .background(Color.green.opacity(0.1))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 4)
-                        .stroke(Color.green.opacity(0.6), lineWidth: 1.5)
-                )
-                .focused($focusedField, equals: .line2)
-                .onSubmit {
-                    focusedField = .line3
+                ),
+                color: .green,
+                field: .line2,
+                onSubmit: { focusedField = .line3 },
+                onChange: { newValue in
+                    if newValue.count > 16 {
+                        schedule?.line2 = String(newValue.prefix(16))
+                        saveContext()
+                    }
                 }
-                
-                TextField("", text: Binding(
+            )
+            scheduleTextField(
+                text: Binding(
                     get: { schedule?.line3 ?? "" },
                     set: { newValue in
                         updateSchedule()
                         schedule?.line3 = newValue
                         saveContext()
                     }
-                ))
-                .font(.system(size: 14))
-                .frame(height: 32)
-                .padding(6)
-                .background(Color.orange.opacity(0.1))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 4)
-                        .stroke(Color.orange.opacity(0.6), lineWidth: 1.5)
-                )
-                .focused($focusedField, equals: .line3)
-                .onSubmit {
-                    // Clear focus after line3, staying within this day only
-                    focusedField = nil
+                ),
+                color: .orange,
+                field: .line3,
+                onSubmit: { focusedField = nil },
+                onChange: { newValue in
+                    if newValue.count > 16 {
+                        schedule?.line3 = String(newValue.prefix(16))
+                        saveContext()
+                    }
                 }
-            }
+            )
         }
-        .frame(maxWidth: .infinity, minHeight: 250)
-        .background(
-            RoundedRectangle(cornerRadius: 2)
-                .fill(calendar.isDate(date, inSameDayAs: Date()) ? Color.red.opacity(0.1) : Color.white)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 2)
-                        .stroke(Color.gray.opacity(0.3), lineWidth: 0.5)
-                )
-        )
-        .onAppear {
-            loadSchedule()
-        }
+    }
+    
+    private func scheduleTextField(text: Binding<String>, color: Color, field: DayField, onSubmit: @escaping () -> Void, onChange: @escaping (String) -> Void) -> some View {
+        TextField("", text: text)
+            .font(.system(size: 14))
+            .frame(height: 32)
+            .padding(6)
+            .background(color.opacity(0.1))
+            .overlay(
+                RoundedRectangle(cornerRadius: 4)
+                    .stroke(color.opacity(0.6), lineWidth: 1.5)
+            )
+            .focused($focusedField, equals: field)
+            .onSubmit(onSubmit)
+            .onChange(of: text.wrappedValue, perform: onChange)
+    }
+    
+    private var background: some View {
+        RoundedRectangle(cornerRadius: 2)
+            .fill(calendar.isDate(date, inSameDayAs: Date()) ? Color.red.opacity(0.1) : Color.white)
+            .overlay(
+                RoundedRectangle(cornerRadius: 2)
+                    .stroke(Color.gray.opacity(0.3), lineWidth: 0.5)
+            )
     }
     
     private func loadSchedule() {
@@ -493,6 +522,7 @@ struct MonthlyNotesView: View {
                     RoundedRectangle(cornerRadius: 4)
                         .stroke(borderColor(for: index), lineWidth: 1.5)
                 )
+
             }
         }
         .onAppear {
