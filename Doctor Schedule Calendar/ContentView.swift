@@ -87,66 +87,25 @@ struct ContentView: View {
         let printController = UIPrintInteractionController.shared
         printController.printInfo = printInfo
         
-        // Create an image of the current calendar view
-        let renderer = ImageRenderer(content: calendarPrintView)
-        renderer.scale = 2.0 // Higher resolution for printing
+        // Create a print formatter that renders the calendar content
+        let formatter = CalendarPrintFormatter(
+            dailySchedules: dailySchedules,
+            monthlyNotes: monthlyNotes,
+            viewContext: viewContext,
+            currentDate: currentDate
+        )
         
-        if let image = renderer.uiImage {
-            // Create a print formatter with the image
-            let formatter = UIPrintPageRenderer()
-            let imageFormatter = UISimpleTextPrintFormatter(text: "")
-            
-            // Add the image to the formatter
-            formatter.addPrintFormatter(imageFormatter, startingAtPageAt: 0)
-            
-            // Set up the page renderer to draw the image
-            let pageRenderer = CalendarPageRenderer(image: image)
-            printController.printPageRenderer = pageRenderer
-            
-            // Present the print dialog
-            printController.present(animated: true) { controller, completed, error in
-                if let error = error {
-                    print("Print error: \(error)")
-                }
+        printController.printFormatter = formatter
+        
+        // Present the print dialog
+        printController.present(animated: true) { controller, completed, error in
+            if let error = error {
+                print("Print error: \(error)")
             }
         }
     }
     
-    // View specifically for printing
-    private var calendarPrintView: some View {
-        VStack {
-            HStack {
-                Text("PROVIDER SCHEDULE")
-                    .font(.title)
-                    .fontWeight(.bold)
-                
-                Spacer()
-                
-                HStack {
-                    Text("Monthly Notes")
-                        .font(.headline)
-                    
-                    Text("Build 004")
-                        .font(.caption)
-                        .foregroundColor(.gray)
-                }
-            }
-            .padding()
-            
-            ScrollView {
-                LazyVStack(spacing: 20) {
-                    ForEach(months, id: \.self) { month in
-                        MonthView(month: month, 
-                                dailySchedules: dailySchedules, 
-                                monthlyNotes: monthlyNotes,
-                                viewContext: viewContext)
-                    }
-                }
-                .padding()
-            }
-        }
-        .background(Color.white)
-    }
+
 }
 
 struct MonthView: View {
@@ -428,36 +387,174 @@ private let monthFormatter: DateFormatter = {
     return formatter
 }()
 
-// Custom page renderer for printing calendar as image
-class CalendarPageRenderer: UIPrintPageRenderer {
-    private let image: UIImage
+// Custom print formatter for calendar content
+class CalendarPrintFormatter: UIPrintFormatter {
+    private let dailySchedules: FetchedResults<DailySchedule>
+    private let monthlyNotes: FetchedResults<MonthlyNotes>
+    private let viewContext: NSManagedObjectContext
+    private let currentDate: Date
     
-    init(image: UIImage) {
-        self.image = image
+    init(dailySchedules: FetchedResults<DailySchedule>, 
+         monthlyNotes: FetchedResults<MonthlyNotes>, 
+         viewContext: NSManagedObjectContext, 
+         currentDate: Date) {
+        self.dailySchedules = dailySchedules
+        self.monthlyNotes = monthlyNotes
+        self.viewContext = viewContext
+        self.currentDate = currentDate
         super.init()
     }
     
-    override func drawPage(at pageIndex: Int, in printableRect: CGRect) {
+    override func draw(in printableRect: CGRect, forPageAt pageIndex: Int) {
         guard let context = UIGraphicsGetCurrentContext() else { return }
         
-        // Calculate the image size to fit the printable area while maintaining aspect ratio
-        let imageSize = image.size
-        let printableSize = printableRect.size
+        // Set up text attributes
+        let titleFont = UIFont.boldSystemFont(ofSize: 24)
+        let headerFont = UIFont.boldSystemFont(ofSize: 18)
+        let normalFont = UIFont.systemFont(ofSize: 12)
+        let smallFont = UIFont.systemFont(ofSize: 10)
         
-        let scaleX = printableSize.width / imageSize.width
-        let scaleY = printableSize.height / imageSize.height
-        let scale = min(scaleX, scaleY)
+        let titleAttributes: [NSAttributedString.Key: Any] = [
+            .font: titleFont,
+            .foregroundColor: UIColor.black
+        ]
         
-        let scaledWidth = imageSize.width * scale
-        let scaledHeight = imageSize.height * scale
+        let headerAttributes: [NSAttributedString.Key: Any] = [
+            .font: headerFont,
+            .foregroundColor: UIColor.black
+        ]
         
-        let x = printableRect.origin.x + (printableSize.width - scaledWidth) / 2
-        let y = printableRect.origin.y + (printableSize.height - scaledHeight) / 2
+        let normalAttributes: [NSAttributedString.Key: Any] = [
+            .font: normalFont,
+            .foregroundColor: UIColor.black
+        ]
         
-        let drawRect = CGRect(x: x, y: y, width: scaledWidth, height: scaledHeight)
+        let smallAttributes: [NSAttributedString.Key: Any] = [
+            .font: smallFont,
+            .foregroundColor: UIColor.black
+        ]
         
-        // Draw the image
-        image.draw(in: drawRect)
+        var yPosition: CGFloat = printableRect.origin.y + 20
+        
+        // Draw title
+        let title = "PROVIDER SCHEDULE"
+        title.draw(at: CGPoint(x: printableRect.origin.x + 20, y: yPosition), withAttributes: titleAttributes)
+        yPosition += 40
+        
+        // Get months to display
+        let calendar = Calendar.current
+        let currentMonth = calendar.dateInterval(of: .month, for: currentDate)!.start
+        let months = (0..<3).compactMap { offset in
+            calendar.date(byAdding: .month, value: offset, to: currentMonth)
+        }
+        
+        // Draw each month
+        for month in months {
+            let monthFormatter = DateFormatter()
+            monthFormatter.dateFormat = "MMMM yyyy"
+            let monthString = monthFormatter.string(from: month)
+            
+            // Month header
+            monthString.draw(at: CGPoint(x: printableRect.origin.x + 20, y: yPosition), withAttributes: headerAttributes)
+            yPosition += 30
+            
+            // Monthly notes
+            let monthValue = Int32(calendar.component(.month, from: month))
+            let yearValue = Int32(calendar.component(.year, from: month))
+            if let notes = monthlyNotes.first(where: { $0.month == monthValue && $0.year == yearValue }) {
+                if let line1 = notes.line1, !line1.isEmpty {
+                    line1.draw(at: CGPoint(x: printableRect.origin.x + 40, y: yPosition), withAttributes: normalAttributes)
+                    yPosition += 20
+                }
+                if let line2 = notes.line2, !line2.isEmpty {
+                    line2.draw(at: CGPoint(x: printableRect.origin.x + 40, y: yPosition), withAttributes: normalAttributes)
+                    yPosition += 20
+                }
+                if let line3 = notes.line3, !line3.isEmpty {
+                    line3.draw(at: CGPoint(x: printableRect.origin.x + 40, y: yPosition), withAttributes: normalAttributes)
+                    yPosition += 20
+                }
+            }
+            yPosition += 10
+            
+            // Days of week header
+            let weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+            let dayWidth = (printableRect.width - 40) / 7
+            var xPosition = printableRect.origin.x + 20
+            
+            for day in weekdays {
+                day.draw(at: CGPoint(x: xPosition, y: yPosition), withAttributes: smallAttributes)
+                xPosition += dayWidth
+            }
+            yPosition += 20
+            
+            // Calendar grid
+            let daysInMonth = getDaysInMonth(for: month)
+            var currentRow = 0
+            
+            for (index, date) in daysInMonth.enumerated() {
+                let column = index % 7
+                let row = index / 7
+                
+                if row != currentRow {
+                    yPosition += 80 // Height of each day cell
+                    currentRow = row
+                }
+                
+                let xPos = printableRect.origin.x + 20 + (CGFloat(column) * dayWidth)
+                let yPos = yPosition
+                
+                // Day number
+                let dayNumber = "\(calendar.component(.day, from: date))"
+                dayNumber.draw(at: CGPoint(x: xPos + 5, y: yPos + 5), withAttributes: smallAttributes)
+                
+                // Schedule data
+                let dayStart = calendar.startOfDay(for: date)
+                if let schedule = dailySchedules.first(where: { schedule in
+                    guard let scheduleDate = schedule.date else { return false }
+                    return calendar.isDate(scheduleDate, inSameDayAs: dayStart)
+                }) {
+                    var scheduleY = yPos + 20
+                    
+                    if let line1 = schedule.line1, !line1.isEmpty {
+                        line1.draw(at: CGPoint(x: xPos + 5, y: scheduleY), withAttributes: smallAttributes)
+                        scheduleY += 15
+                    }
+                    if let line2 = schedule.line2, !line2.isEmpty {
+                        line2.draw(at: CGPoint(x: xPos + 5, y: scheduleY), withAttributes: smallAttributes)
+                        scheduleY += 15
+                    }
+                    if let line3 = schedule.line3, !line3.isEmpty {
+                        line3.draw(at: CGPoint(x: xPos + 5, y: scheduleY), withAttributes: smallAttributes)
+                    }
+                }
+            }
+            
+            yPosition += 120 // Space between months
+        }
+    }
+    
+    private func getDaysInMonth(for month: Date) -> [Date] {
+        let calendar = Calendar.current
+        guard let monthInterval = calendar.dateInterval(of: .month, for: month) else {
+            return []
+        }
+        
+        let startOfMonth = monthInterval.start
+        guard let firstWeekday = calendar.dateInterval(of: .weekOfYear, for: startOfMonth)?.start else {
+            return []
+        }
+        
+        var days: [Date] = []
+        var currentDate = firstWeekday
+        
+        // Generate 6 weeks worth of dates
+        for _ in 0..<42 {
+            days.append(currentDate)
+            currentDate = calendar.date(byAdding: .day, value: 1, to: currentDate)!
+        }
+        
+        return days
     }
 }
 
