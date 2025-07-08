@@ -1,39 +1,18 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <model type="com.apple.IDECoreDataModeler.DataModel" documentVersion="1.0" lastSavedToolsVersion="1" systemVersion="11A491" minimumToolsVersion="Automatic" sourceLanguage="Swift" usedWithCloudKit="false" userDefinedModelVersionIdentifier="">
-    <entity name="Provider" representedClassName="Provider" syncable="YES" codeGenerationType="class">
-        <attribute name="id" optional="NO" attributeType="UUID" usesScalarValueType="NO"/>
-        <attribute name="name" optional="NO" attributeType="String"/>
-        <attribute name="specialty" optional="YES" attributeType="String"/>
-        <attribute name="phone" optional="YES" attributeType="String"/>
-        <attribute name="email" optional="YES" attributeType="String"/>
-    </entity>
-    <entity name="Location" representedClassName="Location" syncable="YES" codeGenerationType="class">
-        <attribute name="id" optional="NO" attributeType="UUID" usesScalarValueType="NO"/>
-        <attribute name="name" optional="NO" attributeType="String"/>
-        <attribute name="address" optional="YES" attributeType="String"/>
-        <attribute name="phone" optional="YES" attributeType="String"/>
-    </entity>
     <entity name="DailySchedule" representedClassName="DailySchedule" syncable="YES" codeGenerationType="class">
-        <attribute name="id" optional="NO" attributeType="UUID" usesScalarValueType="NO"/>
         <attribute name="date" optional="NO" attributeType="Date" usesScalarValueType="NO"/>
-        <attribute name="providerID" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
-        <attribute name="locationID" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="id" optional="NO" attributeType="UUID" usesScalarValueType="NO"/>
         <attribute name="line1" optional="YES" attributeType="String"/>
         <attribute name="line2" optional="YES" attributeType="String"/>
         <attribute name="line3" optional="YES" attributeType="String"/>
     </entity>
     <entity name="MonthlyNotes" representedClassName="MonthlyNotes" syncable="YES" codeGenerationType="class">
         <attribute name="id" optional="NO" attributeType="UUID" usesScalarValueType="NO"/>
-        <attribute name="month" optional="NO" attributeType="Integer 16" usesScalarValueType="YES"/>
-        <attribute name="year" optional="NO" attributeType="Integer 16" usesScalarValueType="YES"/>
         <attribute name="line1" optional="YES" attributeType="String"/>
         <attribute name="line2" optional="YES" attributeType="String"/>
         <attribute name="line3" optional="YES" attributeType="String"/>
+        <attribute name="month" optional="NO" attributeType="Integer 32" defaultValue="0" usesScalarValueType="YES"/>
+        <attribute name="year" optional="NO" attributeType="Integer 32" defaultValue="0" usesScalarValueType="YES"/>
     </entity>
-    <elements>
-        <element name="Provider" positionX="-63" positionY="-18" width="128" height="118"/>
-        <element name="Location" positionX="144" positionY="-18" width="128" height="103"/>
-        <element name="DailySchedule" positionX="-63" positionY="135" width="128" height="148"/>
-        <element name="MonthlyNotes" positionX="144" positionY="135" width="128" height="133"/>
-    </elements>
 </model>

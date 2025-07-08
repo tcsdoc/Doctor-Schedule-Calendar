@@ -10,105 +10,76 @@ import CoreData
 
 struct ContentView: View {
     @Environment(\.managedObjectContext) private var viewContext
-    
-    // Fetch all providers
-    @FetchRequest(
-        sortDescriptors: [NSSortDescriptor(keyPath: \Provider.name, ascending: true)],
-        animation: .default)
-    private var providers: FetchedResults<Provider>
-    
-    // Fetch all locations
-    @FetchRequest(
-        sortDescriptors: [NSSortDescriptor(keyPath: \Location.name, ascending: true)],
-        animation: .default)
-    private var locations: FetchedResults<Location>
-    
     @State private var currentMonth = Date()
-    @State private var isAdminMode = true // For now, default to admin mode
+    @State private var scaleFactor: CGFloat = 1.0
     
     var body: some View {
-        NavigationView {
+        GeometryReader { geometry in
             VStack(spacing: 0) {
-                // Month navigation header
-                monthNavigationHeader
+                // Month Navigation Header
+                HStack {
+                    Button(action: previousMonth) {
+                        Image(systemName: "chevron.left")
+                            .font(.title2)
+                            .foregroundColor(.blue)
+                    }
+                    .disabled(!canGoToPreviousMonth())
+                    
+                    Spacer()
+                    
+                    Text(monthYearString(from: currentMonth))
+                        .font(.title)
+                        .fontWeight(.bold)
+                    
+                    Spacer()
+                    
+                    Button(action: nextMonth) {
+                        Image(systemName: "chevron.right")
+                            .font(.title2)
+                            .foregroundColor(.blue)
+                    }
+                    .disabled(!canGoToNextMonth())
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 10)
+                .background(Color(.systemGray6))
                 
-                // Calendar view
-                CalendarMonthView(
-                    currentMonth: currentMonth,
-                    providers: providers,
-                    locations: locations,
-                    isAdminMode: isAdminMode
+                // Full-Screen Calendar
+                ScrollView([.horizontal, .vertical]) {
+                    VStack(spacing: 0) {
+                        // Monthly Notes (3 lines at top)
+                        MonthlyNotesView(month: currentMonth)
+                            .padding(.bottom, 10)
+                        
+                        // Calendar Grid
+                        CalendarGridView(month: currentMonth)
+                    }
+                    .scaleEffect(scaleFactor)
+                    .frame(minWidth: geometry.size.width * scaleFactor, 
+                           minHeight: geometry.size.height * scaleFactor)
+                }
+                .gesture(
+                    MagnificationGesture()
+                        .onChanged { value in
+                            scaleFactor = max(0.5, min(3.0, value))
+                        }
                 )
-                .environment(\.managedObjectContext, viewContext)
-                
-                Spacer()
-            }
-            .navigationTitle("Provider Schedule")
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button(isAdminMode ? "Admin Mode" : "View Mode") {
-                        isAdminMode.toggle()
-                    }
-                    .foregroundColor(isAdminMode ? .red : .blue)
-                }
-                
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    NavigationLink("Manage") {
-                        ManagementView()
-                            .environment(\.managedObjectContext, viewContext)
-                    }
-                }
             }
         }
     }
     
-    private var monthNavigationHeader: some View {
-        HStack {
-            Button(action: previousMonth) {
-                Image(systemName: "chevron.left")
-                    .font(.title2)
-            }
-            .disabled(!canGoPreviousMonth)
-            
-            Spacer()
-            
-            VStack {
-                Text(monthYearFormatter.string(from: currentMonth))
-                    .font(.title2)
-                    .fontWeight(.semibold)
-                Text("3-Month Forward View")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-            
-            Spacer()
-            
-            Button(action: nextMonth) {
-                Image(systemName: "chevron.right")
-                    .font(.title2)
-            }
-            .disabled(!canGoNextMonth)
-        }
-        .padding()
-    }
-    
-    private var monthYearFormatter: DateFormatter {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMMM yyyy"
-        return formatter
-    }
-    
-    private var canGoPreviousMonth: Bool {
+    private func canGoToPreviousMonth() -> Bool {
         let calendar = Calendar.current
-        let thisMonth = calendar.startOfDay(for: Date())
-        let displayMonth = calendar.startOfDay(for: currentMonth)
-        return displayMonth > thisMonth
+        let currentMonthStart = calendar.dateInterval(of: .month, for: Date())?.start ?? Date()
+        let proposedMonth = calendar.date(byAdding: .month, value: -1, to: currentMonth) ?? currentMonth
+        return proposedMonth >= currentMonthStart
     }
     
-    private var canGoNextMonth: Bool {
+    private func canGoToNextMonth() -> Bool {
         let calendar = Calendar.current
-        let futureLimit = calendar.date(byAdding: .month, value: 3, to: Date()) ?? Date()
-        return currentMonth < futureLimit
+        let threeMonthsFromNow = calendar.date(byAdding: .month, value: 3, to: Date()) ?? Date()
+        let proposedMonth = calendar.date(byAdding: .month, value: 1, to: currentMonth) ?? currentMonth
+        return proposedMonth < threeMonthsFromNow
     }
     
     private func previousMonth() {
@@ -124,380 +95,279 @@ struct ContentView: View {
             currentMonth = newMonth
         }
     }
-}
-
-struct CalendarMonthView: View {
-    let currentMonth: Date
-    let providers: FetchedResults<Provider>
-    let locations: FetchedResults<Location>
-    let isAdminMode: Bool
     
-    @Environment(\.managedObjectContext) private var viewContext
-    
-    // Fetch monthly notes for current month
-    @FetchRequest var monthlyNotes: FetchedResults<MonthlyNotes>
-    
-    // Fetch daily schedules for current month
-    @FetchRequest var dailySchedules: FetchedResults<DailySchedule>
-    
-    init(currentMonth: Date, providers: FetchedResults<Provider>, locations: FetchedResults<Location>, isAdminMode: Bool) {
-        self.currentMonth = currentMonth
-        self.providers = providers
-        self.locations = locations
-        self.isAdminMode = isAdminMode
-        
-        let calendar = Calendar.current
-        let month = calendar.component(.month, from: currentMonth)
-        let year = calendar.component(.year, from: currentMonth)
-        
-        // Fetch monthly notes for this month/year
-        _monthlyNotes = FetchRequest<MonthlyNotes>(
-            sortDescriptors: [],
-            predicate: NSPredicate(format: "month == %d AND year == %d", month, year)
-        )
-        
-        // Fetch daily schedules for this month
-        let startOfMonth = calendar.dateInterval(of: .month, for: currentMonth)?.start ?? currentMonth
-        let endOfMonth = calendar.dateInterval(of: .month, for: currentMonth)?.end ?? currentMonth
-        
-        _dailySchedules = FetchRequest<DailySchedule>(
-            sortDescriptors: [NSSortDescriptor(keyPath: \DailySchedule.date, ascending: true)],
-            predicate: NSPredicate(format: "date >= %@ AND date < %@", startOfMonth as NSDate, endOfMonth as NSDate)
-        )
-    }
-    
-    var body: some View {
-        VStack(spacing: 8) {
-            // Monthly notes section (3 editable lines at top-left)
-            monthlyNotesSection
-            
-            // Days of week header
-            daysOfWeekHeader
-            
-            // Calendar grid
-            calendarGrid
-        }
-        .padding()
-    }
-    
-    private var monthlyNotesSection: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 4) {
-                ForEach(1...3, id: \.self) { lineNumber in
-                    MonthlyNoteLineView(
-                        monthlyNotes: monthlyNotes.first,
-                        lineNumber: lineNumber,
-                        isAdminMode: isAdminMode,
-                        currentMonth: currentMonth
-                    )
-                    .environment(\.managedObjectContext, viewContext)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            
-            Spacer()
-        }
-        .padding(.bottom, 16)
-    }
-    
-    private var daysOfWeekHeader: some View {
-        HStack {
-            ForEach(Calendar.current.shortWeekdaySymbols, id: \.self) { day in
-                Text(day)
-                    .font(.headline)
-                    .fontWeight(.semibold)
-                    .frame(maxWidth: .infinity)
-            }
-        }
-    }
-    
-    private var calendarGrid: some View {
-        let calendar = Calendar.current
-        let monthInterval = calendar.dateInterval(of: .month, for: currentMonth)
-        let monthFirstWeekday = calendar.component(.weekday, from: monthInterval?.start ?? currentMonth)
-        let daysInMonth = calendar.range(of: .day, in: .month, for: currentMonth)?.count ?? 30
-        
-        return LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 1), count: 7), spacing: 1) {
-            // Empty cells for days before month starts
-            ForEach(1..<monthFirstWeekday, id: \.self) { _ in
-                Rectangle()
-                    .fill(Color.clear)
-                    .frame(height: 80)
-            }
-            
-            // Days of the month
-            ForEach(1...daysInMonth, id: \.self) { day in
-                if let date = calendar.date(byAdding: .day, value: day - 1, to: monthInterval?.start ?? currentMonth) {
-                    DayScheduleView(
-                        date: date,
-                        schedule: dailySchedules.first { Calendar.current.isDate($0.date ?? Date(), inSameDayAs: date) },
-                        providers: providers,
-                        locations: locations,
-                        isAdminMode: isAdminMode
-                    )
-                    .environment(\.managedObjectContext, viewContext)
-                }
-            }
-        }
+    private func monthYearString(from date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMMM yyyy"
+        return formatter.string(from: date)
     }
 }
 
-struct MonthlyNoteLineView: View {
-    let monthlyNotes: MonthlyNotes?
-    let lineNumber: Int
-    let isAdminMode: Bool
-    let currentMonth: Date
-    
+struct MonthlyNotesView: View {
+    let month: Date
     @Environment(\.managedObjectContext) private var viewContext
-    @State private var text: String = ""
-    @State private var isEditing = false
+    
+    @State private var line1 = ""
+    @State private var line2 = ""
+    @State private var line3 = ""
     
     var body: some View {
-        if isAdminMode {
-            TextField("Monthly note line \(lineNumber)", text: $text, onCommit: saveChanges)
-                .textFieldStyle(RoundedBorderTextFieldStyle())
-                .font(.caption)
-        } else {
-            Text(text.isEmpty ? "—" : text)
-                .font(.caption)
-                .foregroundColor(text.isEmpty ? .secondary : .primary)
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Monthly Notes")
+                .font(.headline)
+                .fontWeight(.bold)
+            
+            VStack(spacing: 4) {
+                TextField("Line 1", text: $line1)
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .onChange(of: line1) { _, newValue in
+                        saveMonthlyNotes()
+                    }
+                
+                TextField("Line 2", text: $line2)
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .onChange(of: line2) { _, newValue in
+                        saveMonthlyNotes()
+                    }
+                
+                TextField("Line 3", text: $line3)
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .onChange(of: line3) { _, newValue in
+                        saveMonthlyNotes()
+                    }
+            }
+        }
+        .padding(.horizontal, 20)
+        .onAppear {
+            loadMonthlyNotes()
+        }
+        .onChange(of: month) { _, _ in
+            loadMonthlyNotes()
         }
     }
     
-    private func saveChanges() {
+    private func loadMonthlyNotes() {
         let calendar = Calendar.current
-        let month = calendar.component(.month, from: currentMonth)
-        let year = calendar.component(.year, from: currentMonth)
+        let year = calendar.component(.year, from: month)
+        let monthNum = calendar.component(.month, from: month)
         
-        let notes = monthlyNotes ?? {
-            let newNotes = MonthlyNotes(context: viewContext)
-            newNotes.id = UUID()
-            newNotes.month = Int16(month)
-            newNotes.year = Int16(year)
-            return newNotes
-        }()
-        
-        switch lineNumber {
-        case 1: notes.line1 = text
-        case 2: notes.line2 = text
-        case 3: notes.line3 = text
-        default: break
-        }
+        let request: NSFetchRequest<MonthlyNotes> = MonthlyNotes.fetchRequest()
+        request.predicate = NSPredicate(format: "year == %d AND month == %d", year, monthNum)
         
         do {
+            let notes = try viewContext.fetch(request)
+            if let monthlyNotes = notes.first {
+                line1 = monthlyNotes.line1 ?? ""
+                line2 = monthlyNotes.line2 ?? ""
+                line3 = monthlyNotes.line3 ?? ""
+            } else {
+                line1 = ""
+                line2 = ""
+                line3 = ""
+            }
+        } catch {
+            print("Error loading monthly notes: \(error)")
+        }
+    }
+    
+    private func saveMonthlyNotes() {
+        let calendar = Calendar.current
+        let year = calendar.component(.year, from: month)
+        let monthNum = calendar.component(.month, from: month)
+        
+        let request: NSFetchRequest<MonthlyNotes> = MonthlyNotes.fetchRequest()
+        request.predicate = NSPredicate(format: "year == %d AND month == %d", year, monthNum)
+        
+        do {
+            let notes = try viewContext.fetch(request)
+            let monthlyNotes: MonthlyNotes
+            
+            if let existingNotes = notes.first {
+                monthlyNotes = existingNotes
+            } else {
+                monthlyNotes = MonthlyNotes(context: viewContext)
+                monthlyNotes.id = UUID()
+                monthlyNotes.year = Int32(year)
+                monthlyNotes.month = Int32(monthNum)
+            }
+            
+            monthlyNotes.line1 = line1
+            monthlyNotes.line2 = line2
+            monthlyNotes.line3 = line3
+            
             try viewContext.save()
         } catch {
             print("Error saving monthly notes: \(error)")
         }
     }
-    
-    private func loadText() {
-        guard let notes = monthlyNotes else { return }
-        switch lineNumber {
-        case 1: text = notes.line1 ?? ""
-        case 2: text = notes.line2 ?? ""
-        case 3: text = notes.line3 ?? ""
-        default: break
-        }
-    }
-    
-    init(monthlyNotes: MonthlyNotes?, lineNumber: Int, isAdminMode: Bool, currentMonth: Date) {
-        self.monthlyNotes = monthlyNotes
-        self.lineNumber = lineNumber
-        self.isAdminMode = isAdminMode
-        self.currentMonth = currentMonth
-        
-        let initialText: String
-        switch lineNumber {
-        case 1: initialText = monthlyNotes?.line1 ?? ""
-        case 2: initialText = monthlyNotes?.line2 ?? ""
-        case 3: initialText = monthlyNotes?.line3 ?? ""
-        default: initialText = ""
-        }
-        _text = State(initialValue: initialText)
-    }
 }
 
-struct DayScheduleView: View {
-    let date: Date
-    let schedule: DailySchedule?
-    let providers: FetchedResults<Provider>
-    let locations: FetchedResults<Location>
-    let isAdminMode: Bool
+struct CalendarGridView: View {
+    let month: Date
     
-    @Environment(\.managedObjectContext) private var viewContext
-    
-    private var dayFormatter: DateFormatter {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "d"
-        return formatter
-    }
-    
-    private var weekdayFormatter: DateFormatter {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "E"
-        return formatter
-    }
-    
-    private var isToday: Bool {
-        Calendar.current.isDate(date, inSameDayAs: Date())
-    }
-    
-    private var isPastDate: Bool {
-        date < Calendar.current.startOfDay(for: Date())
-    }
+    private let calendar = Calendar.current
+    private let weekdaySymbols = Calendar.current.shortWeekdaySymbols
     
     var body: some View {
-        VStack(spacing: 2) {
-            // Day number and weekday
-            VStack(spacing: 0) {
-                Text(dayFormatter.string(from: date))
-                    .font(.headline)
-                    .fontWeight(isToday ? .bold : .medium)
-                    .foregroundColor(isToday ? .white : (isPastDate ? .secondary : .primary))
-                
-                Text(weekdayFormatter.string(from: date))
-                    .font(.caption2)
-                    .foregroundColor(isToday ? .white : .secondary)
+        VStack(spacing: 0) {
+            // Weekday Headers
+            HStack(spacing: 0) {
+                ForEach(weekdaySymbols, id: \.self) { weekday in
+                    Text(weekday)
+                        .font(.headline)
+                        .fontWeight(.bold)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(Color(.systemGray5))
+                }
             }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 4)
-            .background(isToday ? Color.blue : Color.clear)
-            .cornerRadius(4)
             
-            // Three editable lines for scheduling
-            VStack(spacing: 1) {
-                ForEach(1...3, id: \.self) { lineNumber in
-                    DayScheduleLineView(
-                        schedule: schedule,
-                        lineNumber: lineNumber,
-                        isAdminMode: isAdminMode,
-                        date: date,
-                        providers: providers,
-                        locations: locations
-                    )
-                    .environment(\.managedObjectContext, viewContext)
+            // Calendar Days Grid
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 1), count: 7), spacing: 1) {
+                ForEach(daysInMonth(), id: \.self) { date in
+                    if let date = date {
+                        DayCell(date: date)
+                            .aspectRatio(1.2, contentMode: .fit)
+                    } else {
+                        Color.clear
+                            .aspectRatio(1.2, contentMode: .fit)
+                    }
                 }
             }
         }
-        .padding(4)
-        .frame(height: 80)
-        .background(Color(.systemGray6))
-        .cornerRadius(4)
-        .opacity(isPastDate ? 0.5 : 1.0)
+        .padding(.horizontal, 20)
+    }
+    
+    private func daysInMonth() -> [Date?] {
+        guard let monthInterval = calendar.dateInterval(of: .month, for: month) else { return [] }
+        
+        let firstOfMonth = monthInterval.start
+        let firstWeekday = calendar.component(.weekday, from: firstOfMonth)
+        let leadingEmptyDays = (firstWeekday - calendar.firstWeekday + 7) % 7
+        
+        var days: [Date?] = Array(repeating: nil, count: leadingEmptyDays)
+        
+        let numberOfDays = calendar.range(of: .day, in: .month, for: month)?.count ?? 0
+        
+        for day in 1...numberOfDays {
+            if let date = calendar.date(byAdding: .day, value: day - 1, to: firstOfMonth) {
+                days.append(date)
+            }
+        }
+        
+        // Fill remaining cells to complete the grid
+        while days.count % 7 != 0 {
+            days.append(nil)
+        }
+        
+        return days
     }
 }
 
-struct DayScheduleLineView: View {
-    let schedule: DailySchedule?
-    let lineNumber: Int
-    let isAdminMode: Bool
+struct DayCell: View {
     let date: Date
-    let providers: FetchedResults<Provider>
-    let locations: FetchedResults<Location>
-    
     @Environment(\.managedObjectContext) private var viewContext
-    @State private var text: String = ""
+    
+    @State private var line1 = ""
+    @State private var line2 = ""
+    @State private var line3 = ""
+    
+    private var dayNumber: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "d"
+        return formatter.string(from: date)
+    }
     
     var body: some View {
-        if isAdminMode {
-            TextField("", text: $text, onCommit: saveChanges)
-                .font(.caption2)
-                .textFieldStyle(PlainTextFieldStyle())
-                .frame(height: 16)
-        } else {
-            Text(text.isEmpty ? "—" : text)
-                .font(.caption2)
-                .foregroundColor(text.isEmpty ? .secondary : .primary)
-                .frame(height: 16)
-                .frame(maxWidth: .infinity, alignment: .leading)
+        VStack(alignment: .leading, spacing: 3) {
+            // Day Number
+            Text(dayNumber)
+                .font(.caption)
+                .fontWeight(.bold)
+                .padding(.leading, 6)
+                .padding(.top, 4)
+            
+            // 3 editable lines with visible borders
+            VStack(spacing: 2) {
+                TextField("Schedule line 1", text: $line1)
+                    .font(.caption2)
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .onChange(of: line1) { _, newValue in
+                        saveDailySchedule()
+                    }
+                
+                TextField("Schedule line 2", text: $line2)
+                    .font(.caption2)
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .onChange(of: line2) { _, newValue in
+                        saveDailySchedule()
+                    }
+                
+                TextField("Schedule line 3", text: $line3)
+                    .font(.caption2)
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .onChange(of: line3) { _, newValue in
+                        saveDailySchedule()
+                    }
+            }
+            .padding(.horizontal, 4)
+            .padding(.bottom, 4)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(Color(.systemGray6))
+        .overlay(
+            Rectangle()
+                .stroke(Color(.systemGray3), lineWidth: 1)
+        )
+        .onAppear {
+            loadDailySchedule()
         }
     }
     
-    private func saveChanges() {
-        let dailySchedule = schedule ?? {
-            let newSchedule = DailySchedule(context: viewContext)
-            newSchedule.id = UUID()
-            newSchedule.date = date
-            return newSchedule
-        }()
-        
-        switch lineNumber {
-        case 1: dailySchedule.line1 = text
-        case 2: dailySchedule.line2 = text
-        case 3: dailySchedule.line3 = text
-        default: break
-        }
+    private func loadDailySchedule() {
+        let request: NSFetchRequest<DailySchedule> = DailySchedule.fetchRequest()
+        request.predicate = NSPredicate(format: "date == %@", date as NSDate)
         
         do {
+            let schedules = try viewContext.fetch(request)
+            if let schedule = schedules.first {
+                line1 = schedule.line1 ?? ""
+                line2 = schedule.line2 ?? ""
+                line3 = schedule.line3 ?? ""
+            } else {
+                line1 = ""
+                line2 = ""
+                line3 = ""
+            }
+        } catch {
+            print("Error loading daily schedule: \(error)")
+        }
+    }
+    
+    private func saveDailySchedule() {
+        let request: NSFetchRequest<DailySchedule> = DailySchedule.fetchRequest()
+        request.predicate = NSPredicate(format: "date == %@", date as NSDate)
+        
+        do {
+            let schedules = try viewContext.fetch(request)
+            let schedule: DailySchedule
+            
+            if let existingSchedule = schedules.first {
+                schedule = existingSchedule
+            } else {
+                schedule = DailySchedule(context: viewContext)
+                schedule.id = UUID()
+                schedule.date = date
+            }
+            
+            schedule.line1 = line1
+            schedule.line2 = line2
+            schedule.line3 = line3
+            
             try viewContext.save()
         } catch {
             print("Error saving daily schedule: \(error)")
         }
-    }
-    
-    init(schedule: DailySchedule?, lineNumber: Int, isAdminMode: Bool, date: Date, providers: FetchedResults<Provider>, locations: FetchedResults<Location>) {
-        self.schedule = schedule
-        self.lineNumber = lineNumber
-        self.isAdminMode = isAdminMode
-        self.date = date
-        self.providers = providers
-        self.locations = locations
-        
-        let initialText: String
-        switch lineNumber {
-        case 1: initialText = schedule?.line1 ?? ""
-        case 2: initialText = schedule?.line2 ?? ""
-        case 3: initialText = schedule?.line3 ?? ""
-        default: initialText = ""
-        }
-        _text = State(initialValue: initialText)
-    }
-}
-
-struct ManagementView: View {
-    @Environment(\.managedObjectContext) private var viewContext
-    
-    @FetchRequest(
-        sortDescriptors: [NSSortDescriptor(keyPath: \Provider.name, ascending: true)],
-        animation: .default)
-    private var providers: FetchedResults<Provider>
-    
-    @FetchRequest(
-        sortDescriptors: [NSSortDescriptor(keyPath: \Location.name, ascending: true)],
-        animation: .default)
-    private var locations: FetchedResults<Location>
-    
-    var body: some View {
-        List {
-            Section("Providers (\(providers.count)/9)") {
-                ForEach(providers) { provider in
-                    VStack(alignment: .leading) {
-                        Text(provider.name ?? "Unknown")
-                            .font(.headline)
-                        Text(provider.specialty ?? "No specialty")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                }
-            }
-            
-            Section("Locations (\(locations.count)/2)") {
-                ForEach(locations) { location in
-                    VStack(alignment: .leading) {
-                        Text(location.name ?? "Unknown")
-                            .font(.headline)
-                        if let address = location.address {
-                            Text(address)
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                }
-            }
-        }
-        .navigationTitle("Manage")
-        .navigationBarTitleDisplayMode(.inline)
     }
 }
 
