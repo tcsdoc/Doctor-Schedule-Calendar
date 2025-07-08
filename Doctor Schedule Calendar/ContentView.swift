@@ -7,6 +7,7 @@
 
 import SwiftUI
 import CoreData
+import UIKit
 
 struct ContentView: View {
     @Environment(\.managedObjectContext) private var viewContext
@@ -32,6 +33,14 @@ struct ContentView: View {
                         .fontWeight(.bold)
                     
                     Spacer()
+                    
+                    // Print Button
+                    Button(action: printCalendar) {
+                        Image(systemName: "printer")
+                            .font(.title2)
+                            .foregroundColor(.blue)
+                    }
+                    .padding(.trailing, 10)
                     
                     Button(action: nextMonth) {
                         Image(systemName: "chevron.right")
@@ -100,6 +109,204 @@ struct ContentView: View {
         let formatter = DateFormatter()
         formatter.dateFormat = "MMMM yyyy"
         return formatter.string(from: date)
+    }
+    
+    private func printCalendar() {
+        let printInfo = UIPrintInfo(dictionary: nil)
+        printInfo.outputType = UIPrintInfo.OutputType.general
+        printInfo.jobName = "Provider Schedule Calendar"
+        
+        let printController = UIPrintInteractionController.shared
+        printController.printInfo = printInfo
+        printController.printingItem = generatePrintableCalendar()
+        
+        printController.present(animated: true) { (controller, completed, error) in
+            if let error = error {
+                print("Print error: \(error.localizedDescription)")
+            }
+        }
+    }
+    
+    private func generatePrintableCalendar() -> Data {
+        var htmlContent = """
+        <html>
+        <head>
+            <style>
+                body { font-family: Arial, sans-serif; margin: 20px; }
+                .header { text-align: center; font-size: 24px; font-weight: bold; margin-bottom: 30px; }
+                .month-section { page-break-before: always; margin-bottom: 40px; }
+                .month-section:first-child { page-break-before: auto; }
+                .month-title { font-size: 20px; font-weight: bold; margin-bottom: 15px; border-bottom: 2px solid #333; }
+                .monthly-notes { background-color: #f5f5f5; padding: 10px; margin-bottom: 20px; border-radius: 5px; }
+                .notes-title { font-weight: bold; margin-bottom: 8px; }
+                .calendar-table { width: 100%; border-collapse: collapse; }
+                .calendar-table th, .calendar-table td { border: 1px solid #ccc; padding: 8px; vertical-align: top; }
+                .calendar-table th { background-color: #e9e9e9; text-align: center; font-weight: bold; }
+                .calendar-table td { height: 80px; width: 14.28%; }
+                .day-number { font-weight: bold; margin-bottom: 5px; }
+                .day-content { font-size: 11px; line-height: 1.2; }
+                .empty-cell { background-color: #f9f9f9; }
+            </style>
+        </head>
+        <body>
+            <div class="header">Provider Schedule Calendar</div>
+        """
+        
+        // Generate 3 months: current + 2 future
+        for monthOffset in 0..<3 {
+            guard let targetMonth = Calendar.current.date(byAdding: .month, value: monthOffset, to: currentMonth) else { continue }
+            
+            htmlContent += generateMonthHTML(for: targetMonth)
+        }
+        
+        htmlContent += """
+        </body>
+        </html>
+        """
+        
+        return htmlContent.data(using: .utf8) ?? Data()
+    }
+    
+    private func generateMonthHTML(for month: Date) -> String {
+        let calendar = Calendar.current
+        let monthFormatter = DateFormatter()
+        monthFormatter.dateFormat = "MMMM yyyy"
+        
+        var html = """
+        <div class="month-section">
+            <div class="month-title">\(monthFormatter.string(from: month))</div>
+        """
+        
+        // Add monthly notes
+        html += generateMonthlyNotesHTML(for: month)
+        
+        // Add calendar grid
+        html += generateCalendarGridHTML(for: month)
+        
+        html += "</div>"
+        
+        return html
+    }
+    
+    private func generateMonthlyNotesHTML(for month: Date) -> String {
+        let calendar = Calendar.current
+        let year = calendar.component(.year, from: month)
+        let monthNum = calendar.component(.month, from: month)
+        
+        let request: NSFetchRequest<MonthlyNotes> = MonthlyNotes.fetchRequest()
+        request.predicate = NSPredicate(format: "year == %d AND month == %d", year, monthNum)
+        
+        var notesHTML = """
+        <div class="monthly-notes">
+            <div class="notes-title">Monthly Notes:</div>
+        """
+        
+        do {
+            let notes = try viewContext.fetch(request)
+            if let monthlyNotes = notes.first {
+                let line1 = monthlyNotes.line1?.isEmpty == false ? monthlyNotes.line1! : "—"
+                let line2 = monthlyNotes.line2?.isEmpty == false ? monthlyNotes.line2! : "—"
+                let line3 = monthlyNotes.line3?.isEmpty == false ? monthlyNotes.line3! : "—"
+                
+                notesHTML += """
+                <div>1. \(line1)</div>
+                <div>2. \(line2)</div>
+                <div>3. \(line3)</div>
+                """
+            } else {
+                notesHTML += """
+                <div>1. —</div>
+                <div>2. —</div>
+                <div>3. —</div>
+                """
+            }
+        } catch {
+            notesHTML += "<div>Error loading monthly notes</div>"
+        }
+        
+        notesHTML += "</div>"
+        
+        return notesHTML
+    }
+    
+    private func generateCalendarGridHTML(for month: Date) -> String {
+        let calendar = Calendar.current
+        let weekdaySymbols = calendar.shortWeekdaySymbols
+        
+        var html = """
+        <table class="calendar-table">
+            <tr>
+        """
+        
+        // Add weekday headers
+        for weekday in weekdaySymbols {
+            html += "<th>\(weekday)</th>"
+        }
+        html += "</tr>"
+        
+        // Get month info
+        guard let monthInterval = calendar.dateInterval(of: .month, for: month),
+              let firstWeekday = calendar.dateInterval(of: .weekOfYear, for: monthInterval.start)?.start else {
+            return html + "</table>"
+        }
+        
+        let daysInMonth = calendar.range(of: .day, in: .month, for: month)?.count ?? 30
+        let firstWeekdayOfMonth = calendar.component(.weekday, from: monthInterval.start)
+        
+        var dayOfMonth = 1 - (firstWeekdayOfMonth - 1)
+        
+        // Generate calendar rows
+        for _ in 0..<6 {
+            html += "<tr>"
+            
+            for _ in 1...7 {
+                if dayOfMonth < 1 || dayOfMonth > daysInMonth {
+                    html += "<td class='empty-cell'></td>"
+                } else {
+                    let cellDate = calendar.date(byAdding: .day, value: dayOfMonth - 1, to: monthInterval.start)!
+                    html += generateDayCellHTML(for: cellDate, dayNumber: dayOfMonth)
+                }
+                dayOfMonth += 1
+            }
+            
+            html += "</tr>"
+            
+            if dayOfMonth > daysInMonth {
+                break
+            }
+        }
+        
+        html += "</table>"
+        
+        return html
+    }
+    
+    private func generateDayCellHTML(for date: Date, dayNumber: Int) -> String {
+        let request: NSFetchRequest<DailySchedule> = DailySchedule.fetchRequest()
+        let startOfDay = Calendar.current.startOfDay(for: date)
+        let endOfDay = Calendar.current.date(byAdding: .day, value: 1, to: startOfDay)!
+        request.predicate = NSPredicate(format: "date >= %@ AND date < %@", startOfDay as NSDate, endOfDay as NSDate)
+        
+        var cellContent = "<div class='day-number'>\(dayNumber)</div><div class='day-content'>"
+        
+        do {
+            let schedules = try viewContext.fetch(request)
+            if let schedule = schedules.first {
+                let line1 = schedule.line1?.isEmpty == false ? schedule.line1! : ""
+                let line2 = schedule.line2?.isEmpty == false ? schedule.line2! : ""
+                let line3 = schedule.line3?.isEmpty == false ? schedule.line3! : ""
+                
+                if !line1.isEmpty { cellContent += "\(line1)<br>" }
+                if !line2.isEmpty { cellContent += "\(line2)<br>" }
+                if !line3.isEmpty { cellContent += "\(line3)<br>" }
+            }
+        } catch {
+            cellContent += "Error loading schedule"
+        }
+        
+        cellContent += "</div>"
+        
+        return "<td>\(cellContent)</td>"
     }
 }
 
