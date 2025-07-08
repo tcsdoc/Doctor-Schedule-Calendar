@@ -112,13 +112,16 @@ struct ContentView: View {
     }
     
     private func printCalendar() {
+        // Generate HTML on main thread with all data
+        let htmlData = generatePrintableCalendar()
+        
         let printInfo = UIPrintInfo(dictionary: nil)
         printInfo.outputType = UIPrintInfo.OutputType.general
         printInfo.jobName = "Provider Schedule Calendar"
         
         let printController = UIPrintInteractionController.shared
         printController.printInfo = printInfo
-        printController.printingItem = generatePrintableCalendar()
+        printController.printingItem = htmlData
         
         printController.present(animated: true) { (controller, completed, error) in
             if let error = error {
@@ -128,6 +131,55 @@ struct ContentView: View {
     }
     
     private func generatePrintableCalendar() -> Data {
+        // Fetch all data on main thread first
+        var monthlyNotesData: [String: (String, String, String)] = [:]
+        var dailyScheduleData: [String: (String, String, String)] = [:]
+        
+        let calendar = Calendar.current
+        
+        // Fetch monthly notes and daily schedules for 3 months
+        for monthOffset in 0..<3 {
+            guard let targetMonth = calendar.date(byAdding: .month, value: monthOffset, to: currentMonth) else { continue }
+            
+            // Fetch monthly notes
+            let year = calendar.component(.year, from: targetMonth)
+            let monthNum = calendar.component(.month, from: targetMonth)
+            let monthKey = "\(year)-\(monthNum)"
+            
+            let monthlyRequest: NSFetchRequest<MonthlyNotes> = MonthlyNotes.fetchRequest()
+            monthlyRequest.predicate = NSPredicate(format: "year == %d AND month == %d", year, monthNum)
+            
+            do {
+                let monthlyNotes = try viewContext.fetch(monthlyRequest)
+                if let notes = monthlyNotes.first {
+                    monthlyNotesData[monthKey] = (notes.line1 ?? "", notes.line2 ?? "", notes.line3 ?? "")
+                } else {
+                    monthlyNotesData[monthKey] = ("", "", "")
+                }
+            } catch {
+                monthlyNotesData[monthKey] = ("", "", "")
+            }
+            
+            // Fetch daily schedules for the entire month
+            guard let monthInterval = calendar.dateInterval(of: .month, for: targetMonth) else { continue }
+            let startDate = monthInterval.start
+            let endDate = monthInterval.end
+            
+            let dailyRequest: NSFetchRequest<DailySchedule> = DailySchedule.fetchRequest()
+            dailyRequest.predicate = NSPredicate(format: "date >= %@ AND date < %@", startDate as NSDate, endDate as NSDate)
+            
+            do {
+                let dailySchedules = try viewContext.fetch(dailyRequest)
+                for schedule in dailySchedules {
+                    let dayKey = calendar.startOfDay(for: schedule.date!).timeIntervalSince1970
+                    dailyScheduleData[String(dayKey)] = (schedule.line1 ?? "", schedule.line2 ?? "", schedule.line3 ?? "")
+                }
+            } catch {
+                print("Error fetching daily schedules: \(error)")
+            }
+        }
+        
+        // Generate HTML with fetched data
         var htmlContent = """
         <html>
         <head>
@@ -154,9 +206,9 @@ struct ContentView: View {
         
         // Generate 3 months: current + 2 future
         for monthOffset in 0..<3 {
-            guard let targetMonth = Calendar.current.date(byAdding: .month, value: monthOffset, to: currentMonth) else { continue }
+            guard let targetMonth = calendar.date(byAdding: .month, value: monthOffset, to: currentMonth) else { continue }
             
-            htmlContent += generateMonthHTML(for: targetMonth)
+            htmlContent += generateMonthHTML(for: targetMonth, monthlyNotes: monthlyNotesData, dailySchedules: dailyScheduleData)
         }
         
         htmlContent += """
@@ -167,7 +219,7 @@ struct ContentView: View {
         return htmlContent.data(using: .utf8) ?? Data()
     }
     
-    private func generateMonthHTML(for month: Date) -> String {
+    private func generateMonthHTML(for month: Date, monthlyNotes: [String: (String, String, String)], dailySchedules: [String: (String, String, String)]) -> String {
         let calendar = Calendar.current
         let monthFormatter = DateFormatter()
         monthFormatter.dateFormat = "MMMM yyyy"
@@ -178,50 +230,43 @@ struct ContentView: View {
         """
         
         // Add monthly notes
-        html += generateMonthlyNotesHTML(for: month)
+        html += generateMonthlyNotesHTML(for: month, monthlyNotes: monthlyNotes)
         
         // Add calendar grid
-        html += generateCalendarGridHTML(for: month)
+        html += generateCalendarGridHTML(for: month, dailySchedules: dailySchedules)
         
         html += "</div>"
         
         return html
     }
     
-    private func generateMonthlyNotesHTML(for month: Date) -> String {
+    private func generateMonthlyNotesHTML(for month: Date, monthlyNotes: [String: (String, String, String)]) -> String {
         let calendar = Calendar.current
         let year = calendar.component(.year, from: month)
         let monthNum = calendar.component(.month, from: month)
-        
-        let request: NSFetchRequest<MonthlyNotes> = MonthlyNotes.fetchRequest()
-        request.predicate = NSPredicate(format: "year == %d AND month == %d", year, monthNum)
+        let monthKey = "\(year)-\(monthNum)"
         
         var notesHTML = """
         <div class="monthly-notes">
             <div class="notes-title">Monthly Notes:</div>
         """
         
-        do {
-            let notes = try viewContext.fetch(request)
-            if let monthlyNotes = notes.first {
-                let line1 = monthlyNotes.line1?.isEmpty == false ? monthlyNotes.line1! : "—"
-                let line2 = monthlyNotes.line2?.isEmpty == false ? monthlyNotes.line2! : "—"
-                let line3 = monthlyNotes.line3?.isEmpty == false ? monthlyNotes.line3! : "—"
-                
-                notesHTML += """
-                <div>1. \(line1)</div>
-                <div>2. \(line2)</div>
-                <div>3. \(line3)</div>
-                """
-            } else {
-                notesHTML += """
-                <div>1. —</div>
-                <div>2. —</div>
-                <div>3. —</div>
-                """
-            }
-        } catch {
-            notesHTML += "<div>Error loading monthly notes</div>"
+        if let notes = monthlyNotes[monthKey] {
+            let line1 = notes.0.isEmpty ? "—" : notes.0
+            let line2 = notes.1.isEmpty ? "—" : notes.1
+            let line3 = notes.2.isEmpty ? "—" : notes.2
+            
+            notesHTML += """
+            <div>1. \(line1)</div>
+            <div>2. \(line2)</div>
+            <div>3. \(line3)</div>
+            """
+        } else {
+            notesHTML += """
+            <div>1. —</div>
+            <div>2. —</div>
+            <div>3. —</div>
+            """
         }
         
         notesHTML += "</div>"
@@ -229,7 +274,7 @@ struct ContentView: View {
         return notesHTML
     }
     
-    private func generateCalendarGridHTML(for month: Date) -> String {
+    private func generateCalendarGridHTML(for month: Date, dailySchedules: [String: (String, String, String)]) -> String {
         let calendar = Calendar.current
         let weekdaySymbols = calendar.shortWeekdaySymbols
         
@@ -245,8 +290,7 @@ struct ContentView: View {
         html += "</tr>"
         
         // Get month info
-        guard let monthInterval = calendar.dateInterval(of: .month, for: month),
-              let firstWeekday = calendar.dateInterval(of: .weekOfYear, for: monthInterval.start)?.start else {
+        guard let monthInterval = calendar.dateInterval(of: .month, for: month) else {
             return html + "</table>"
         }
         
@@ -264,7 +308,7 @@ struct ContentView: View {
                     html += "<td class='empty-cell'></td>"
                 } else {
                     let cellDate = calendar.date(byAdding: .day, value: dayOfMonth - 1, to: monthInterval.start)!
-                    html += generateDayCellHTML(for: cellDate, dayNumber: dayOfMonth)
+                    html += generateDayCellHTML(for: cellDate, dayNumber: dayOfMonth, dailySchedules: dailySchedules)
                 }
                 dayOfMonth += 1
             }
@@ -281,27 +325,20 @@ struct ContentView: View {
         return html
     }
     
-    private func generateDayCellHTML(for date: Date, dayNumber: Int) -> String {
-        let request: NSFetchRequest<DailySchedule> = DailySchedule.fetchRequest()
+    private func generateDayCellHTML(for date: Date, dayNumber: Int, dailySchedules: [String: (String, String, String)]) -> String {
         let startOfDay = Calendar.current.startOfDay(for: date)
-        let endOfDay = Calendar.current.date(byAdding: .day, value: 1, to: startOfDay)!
-        request.predicate = NSPredicate(format: "date >= %@ AND date < %@", startOfDay as NSDate, endOfDay as NSDate)
+        let dayKey = String(startOfDay.timeIntervalSince1970)
         
         var cellContent = "<div class='day-number'>\(dayNumber)</div><div class='day-content'>"
         
-        do {
-            let schedules = try viewContext.fetch(request)
-            if let schedule = schedules.first {
-                let line1 = schedule.line1?.isEmpty == false ? schedule.line1! : ""
-                let line2 = schedule.line2?.isEmpty == false ? schedule.line2! : ""
-                let line3 = schedule.line3?.isEmpty == false ? schedule.line3! : ""
-                
-                if !line1.isEmpty { cellContent += "\(line1)<br>" }
-                if !line2.isEmpty { cellContent += "\(line2)<br>" }
-                if !line3.isEmpty { cellContent += "\(line3)<br>" }
-            }
-        } catch {
-            cellContent += "Error loading schedule"
+        if let schedule = dailySchedules[dayKey] {
+            let line1 = schedule.0
+            let line2 = schedule.1
+            let line3 = schedule.2
+            
+            if !line1.isEmpty { cellContent += "\(line1)<br>" }
+            if !line2.isEmpty { cellContent += "\(line2)<br>" }
+            if !line3.isEmpty { cellContent += "\(line3)<br>" }
         }
         
         cellContent += "</div>"
