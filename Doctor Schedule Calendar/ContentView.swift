@@ -79,6 +79,7 @@ struct ContentView: View {
     }
     
     private func printCalendar() {
+        // Create a print info
         let printInfo = UIPrintInfo(dictionary: nil)
         printInfo.outputType = .general
         printInfo.jobName = "Provider Schedule Calendar"
@@ -86,18 +87,65 @@ struct ContentView: View {
         let printController = UIPrintInteractionController.shared
         printController.printInfo = printInfo
         
-        // Create a print formatter for the current view
-        let formatter = UIPrintPageRenderer()
-        formatter.addPrintFormatter(UISimpleTextPrintFormatter(text: "Provider Schedule Calendar"), startingAtPageAt: 0)
+        // Create an image of the current calendar view
+        let renderer = ImageRenderer(content: calendarPrintView)
+        renderer.scale = 2.0 // Higher resolution for printing
         
-        printController.printPageRenderer = formatter
-        
-        // Present the print dialog
-        printController.present(animated: true) { controller, completed, error in
-            if let error = error {
-                print("Print error: \(error)")
+        if let image = renderer.uiImage {
+            // Create a print formatter with the image
+            let formatter = UIPrintPageRenderer()
+            let imageFormatter = UISimpleTextPrintFormatter(text: "")
+            
+            // Add the image to the formatter
+            formatter.addPrintFormatter(imageFormatter, startingAtPageAt: 0)
+            
+            // Set up the page renderer to draw the image
+            let pageRenderer = CalendarPageRenderer(image: image)
+            printController.printPageRenderer = pageRenderer
+            
+            // Present the print dialog
+            printController.present(animated: true) { controller, completed, error in
+                if let error = error {
+                    print("Print error: \(error)")
+                }
             }
         }
+    }
+    
+    // View specifically for printing
+    private var calendarPrintView: some View {
+        VStack {
+            HStack {
+                Text("PROVIDER SCHEDULE")
+                    .font(.title)
+                    .fontWeight(.bold)
+                
+                Spacer()
+                
+                HStack {
+                    Text("Monthly Notes")
+                        .font(.headline)
+                    
+                    Text("Build 004")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                }
+            }
+            .padding()
+            
+            ScrollView {
+                LazyVStack(spacing: 20) {
+                    ForEach(months, id: \.self) { month in
+                        MonthView(month: month, 
+                                dailySchedules: dailySchedules, 
+                                monthlyNotes: monthlyNotes,
+                                viewContext: viewContext)
+                    }
+                }
+                .padding()
+            }
+        }
+        .background(Color.white)
     }
 }
 
@@ -379,6 +427,39 @@ private let monthFormatter: DateFormatter = {
     formatter.dateFormat = "MMMM yyyy"
     return formatter
 }()
+
+// Custom page renderer for printing calendar as image
+class CalendarPageRenderer: UIPrintPageRenderer {
+    private let image: UIImage
+    
+    init(image: UIImage) {
+        self.image = image
+        super.init()
+    }
+    
+    override func drawPage(at pageIndex: Int, in printableRect: CGRect) {
+        guard let context = UIGraphicsGetCurrentContext() else { return }
+        
+        // Calculate the image size to fit the printable area while maintaining aspect ratio
+        let imageSize = image.size
+        let printableSize = printableRect.size
+        
+        let scaleX = printableSize.width / imageSize.width
+        let scaleY = printableSize.height / imageSize.height
+        let scale = min(scaleX, scaleY)
+        
+        let scaledWidth = imageSize.width * scale
+        let scaledHeight = imageSize.height * scale
+        
+        let x = printableRect.origin.x + (printableSize.width - scaledWidth) / 2
+        let y = printableRect.origin.y + (printableSize.height - scaledHeight) / 2
+        
+        let drawRect = CGRect(x: x, y: y, width: scaledWidth, height: scaledHeight)
+        
+        // Draw the image
+        image.draw(in: drawRect)
+    }
+}
 
 struct ContentView_Previews: PreviewProvider {
     static var previews: some View {
