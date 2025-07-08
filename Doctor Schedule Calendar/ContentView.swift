@@ -112,8 +112,13 @@ struct ContentView: View {
     }
     
     private func printCalendar() {
-        // Generate HTML on main thread with all data
-        let htmlData = generatePrintableCalendar()
+        print("Print button tapped - generating provider schedule calendar")
+        
+        // Generate the actual calendar with provider schedules
+        guard let printImage = generateProviderCalendarImage() else {
+            print("Failed to create printable calendar image")
+            return
+        }
         
         let printInfo = UIPrintInfo(dictionary: nil)
         printInfo.outputType = UIPrintInfo.OutputType.general
@@ -121,13 +126,173 @@ struct ContentView: View {
         
         let printController = UIPrintInteractionController.shared
         printController.printInfo = printInfo
-        printController.printingItem = htmlData
+        printController.printingItem = printImage
         
         printController.present(animated: true) { (controller, completed, error) in
-            if let error = error {
-                print("Print error: \(error.localizedDescription)")
+            DispatchQueue.main.async {
+                if let error = error {
+                    print("Print error: \(error)")
+                } else {
+                    print("Print completed successfully: \(completed)")
+                }
             }
         }
+    }
+    
+    private func generateProviderCalendarImage() -> UIImage? {
+        let calendar = Calendar.current
+        let currentDate = Date()
+        
+        // Get the current month and next 2 months
+        guard let month1 = calendar.dateInterval(of: .month, for: currentDate),
+              let month2Start = calendar.date(byAdding: .month, value: 1, to: currentDate),
+              let month2 = calendar.dateInterval(of: .month, for: month2Start),
+              let month3Start = calendar.date(byAdding: .month, value: 2, to: currentDate),
+              let month3 = calendar.dateInterval(of: .month, for: month3Start) else {
+            return nil
+        }
+        
+        let months = [month1, month2, month3]
+        
+        // Create the printable content
+        var calendarText = "PROVIDER SCHEDULE CALENDAR\n"
+        calendarText += "Generated: \(currentDate.formatted(date: .abbreviated, time: .shortened))\n\n"
+        
+        for monthInterval in months {
+            let monthName = monthInterval.start.formatted(.dateTime.month(.wide).year())
+            calendarText += "\(monthName.uppercased())\n"
+            calendarText += String(repeating: "=", count: monthName.count) + "\n\n"
+            
+            // Get monthly notes for this month
+            let year = calendar.component(.year, from: monthInterval.start)
+            let monthNum = calendar.component(.month, from: monthInterval.start)
+            
+            let monthlyNotesRequest: NSFetchRequest<MonthlyNotes> = MonthlyNotes.fetchRequest()
+            monthlyNotesRequest.predicate = NSPredicate(format: "year == %d AND month == %d", year, monthNum)
+            
+            if let monthlyNotes = try? viewContext.fetch(monthlyNotesRequest).first {
+                calendarText += "Monthly Notes:\n"
+                if let line1 = monthlyNotes.line1, !line1.isEmpty { calendarText += "• \(line1)\n" }
+                if let line2 = monthlyNotes.line2, !line2.isEmpty { calendarText += "• \(line2)\n" }
+                if let line3 = monthlyNotes.line3, !line3.isEmpty { calendarText += "• \(line3)\n" }
+                calendarText += "\n"
+            }
+            
+            // Generate calendar grid
+            let firstDayOfMonth = monthInterval.start
+            let lastDayOfMonth = calendar.date(byAdding: .day, value: -1, to: monthInterval.end) ?? monthInterval.start
+            let daysInMonth = calendar.component(.day, from: lastDayOfMonth)
+            let firstWeekday = calendar.component(.weekday, from: firstDayOfMonth) - 1 // 0 = Sunday
+            
+            calendarText += "Sun  Mon  Tue  Wed  Thu  Fri  Sat\n"
+            
+            // Add leading spaces for first week
+            for _ in 0..<firstWeekday {
+                calendarText += "     "
+            }
+            
+            // Add days with schedule info
+            for day in 1...daysInMonth {
+                let dayString = String(format: "%2d", day)
+                
+                if let dayDate = calendar.date(byAdding: .day, value: day - 1, to: firstDayOfMonth) {
+                    // Check if there are schedules for this day
+                    let dailyScheduleRequest: NSFetchRequest<DailySchedule> = DailySchedule.fetchRequest()
+                    let startOfDay = calendar.startOfDay(for: dayDate)
+                    let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay)!
+                    dailyScheduleRequest.predicate = NSPredicate(format: "date >= %@ AND date < %@", startOfDay as NSDate, endOfDay as NSDate)
+                    
+                    let schedules = (try? viewContext.fetch(dailyScheduleRequest)) ?? []
+                    
+                    if !schedules.isEmpty {
+                        calendarText += "\(dayString)*"  // Mark days with schedules
+                    } else {
+                        calendarText += "\(dayString) "
+                    }
+                } else {
+                    calendarText += "\(dayString) "
+                }
+                
+                // New line after Saturday or at end of month
+                let currentWeekday = (firstWeekday + day - 1) % 7
+                if currentWeekday == 6 || day == daysInMonth {
+                    calendarText += "\n"
+                }
+            }
+            
+            calendarText += "\n"
+            
+            // Add detailed schedule information for days with schedules
+            let startOfMonth = monthInterval.start
+            let endOfMonth = monthInterval.end
+            
+            let dailyScheduleRequest: NSFetchRequest<DailySchedule> = DailySchedule.fetchRequest()
+            dailyScheduleRequest.predicate = NSPredicate(format: "date >= %@ AND date < %@", 
+                                                       startOfMonth as NSDate, endOfMonth as NSDate)
+            dailyScheduleRequest.sortDescriptors = [NSSortDescriptor(key: "date", ascending: true)]
+            
+            let monthlySchedules = (try? viewContext.fetch(dailyScheduleRequest)) ?? []
+            
+            if !monthlySchedules.isEmpty {
+                calendarText += "Schedule Details:\n"
+                for schedule in monthlySchedules {
+                    let dayFormatter = DateFormatter()
+                    dayFormatter.dateFormat = "MMM d"
+                    let dayString = dayFormatter.string(from: schedule.date ?? Date())
+                    
+                    calendarText += "\(dayString):\n"
+                    if let line1 = schedule.line1, !line1.isEmpty { calendarText += "  • \(line1)\n" }
+                    if let line2 = schedule.line2, !line2.isEmpty { calendarText += "  • \(line2)\n" }
+                    if let line3 = schedule.line3, !line3.isEmpty { calendarText += "  • \(line3)\n" }
+                }
+                calendarText += "\n"
+            }
+            
+            calendarText += "\n"
+        }
+        
+        calendarText += "Legend: * = Scheduled day\n\n"
+        calendarText += "Report generated on \(currentDate.formatted(date: .complete, time: .complete))\n"
+        
+        // Render to image
+        return renderTextToImage(calendarText)
+    }
+    
+    private func renderTextToImage(_ text: String) -> UIImage? {
+        // Create a UILabel with the content
+        let label = UILabel()
+        label.text = text
+        label.font = UIFont.monospacedSystemFont(ofSize: 9, weight: .regular)
+        label.textColor = .black
+        label.backgroundColor = .white
+        label.numberOfLines = 0
+        label.textAlignment = .left
+        
+        // Size the label for US Letter paper (8.5" x 11" at 72 DPI)
+        let pageSize = CGSize(width: 612, height: 792)  // US Letter in points
+        let margins = UIEdgeInsets(top: 50, left: 50, bottom: 50, right: 50)
+        let contentSize = CGSize(
+            width: pageSize.width - margins.left - margins.right,
+            height: pageSize.height - margins.top - margins.bottom
+        )
+        
+        label.frame = CGRect(origin: .zero, size: contentSize)
+        
+        // Render the label to an image
+        let renderer = UIGraphicsImageRenderer(size: pageSize)
+        let image = renderer.image { context in
+            // Fill with white background
+            UIColor.white.setFill()
+            context.fill(CGRect(origin: .zero, size: pageSize))
+            
+            // Translate to account for margins
+            context.cgContext.translateBy(x: margins.left, y: margins.top)
+            
+            // Render the label
+            label.layer.render(in: context.cgContext)
+        }
+        
+        return image
     }
     
     private func generatePrintableCalendar() -> Data {
