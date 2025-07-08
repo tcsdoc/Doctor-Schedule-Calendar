@@ -77,9 +77,9 @@ struct ContentView: View {
     
     private func canGoToNextMonth() -> Bool {
         let calendar = Calendar.current
-        let threeMonthsFromNow = calendar.date(byAdding: .month, value: 3, to: Date()) ?? Date()
+        let oneYearFromNow = calendar.date(byAdding: .month, value: 12, to: Date()) ?? Date()
         let proposedMonth = calendar.date(byAdding: .month, value: 1, to: currentMonth) ?? currentMonth
-        return proposedMonth < threeMonthsFromNow
+        return proposedMonth < oneYearFromNow
     }
     
     private func previousMonth() {
