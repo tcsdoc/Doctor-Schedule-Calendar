@@ -129,6 +129,7 @@ struct ContentView: View {
                 .calendar td { border: 1px solid #000; padding: 5px; height: 60px; vertical-align: top; font-size: 10px; }
                 .day-number { font-weight: bold; margin-bottom: 5px; }
                 .schedule-line { margin: 2px 0; }
+                .legend { border: 1px solid #000; padding: 10px; margin-top: 20px; font-size: 10px; text-align: center; }
                 @media print {
                     .month { page-break-before: always; }
                     .month:first-child { page-break-before: avoid; }
@@ -214,6 +215,7 @@ struct ContentView: View {
             }
             
             html += "</table>"
+            html += "<div class='legend'>O-Siddiqui. F-Freeman. P-Dixit. K-Watts. C-Carbajal. B-Brown  G-Grant. S-Sisodraker. A-Pitocchi.</div>"
             html += "</div>"
         }
         
@@ -265,6 +267,7 @@ struct MonthView: View {
             notesSection
             daysOfWeekHeader
             calendarGrid
+            LegendView()
         }
         .padding()
         .background(Color.gray.opacity(0.1))
@@ -334,6 +337,19 @@ struct MonthView: View {
     }
 }
 
+struct LegendView: View {
+    var body: some View {
+        Text("O-Siddiqui. F-Freeman. P-Dixit. K-Watts. C-Carbajal. B-Brown  G-Grant. S-Sisodraker. A-Pitocchi.")
+            .font(.caption)
+            .padding(8)
+            .overlay(
+                RoundedRectangle(cornerRadius: 4)
+                    .stroke(Color.gray, lineWidth: 1)
+            )
+            .padding(.top, 5)
+    }
+}
+
 struct DayCell: View {
     let date: Date
     let dailySchedules: FetchedResults<DailySchedule>
@@ -365,7 +381,7 @@ struct DayCell: View {
     private var dayNumber: some View {
         Text("\(calendar.component(.day, from: date))")
             .font(.system(size: 16, weight: .semibold))
-            .foregroundColor(calendar.isDate(date, inSameDayAs: Date()) ? .red : .primary)
+            .foregroundColor(.primary)
             .padding(.bottom, 2)
     }
     
@@ -454,7 +470,7 @@ struct DayCell: View {
     
     private var background: some View {
         RoundedRectangle(cornerRadius: 2)
-            .fill(calendar.isDate(date, inSameDayAs: Date()) ? Color.red.opacity(0.1) : Color.white)
+            .fill(Color.white)
             .overlay(
                 RoundedRectangle(cornerRadius: 2)
                     .stroke(Color.gray.opacity(0.3), lineWidth: 0.5)
