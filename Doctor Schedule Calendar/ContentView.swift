@@ -174,7 +174,7 @@ struct ContentView: View {
             var currentRow = 0
             
             for (index, date) in daysInMonth.enumerated() {
-                let column = index % 7
+                let _ = index % 7
                 let row = index / 7
                 
                 if row != currentRow {
@@ -464,7 +464,9 @@ struct DayCell: View {
                 )
                 .focused($focusedField, equals: field)
                 .onSubmit(onSubmit)
-                .onChange(of: text.wrappedValue, perform: onChange)
+                .onChange(of: text.wrappedValue) { _, newValue in
+                    onChange(newValue)
+                }
         }
     }
     
