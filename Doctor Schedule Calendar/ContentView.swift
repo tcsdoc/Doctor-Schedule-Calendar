@@ -372,6 +372,7 @@ struct DayCell: View {
     private var scheduleFields: some View {
         VStack(spacing: 8) {
             scheduleTextField(
+                prefix: "OS",
                 text: Binding(
                     get: { schedule?.line1 ?? "" },
                     set: { newValue in
@@ -391,6 +392,7 @@ struct DayCell: View {
                 }
             )
             scheduleTextField(
+                prefix: "CL",
                 text: Binding(
                     get: { schedule?.line2 ?? "" },
                     set: { newValue in
@@ -410,6 +412,7 @@ struct DayCell: View {
                 }
             )
             scheduleTextField(
+                prefix: "OFF",
                 text: Binding(
                     get: { schedule?.line3 ?? "" },
                     set: { newValue in
@@ -431,19 +434,22 @@ struct DayCell: View {
         }
     }
     
-    private func scheduleTextField(text: Binding<String>, color: Color, field: DayField, onSubmit: @escaping () -> Void, onChange: @escaping (String) -> Void) -> some View {
-        TextField("", text: text)
-            .font(.system(size: 14))
-            .frame(height: 32)
-            .padding(6)
-            .background(color.opacity(0.1))
-            .overlay(
-                RoundedRectangle(cornerRadius: 4)
-                    .stroke(color.opacity(0.6), lineWidth: 1.5)
-            )
-            .focused($focusedField, equals: field)
-            .onSubmit(onSubmit)
-            .onChange(of: text.wrappedValue, perform: onChange)
+    private func scheduleTextField(prefix: String, text: Binding<String>, color: Color, field: DayField, onSubmit: @escaping () -> Void, onChange: @escaping (String) -> Void) -> some View {
+        HStack {
+            Text(prefix)
+            TextField("", text: text)
+                .font(.system(size: 14))
+                .frame(height: 32)
+                .padding(6)
+                .background(color.opacity(0.1))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4)
+                        .stroke(color.opacity(0.6), lineWidth: 1.5)
+                )
+                .focused($focusedField, equals: field)
+                .onSubmit(onSubmit)
+                .onChange(of: text.wrappedValue, perform: onChange)
+        }
     }
     
     private var background: some View {
