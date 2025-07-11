@@ -376,6 +376,11 @@ struct DayCell: View {
         .onAppear {
             loadSchedule()
         }
+        .onChange(of: focusedField) { _, newFocus in
+            if newFocus == nil {
+                saveContext()
+            }
+        }
     }
     
     private var dayNumber: some View {
@@ -394,7 +399,6 @@ struct DayCell: View {
                     set: { newValue in
                         updateSchedule()
                         schedule?.line1 = newValue
-                        saveContext()
                     }
                 ),
                 color: .blue,
@@ -403,7 +407,6 @@ struct DayCell: View {
                 onChange: { newValue in
                     if newValue.count > 16 {
                         schedule?.line1 = String(newValue.prefix(16))
-                        saveContext()
                     }
                 }
             )
@@ -414,7 +417,6 @@ struct DayCell: View {
                     set: { newValue in
                         updateSchedule()
                         schedule?.line2 = newValue
-                        saveContext()
                     }
                 ),
                 color: .green,
@@ -423,7 +425,6 @@ struct DayCell: View {
                 onChange: { newValue in
                     if newValue.count > 16 {
                         schedule?.line2 = String(newValue.prefix(16))
-                        saveContext()
                     }
                 }
             )
@@ -434,7 +435,6 @@ struct DayCell: View {
                     set: { newValue in
                         updateSchedule()
                         schedule?.line3 = newValue
-                        saveContext()
                     }
                 ),
                 color: .orange,
@@ -443,7 +443,6 @@ struct DayCell: View {
                 onChange: { newValue in
                     if newValue.count > 16 {
                         schedule?.line3 = String(newValue.prefix(16))
-                        saveContext()
                     }
                 }
             )
@@ -498,10 +497,12 @@ struct DayCell: View {
     }
     
     private func saveContext() {
-        do {
-            try viewContext.save()
-        } catch {
-            print("Error saving context: \(error)")
+        if viewContext.hasChanges {
+            do {
+                try viewContext.save()
+            } catch {
+                print("Error saving context: \(error)")
+            }
         }
     }
 }
@@ -512,6 +513,7 @@ struct MonthlyNotesView: View {
     let viewContext: NSManagedObjectContext
     
     @State private var notes: MonthlyNotes?
+    @FocusState private var focusedField: Int?
     
     private let calendar = Calendar.current
     
@@ -535,7 +537,6 @@ struct MonthlyNotesView: View {
                         case 2: notes?.line3 = newValue
                         default: break
                         }
-                        saveContext()
                     }
                 ))
                 .font(.system(size: 14))
@@ -546,11 +547,17 @@ struct MonthlyNotesView: View {
                     RoundedRectangle(cornerRadius: 4)
                         .stroke(borderColor(for: index), lineWidth: 1.5)
                 )
+                .focused($focusedField, equals: index)
 
             }
         }
         .onAppear {
             loadNotes()
+        }
+        .onChange(of: focusedField) { _, newFocus in
+            if newFocus == nil {
+                saveContext()
+            }
         }
     }
     
@@ -590,10 +597,12 @@ struct MonthlyNotesView: View {
     }
     
     private func saveContext() {
-        do {
-            try viewContext.save()
-        } catch {
-            print("Error saving context: \(error)")
+        if viewContext.hasChanges {
+            do {
+                try viewContext.save()
+            } catch {
+                print("Error saving context: \(error)")
+            }
         }
     }
 }
