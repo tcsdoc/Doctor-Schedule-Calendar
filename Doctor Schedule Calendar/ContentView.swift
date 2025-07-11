@@ -66,6 +66,7 @@ struct ContentView: View {
                     }
                     .padding()
                 }
+                .scrollDismissesKeyboard(.interactively)
             }
             .navigationBarHidden(true)
         }
