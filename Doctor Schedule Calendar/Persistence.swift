@@ -51,7 +51,7 @@ struct PersistenceController {
         description.setOption(true as NSNumber, forKey: NSPersistentStoreRemoteChangeNotificationPostOptionKey)
         
         // Configure CloudKit container options for public database
-        let cloudKitOptions = NSPersistentCloudKitContainerOptions(containerIdentifier: "iCloud.com.evrystep.ProviderSchedule")
+        let cloudKitOptions = NSPersistentCloudKitContainerOptions(containerIdentifier: "iCloud.com.marlixholdings.Doctor-Schedule-Calendar")
         cloudKitOptions.databaseScope = .public
         description.cloudKitContainerOptions = cloudKitOptions
 
