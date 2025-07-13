@@ -49,6 +49,11 @@ struct PersistenceController {
         }
         description.setOption(true as NSNumber, forKey: NSPersistentHistoryTrackingKey)
         description.setOption(true as NSNumber, forKey: NSPersistentStoreRemoteChangeNotificationPostOptionKey)
+        
+        // Configure CloudKit container options for public database
+        let cloudKitOptions = NSPersistentCloudKitContainerOptions(containerIdentifier: "iCloud.com.evrystep.ProviderSchedule")
+        cloudKitOptions.databaseScope = .public
+        description.cloudKitContainerOptions = cloudKitOptions
 
         container.loadPersistentStores(completionHandler: { (storeDescription, error) in
             if let error = error as NSError? {
