@@ -3,264 +3,111 @@
 //  Doctor Schedule Calendar
 //
 //  Created by mark on 7/5/25.
+//  Converted from Core Data to CloudKit Direct Implementation
 //
 
 import SwiftUI
-import CoreData
-import UIKit
+import CloudKit
 
 struct ContentView: View {
-    @Environment(\.managedObjectContext) private var viewContext
-    @FetchRequest(
-        sortDescriptors: [NSSortDescriptor(keyPath: \DailySchedule.date, ascending: true)],
-        animation: .default)
-    private var dailySchedules: FetchedResults<DailySchedule>
-    
-    @FetchRequest(
-        sortDescriptors: [NSSortDescriptor(keyPath: \MonthlyNotes.month, ascending: true)],
-        animation: .default)
-    private var monthlyNotes: FetchedResults<MonthlyNotes>
-    
+    @EnvironmentObject private var cloudKitManager: CloudKitManager
     @State private var currentDate = Date()
+    @State private var showingPrintView = false
     
     var body: some View {
         NavigationView {
             VStack {
-                VStack(spacing: 10) {
-                    Text("PROVIDER SCHEDULE")
-                        .font(.title)
-                        .fontWeight(.bold)
-                        .frame(maxWidth: .infinity)
-                    
-                    HStack {
-                        Spacer()
-                        
-                        HStack(spacing: 15) {
-                            Button(action: {
-                                printCalendar()
-                            }) {
-                                Image(systemName: "printer")
-                                    .font(.title2)
-                                    .foregroundColor(.blue)
-                            }
-                            
-                            Text("Monthly Notes")
-                                .font(.headline)
-                            
-                            Text("v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "Unknown").\(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "Unknown")")
-                                .font(.caption)
-                                .foregroundColor(.gray)
-                        }
-                    }
+                headerSection
+                
+                // Show CloudKit status messages
+                if let errorMessage = cloudKitManager.errorMessage {
+                    Text(errorMessage)
+                        .foregroundColor(.red)
+                        .font(.caption)
+                        .padding(.horizontal)
+                        .multilineTextAlignment(.center)
                 }
-                .padding()
                 
                 ScrollView {
                     LazyVStack(spacing: 20) {
-                        ForEach(months, id: \.self) { month in
-                            MonthView(month: month, 
-                                    dailySchedules: dailySchedules, 
-                                    monthlyNotes: monthlyNotes,
-                                    viewContext: viewContext)
+                        ForEach(monthsToShow, id: \.self) { month in
+                            MonthView(month: month)
+                                .environmentObject(cloudKitManager)
                         }
                     }
                     .padding()
                 }
-                .scrollDismissesKeyboard(.interactively)
             }
-            .navigationBarHidden(true)
+            .onAppear {
+                cloudKitManager.fetchAllData()
+            }
+            .refreshable {
+                cloudKitManager.fetchAllData()
+            }
         }
-        .navigationViewStyle(StackNavigationViewStyle())
+        .navigationViewStyle(.stack)
+        .sheet(isPresented: $showingPrintView) {
+            PrintView()
+        }
     }
     
-    private var months: [Date] {
+    private var headerSection: some View {
+        VStack(spacing: 10) {
+            Text("PROVIDER SCHEDULE")
+                .font(.title)
+                .fontWeight(.bold)
+                .frame(maxWidth: .infinity)
+            
+            HStack {
+                Spacer()
+                
+                HStack(spacing: 15) {
+                    Button(action: {
+                        showingPrintView = true
+                    }) {
+                        Image(systemName: "printer")
+                            .font(.title2)
+                            .foregroundColor(.blue)
+                    }
+                    
+                    Text("Monthly Notes")
+                        .font(.headline)
+                    
+                    Text("v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "Unknown").\(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "Unknown")")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+            .padding(.horizontal)
+        }
+        .padding(.top)
+    }
+    
+    private var monthsToShow: [Date] {
         let calendar = Calendar.current
-        let currentMonth = calendar.dateInterval(of: .month, for: currentDate)!.start
+        var months: [Date] = []
         
-        return (0..<12).compactMap { offset in
-            calendar.date(byAdding: .month, value: offset, to: currentMonth)
-        }
-    }
-    
-    private func printCalendar() {
-        // Create a print info
-        let printInfo = UIPrintInfo(dictionary: nil)
-        printInfo.outputType = .general
-        printInfo.jobName = "Provider Schedule Calendar"
-        
-        let printController = UIPrintInteractionController.shared
-        printController.printInfo = printInfo
-        
-        // Create HTML content for printing
-        let htmlContent = generateHTMLContent()
-        let formatter = UIMarkupTextPrintFormatter(markupText: htmlContent)
-        
-        printController.printFormatter = formatter
-        
-        // Present the print dialog
-        printController.present(animated: true) { controller, completed, error in
-            if let error = error {
-                print("Print error: \(error)")
+        for i in 0..<12 {
+            if let month = calendar.date(byAdding: .month, value: i, to: currentDate) {
+                months.append(month)
             }
         }
+        
+        return months
     }
-    
-    private func generateHTMLContent() -> String {
-        let calendar = Calendar.current
-        let currentMonth = calendar.dateInterval(of: .month, for: currentDate)!.start
-        let months = (0..<12).compactMap { offset in
-            calendar.date(byAdding: .month, value: offset, to: currentMonth)
-        }
-        
-        var html = """
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="UTF-8">
-            <style>
-                body { font-family: Arial, sans-serif; margin: 20px; }
-                .title { font-size: 24px; font-weight: bold; text-align: center; margin-bottom: 30px; }
-                .month { page-break-before: always; margin-bottom: 20px; }
-                .month:first-child { page-break-before: avoid; }
-                .month:last-child { page-break-after: avoid; }
-                .month-title { font-size: 18px; font-weight: bold; margin-bottom: 10px; text-align: center; }
-                .month-notes { margin-bottom: 15px; font-size: 12px; }
-                .calendar { border-collapse: collapse; width: 100%; }
-                .calendar th { border: 1px solid #000; padding: 8px; text-align: center; background-color: #f0f0f0; font-size: 12px; }
-                .calendar td { border: 1px solid #000; padding: 5px; height: 60px; vertical-align: top; font-size: 10px; }
-                .day-number { font-weight: bold; margin-bottom: 5px; }
-                .schedule-line { margin: 2px 0; }
-                .legend { border: 1px solid #000; padding: 10px; margin-top: 20px; font-size: 10px; text-align: center; }
-                @media print {
-                    .month { page-break-before: always; }
-                    .month:first-child { page-break-before: avoid; }
-                    .month:last-child { page-break-after: avoid; }
-                }
-            </style>
-        </head>
-        <body>
-        """
-        
-        for month in months {
-            let monthFormatter = DateFormatter()
-            monthFormatter.dateFormat = "MMMM yyyy"
-            let monthString = monthFormatter.string(from: month)
-            
-            html += "<div class='month'>"
-            html += "<div class='title'>PROVIDER SCHEDULE</div>"
-            html += "<div class='month-title'>\(monthString)</div>"
-            
-            // Monthly notes
-            let monthValue = Int32(calendar.component(.month, from: month))
-            let yearValue = Int32(calendar.component(.year, from: month))
-            if let notes = monthlyNotes.first(where: { $0.month == monthValue && $0.year == yearValue }) {
-                html += "<div class='month-notes'>"
-                if let line1 = notes.line1, !line1.isEmpty {
-                    html += "• \(line1)<br>"
-                }
-                if let line2 = notes.line2, !line2.isEmpty {
-                    html += "• \(line2)<br>"
-                }
-                if let line3 = notes.line3, !line3.isEmpty {
-                    html += "• \(line3)<br>"
-                }
-                html += "</div>"
-            }
-            
-            // Calendar table
-            html += "<table class='calendar'>"
-            html += "<tr><th>Sun</th><th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th><th>Sat</th></tr>"
-            
-            let daysInMonth = getDaysInMonth(for: month)
-            var currentRow = 0
-            
-            for (index, date) in daysInMonth.enumerated() {
-                let _ = index % 7
-                let row = index / 7
-                
-                if row != currentRow {
-                    if currentRow > 0 {
-                        html += "</tr>"
-                    }
-                    html += "<tr>"
-                    currentRow = row
-                }
-                
-                let dayNumber = calendar.component(.day, from: date)
-                let dayStart = calendar.startOfDay(for: date)
-                let schedule = dailySchedules.first { schedule in
-                    guard let scheduleDate = schedule.date else { return false }
-                    return calendar.isDate(scheduleDate, inSameDayAs: dayStart)
-                }
-                
-                html += "<td>"
-                html += "<div class='day-number'>\(dayNumber)</div>"
-                
-                if let schedule = schedule {
-                    if let line1 = schedule.line1, !line1.isEmpty {
-                        html += "<div class='schedule-line'>\(line1)</div>"
-                    }
-                    if let line2 = schedule.line2, !line2.isEmpty {
-                        html += "<div class='schedule-line'>\(line2)</div>"
-                    }
-                    if let line3 = schedule.line3, !line3.isEmpty {
-                        html += "<div class='schedule-line'>\(line3)</div>"
-                    }
-                }
-                
-                html += "</td>"
-            }
-            
-            if currentRow >= 0 {
-                html += "</tr>"
-            }
-            
-            html += "</table>"
-            html += "<div class='legend'>O-Siddiqui. F-Freeman. P-Dixit. K-Watts. C-Carbajal. B-Brown  G-Grant. S-Sisodraker. A-Pitocchi.</div>"
-            html += "</div>"
-        }
-        
-        html += "</body></html>"
-        return html
-    }
-    
-    private func getDaysInMonth(for month: Date) -> [Date] {
-        let calendar = Calendar.current
-        guard let monthInterval = calendar.dateInterval(of: .month, for: month) else {
-            return []
-        }
-        
-        let startOfMonth = monthInterval.start
-        guard let firstWeekday = calendar.dateInterval(of: .weekOfYear, for: startOfMonth)?.start else {
-            return []
-        }
-        
-        var days: [Date] = []
-        var currentDate = firstWeekday
-        
-        // Generate 6 weeks worth of dates
-        for _ in 0..<42 {
-            days.append(currentDate)
-            currentDate = calendar.date(byAdding: .day, value: 1, to: currentDate)!
-        }
-        
-        return days
-    }
-    
-
-    
-
-    
-
 }
 
+// MARK: - MonthView
 struct MonthView: View {
     let month: Date
-    let dailySchedules: FetchedResults<DailySchedule>
-    let monthlyNotes: FetchedResults<MonthlyNotes>
-    let viewContext: NSManagedObjectContext
+    @EnvironmentObject private var cloudKitManager: CloudKitManager
     
     private let calendar = Calendar.current
+    private let monthFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMMM yyyy"
+        return formatter
+    }()
     
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -284,7 +131,8 @@ struct MonthView: View {
     }
     
     private var notesSection: some View {
-        MonthlyNotesView(month: month, monthlyNotes: monthlyNotes, viewContext: viewContext)
+        MonthlyNotesView(month: month)
+            .environmentObject(cloudKitManager)
     }
     
     private var daysOfWeekHeader: some View {
@@ -300,16 +148,15 @@ struct MonthView: View {
     }
     
     private var calendarGrid: some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 7), spacing: 0) {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 1), count: 7), spacing: 1) {
             ForEach(daysInMonth, id: \.self) { date in
                 if calendar.isDate(date, equalTo: month, toGranularity: .month) {
-                    DayCell(date: date, 
-                           dailySchedules: dailySchedules, 
-                           viewContext: viewContext)
+                    DayCell(date: date)
+                        .environmentObject(cloudKitManager)
                 } else {
                     Rectangle()
                         .fill(Color.clear)
-                        .frame(minHeight: 250)
+                        .frame(minHeight: 100)
                 }
             }
         }
@@ -338,48 +185,46 @@ struct MonthView: View {
     }
 }
 
-struct LegendView: View {
-    var body: some View {
-        Text("O-Siddiqui. F-Freeman. P-Dixit. K-Watts. C-Carbajal. B-Brown  G-Grant. S-Sisodraker. A-Pitocchi.")
-            .font(.caption)
-            .padding(8)
-            .overlay(
-                RoundedRectangle(cornerRadius: 4)
-                    .stroke(Color.gray, lineWidth: 1)
-            )
-            .padding(.top, 5)
-    }
-}
-
+// MARK: - DayCell
 struct DayCell: View {
     let date: Date
-    let dailySchedules: FetchedResults<DailySchedule>
-    let viewContext: NSManagedObjectContext
+    @EnvironmentObject private var cloudKitManager: CloudKitManager
     
-    @State private var schedule: DailySchedule?
-    
-    // Per-day focus management with simple 3-state enum
+    @State private var line1: String = ""
+    @State private var line2: String = ""
+    @State private var line3: String = ""
+    @State private var existingRecord: DailyScheduleRecord?
+    @State private var isEditing = false
     @FocusState private var focusedField: DayField?
     
-    enum DayField {
+    private let calendar = Calendar.current
+    
+    enum DayField: CaseIterable {
         case line1, line2, line3
     }
-    
-    private let calendar = Calendar.current
     
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             dayNumber
             scheduleFields
         }
-        .frame(maxWidth: .infinity, minHeight: 250)
+        .frame(maxWidth: .infinity, minHeight: 100)
         .background(background)
         .onAppear {
             loadSchedule()
         }
-        .onChange(of: focusedField) { _, newFocus in
-            if newFocus == nil {
-                saveContext()
+        .onChange(of: cloudKitManager.dailySchedules) { _, _ in
+            loadSchedule()
+        }
+        .onChange(of: existingRecord) { _, _ in
+            if !isEditing {
+                updateScheduleFromRecord()
+            }
+        }
+        .onChange(of: focusedField) { oldField, newField in
+            // Save when user moves away from line3 (OFF field) or dismisses keyboard
+            if oldField == .line3 && (newField != .line3 || newField == nil) && isEditing {
+                saveSchedule()
             }
         }
     }
@@ -392,67 +237,24 @@ struct DayCell: View {
     }
     
     private var scheduleFields: some View {
-        VStack(spacing: 8) {
-            scheduleTextField(
-                prefix: "OS",
-                text: Binding(
-                    get: { schedule?.line1 ?? "" },
-                    set: { newValue in
-                        updateSchedule()
-                        schedule?.line1 = newValue
-                    }
-                ),
-                color: .blue,
-                field: .line1,
-                onSubmit: { focusedField = .line2 },
-                onChange: { newValue in
-                    if newValue.count > 16 {
-                        schedule?.line1 = String(newValue.prefix(16))
-                    }
-                }
-            )
-            scheduleTextField(
-                prefix: "CL",
-                text: Binding(
-                    get: { schedule?.line2 ?? "" },
-                    set: { newValue in
-                        updateSchedule()
-                        schedule?.line2 = newValue
-                    }
-                ),
-                color: .green,
-                field: .line2,
-                onSubmit: { focusedField = .line3 },
-                onChange: { newValue in
-                    if newValue.count > 16 {
-                        schedule?.line2 = String(newValue.prefix(16))
-                    }
-                }
-            )
-            scheduleTextField(
-                prefix: "OFF",
-                text: Binding(
-                    get: { schedule?.line3 ?? "" },
-                    set: { newValue in
-                        updateSchedule()
-                        schedule?.line3 = newValue
-                    }
-                ),
-                color: .orange,
-                field: .line3,
-                onSubmit: { focusedField = nil },
-                onChange: { newValue in
-                    if newValue.count > 16 {
-                        schedule?.line3 = String(newValue.prefix(16))
-                    }
-                }
-            )
+        VStack(spacing: 4) {
+            scheduleTextField(prefix: "OS", text: $line1, color: .blue, field: .line1) {
+                moveToNextField()
+            }
+            scheduleTextField(prefix: "CL", text: $line2, color: .green, field: .line2) {
+                moveToNextField()
+            }
+            scheduleTextField(prefix: "OFF", text: $line3, color: .orange, field: .line3, submitLabel: .done) {
+                saveSchedule()
+            }
         }
     }
     
-    private func scheduleTextField(prefix: String, text: Binding<String>, color: Color, field: DayField, onSubmit: @escaping () -> Void, onChange: @escaping (String) -> Void) -> some View {
+    private func scheduleTextField(prefix: String, text: Binding<String>, color: Color, field: DayField, submitLabel: SubmitLabel = .next, onSubmit: @escaping () -> Void) -> some View {
         HStack {
             Text(prefix)
+                .font(.caption)
+                .frame(width: 25)
             TextField("", text: text)
                 .font(.system(size: 14))
                 .frame(height: 32)
@@ -463,9 +265,16 @@ struct DayCell: View {
                         .stroke(color.opacity(0.6), lineWidth: 1.5)
                 )
                 .focused($focusedField, equals: field)
-                .onSubmit(onSubmit)
+                .submitLabel(submitLabel)
+                .onSubmit {
+                    onSubmit()
+                }
                 .onChange(of: text.wrappedValue) { _, newValue in
-                    onChange(newValue)
+                    // Limit to 16 characters
+                    if newValue.count > 16 {
+                        text.wrappedValue = String(newValue.prefix(16))
+                    }
+                    isEditing = true
                 }
         }
     }
@@ -479,151 +288,234 @@ struct DayCell: View {
             )
     }
     
+    private func moveToNextField() {
+        switch focusedField {
+        case .line1:
+            focusedField = .line2
+        case .line2:
+            focusedField = .line3
+        case .line3:
+            saveSchedule()
+            focusedField = nil
+        case .none:
+            break
+        }
+    }
+    
     private func loadSchedule() {
         let dayStart = calendar.startOfDay(for: date)
-        schedule = dailySchedules.first { schedule in
-            guard let scheduleDate = schedule.date else { return false }
-            return calendar.isDate(scheduleDate, inSameDayAs: dayStart)
+        existingRecord = cloudKitManager.dailySchedules.first { record in
+            if let recordDate = record.date {
+                return calendar.isDate(recordDate, inSameDayAs: dayStart)
+            }
+            return false
         }
+        
+        updateScheduleFromRecord()
     }
     
-    private func updateSchedule() {
-        if schedule == nil {
-            schedule = DailySchedule(context: viewContext)
-            schedule?.date = calendar.startOfDay(for: date)
-            schedule?.line1 = ""
-            schedule?.line2 = ""
-            schedule?.line3 = ""
-        }
+    private func updateScheduleFromRecord() {
+        line1 = existingRecord?.line1 ?? ""
+        line2 = existingRecord?.line2 ?? ""
+        line3 = existingRecord?.line3 ?? ""
     }
     
-    private func saveContext() {
-        if viewContext.hasChanges {
-            do {
-                try viewContext.save()
-            } catch {
-                print("Error saving context: \(error)")
+    private func saveSchedule() {
+        let dayStart = calendar.startOfDay(for: date)
+        
+        if let existing = existingRecord {
+            // Update existing record
+            cloudKitManager.updateDailySchedule(
+                recordName: existing.id,
+                date: dayStart,
+                line1: line1.isEmpty ? nil : line1,
+                line2: line2.isEmpty ? nil : line2,
+                line3: line3.isEmpty ? nil : line3
+            ) { success, error in
+                // Completion handled silently
+            }
+        } else {
+            // Create new record
+            cloudKitManager.saveDailySchedule(
+                date: dayStart,
+                line1: line1.isEmpty ? nil : line1,
+                line2: line2.isEmpty ? nil : line2,
+                line3: line3.isEmpty ? nil : line3
+            ) { success, error in
+                // Completion handled silently
             }
         }
+        
+        isEditing = false
     }
 }
 
+// MARK: - MonthlyNotesView
 struct MonthlyNotesView: View {
     let month: Date
-    let monthlyNotes: FetchedResults<MonthlyNotes>
-    let viewContext: NSManagedObjectContext
+    @EnvironmentObject private var cloudKitManager: CloudKitManager
     
-    @State private var notes: MonthlyNotes?
-    @FocusState private var focusedField: Int?
+    @State private var line1: String = ""
+    @State private var line2: String = ""
+    @State private var line3: String = ""
+    @State private var existingRecord: MonthlyNotesRecord?
+    @State private var isEditing = false
+    @FocusState private var focusedField: MonthlyNotesField?
     
     private let calendar = Calendar.current
     
+    enum MonthlyNotesField: CaseIterable {
+        case line1, line2, line3
+    }
+    
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ForEach(0..<3, id: \.self) { index in
-                TextField("Monthly note \(index + 1)", text: Binding(
-                    get: {
-                        switch index {
-                        case 0: return notes?.line1 ?? ""
-                        case 1: return notes?.line2 ?? ""
-                        case 2: return notes?.line3 ?? ""
-                        default: return ""
-                        }
-                    },
-                    set: { newValue in
-                        updateNotes()
-                        switch index {
-                        case 0: notes?.line1 = newValue
-                        case 1: notes?.line2 = newValue
-                        case 2: notes?.line3 = newValue
-                        default: break
-                        }
-                    }
-                ))
-                .font(.system(size: 14))
-                .frame(height: 32)
-                .padding(6)
-                .background(backgroundColor(for: index))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 4)
-                        .stroke(borderColor(for: index), lineWidth: 1.5)
-                )
-                .focused($focusedField, equals: index)
-
+        VStack(spacing: 4) {
+            HStack {
+                Text("Notes:")
+                    .font(.caption)
+                    .fontWeight(.medium)
+                Spacer()
+            }
+            
+            VStack(spacing: 2) {
+                noteTextField(text: $line1, placeholder: "Note 1", field: .line1)
+                noteTextField(text: $line2, placeholder: "Note 2", field: .line2)
+                noteTextField(text: $line3, placeholder: "Note 3", field: .line3)
             }
         }
+        .padding(8)
+        .background(Color.blue.opacity(0.1))
+        .cornerRadius(6)
         .onAppear {
             loadNotes()
         }
-        .onChange(of: focusedField) { _, newFocus in
-            if newFocus == nil {
-                saveContext()
+        .onChange(of: cloudKitManager.monthlyNotes) { _, _ in
+            loadNotes()
+        }
+        .onChange(of: existingRecord) { _, _ in
+            if !isEditing {
+                updateNotesFromRecord()
+            }
+        }
+        .onChange(of: isEditing) { _, newValue in
+            if !newValue {
+                saveNotes()
+            }
+        }
+        .onChange(of: focusedField) { oldField, newField in
+            // Save when user moves away from any field or dismisses keyboard
+            if oldField != nil && newField == nil && isEditing {
+                isEditing = false  // This will trigger the save via onChange(of: isEditing)
             }
         }
     }
     
-    private func backgroundColor(for index: Int) -> Color {
-        switch index {
-        case 0: return Color.purple.opacity(0.1)
-        case 1: return Color.pink.opacity(0.1)
-        case 2: return Color.indigo.opacity(0.1)
-        default: return Color.white
-        }
-    }
-    
-    private func borderColor(for index: Int) -> Color {
-        switch index {
-        case 0: return Color.purple.opacity(0.6)
-        case 1: return Color.pink.opacity(0.6)
-        case 2: return Color.indigo.opacity(0.6)
-        default: return Color.gray.opacity(0.4)
-        }
+    private func noteTextField(text: Binding<String>, placeholder: String, field: MonthlyNotesField) -> some View {
+        TextField(placeholder, text: text)
+            .font(.caption)
+            .padding(4)
+            .background(Color.white)
+            .cornerRadius(4)
+            .focused($focusedField, equals: field)
+            .submitLabel(.done)
+            .onChange(of: text.wrappedValue) { _, newValue in
+                isEditing = true
+            }
+            .onSubmit {
+                isEditing = false
+            }
     }
     
     private func loadNotes() {
-        let monthValue = Int32(calendar.component(.month, from: month))
-        let yearValue = Int32(calendar.component(.year, from: month))
-        notes = monthlyNotes.first { $0.month == monthValue && $0.year == yearValue }
+        let monthComp = calendar.component(.month, from: month)
+        let yearComp = calendar.component(.year, from: month)
+        
+        existingRecord = cloudKitManager.monthlyNotes.first { record in
+            record.month == monthComp && record.year == yearComp
+        }
+        
+        updateNotesFromRecord()
     }
     
-    private func updateNotes() {
-        if notes == nil {
-            notes = MonthlyNotes(context: viewContext)
-            notes?.month = Int32(calendar.component(.month, from: month))
-            notes?.year = Int32(calendar.component(.year, from: month))
-            notes?.line1 = ""
-            notes?.line2 = ""
-            notes?.line3 = ""
+    private func updateNotesFromRecord() {
+        line1 = existingRecord?.line1 ?? ""
+        line2 = existingRecord?.line2 ?? ""
+        line3 = existingRecord?.line3 ?? ""
+    }
+    
+    private func saveNotes() {
+        let monthComp = calendar.component(.month, from: month)
+        let yearComp = calendar.component(.year, from: month)
+        
+        // Use saveMonthlyNotes for both creating and updating
+        cloudKitManager.saveMonthlyNotes(
+            month: monthComp,
+            year: yearComp,
+            line1: line1.isEmpty ? nil : line1,
+            line2: line2.isEmpty ? nil : line2,
+            line3: line3.isEmpty ? nil : line3
+        ) { success, error in
+            // Completion handled silently
         }
     }
+}
+
+// MARK: - LegendView
+struct LegendView: View {
+    var body: some View {
+        Text("O-Siddiqui. F-Freeman. P-Dixit. K-Watts. C-Carbajal. B-Brown  G-Grant. S-Sisodraker. A-Pitocchi.")
+            .font(.caption)
+            .padding(8)
+            .overlay(
+                RoundedRectangle(cornerRadius: 4)
+                    .stroke(Color.gray, lineWidth: 1)
+            )
+            .padding(.top, 5)
+    }
+}
+
+// MARK: - PrintView
+struct PrintView: View {
+    @EnvironmentObject private var cloudKitManager: CloudKitManager
+    @Environment(\.dismiss) private var dismiss
     
-    private func saveContext() {
-        if viewContext.hasChanges {
-            do {
-                try viewContext.save()
-            } catch {
-                print("Error saving context: \(error)")
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                Text("Print functionality to be implemented")
+                    .padding()
+            }
+            .navigationTitle("Print Calendar")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
             }
         }
     }
 }
 
+// MARK: - Utilities
 private let monthFormatter: DateFormatter = {
     let formatter = DateFormatter()
     formatter.dateFormat = "MMMM yyyy"
     return formatter
 }()
 
+extension Calendar {
+    func startOfMonth(for date: Date) -> Date {
+        let components = dateComponents([.year, .month], from: date)
+        return self.date(from: components) ?? date
+    }
+}
 
-
-
-
-
-
-
-
+// MARK: - Preview
 struct ContentView_Previews: PreviewProvider {
     static var previews: some View {
-        ContentView().environment(\.managedObjectContext, PersistenceController.preview.container.viewContext)
+        ContentView()
+            .environmentObject(CloudKitManager.shared)
     }
 }

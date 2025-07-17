@@ -9,12 +9,16 @@ import SwiftUI
 
 @main
 struct Doctor_Schedule_CalendarApp: App {
-    let persistenceController = PersistenceController.shared
+    let cloudKitManager = CloudKitManager.shared
+
+    init() {
+        NSLog("🔥 APP STARTING - THIS SHOULD APPEAR IN CONSOLE")
+    }
 
     var body: some Scene {
         WindowGroup {
             ContentView()
-                .environment(\.managedObjectContext, persistenceController.container.viewContext)
+                .environmentObject(cloudKitManager)
         }
     }
 }
