@@ -413,6 +413,63 @@ class CloudKitManager: ObservableObject {
             }
         }
     }
+    
+    // MARK: - Smart Save/Delete for Monthly Notes
+    func saveOrDeleteMonthlyNotes(existingRecordName: String? = nil, month: Int, year: Int, line1: String?, line2: String?, line3: String?, completion: @escaping (Bool, Error?) -> Void) {
+        // Check if all fields are empty
+        let isEmpty = (line1?.isEmpty ?? true) && (line2?.isEmpty ?? true) && (line3?.isEmpty ?? true)
+        
+        print("🤔 Smart monthly notes save called - isEmpty: \(isEmpty), existingRecord: \(existingRecordName ?? "none")")
+        print("📝 Monthly note values - line1: '\(line1 ?? "nil")', line2: '\(line2 ?? "nil")', line3: '\(line3 ?? "nil")'")
+        
+        if isEmpty {
+            // All fields are empty - delete the record if it exists
+            if let recordName = existingRecordName {
+                print("🗑️ All monthly note fields empty - calling DELETE")
+                deleteMonthlyNotes(recordName: recordName, month: month, year: year, completion: completion)
+            } else {
+                print("🤷‍♂️ No existing monthly notes record to delete")
+                completion(true, nil)
+            }
+        } else {
+            // Fields have content - save/update the record
+            print("💾 Monthly note fields have content - calling SAVE/UPDATE")
+            saveMonthlyNotes(month: month, year: year, line1: line1, line2: line2, line3: line3, completion: completion)
+        }
+    }
+    
+    func deleteMonthlyNotes(recordName: String, month: Int, year: Int, completion: @escaping (Bool, Error?) -> Void) {
+        print("🗑️ Attempting to delete monthly notes record: \(recordName)")
+        
+        // Check CloudKit status first
+        guard cloudKitAvailable else {
+            completion(false, NSError(domain: "CloudKitManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "iCloud not available"]))
+            return
+        }
+        
+        let recordID = CKRecord.ID(recordName: recordName)
+        
+        publicDatabase.delete(withRecordID: recordID) { [weak self] recordID, error in
+            DispatchQueue.main.async {
+                if let error = error {
+                    print("❌ Failed to delete monthly notes record: \(error.localizedDescription)")
+                    self?.errorMessage = "Failed to delete notes: \(error.localizedDescription)"
+                    completion(false, error)
+                } else {
+                    print("✅ Successfully deleted monthly notes from CloudKit: \(recordName)")
+                    // Remove from local array immediately instead of full refresh
+                    self?.monthlyNotes.removeAll { $0.month == month && $0.year == year }
+                    print("📱 Removed from local monthly notes array. Local count now: \(self?.monthlyNotes.count ?? 0)")
+                    
+                    // Track deletion operation to prevent premature refresh
+                    self?.recentDeletionOperations.insert(recordName)
+                    self?.lastOperationTime = Date()
+                    
+                    completion(true, nil)
+                }
+            }
+        }
+    }
 }
 
 // MARK: - Deduplication Functions

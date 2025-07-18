@@ -402,6 +402,8 @@ struct MonthlyNotesView: View {
     @State private var line3: String = ""
     @State private var existingRecord: MonthlyNotesRecord?
     @State private var isEditing = false
+    @State private var saveTimer: Timer?
+    @State private var isSaving = false
     @FocusState private var focusedField: MonthlyNotesField?
     
     private let calendar = Calendar.current
@@ -442,16 +444,24 @@ struct MonthlyNotesView: View {
                 updateNotesFromRecord()
             }
         }
-        .onChange(of: isEditing) { _, newValue in
-            if !newValue {
+        .onChange(of: focusedField) { oldField, newField in
+            // Save when user moves away from ANY field or dismisses keyboard
+            if oldField != nil && newField != oldField && isEditing {
+                print("🎯 Monthly notes focus changed from \(String(describing: oldField)) to \(String(describing: newField)) - triggering save")
                 saveNotes()
             }
         }
-        .onChange(of: focusedField) { oldField, newField in
-            // Save when user moves away from any field or dismisses keyboard
-            if oldField != nil && newField == nil && isEditing {
-                isEditing = false  // This will trigger the save via onChange(of: isEditing)
+        .onChange(of: isEditing) { _, newValue in
+            // Save when editing state changes (keyboard dismiss, app backgrounding, etc.)
+            if !newValue {
+                print("🎯 Monthly notes editing state changed to false - triggering save")
+                saveNotes()
             }
+        }
+        .onDisappear {
+            // Clean up timer and reset saving state to prevent memory leaks
+            saveTimer?.invalidate()
+            isSaving = false
         }
     }
     
@@ -489,18 +499,47 @@ struct MonthlyNotesView: View {
     }
     
     private func saveNotes() {
+        // Prevent duplicate saves if one is already in progress
+        guard !isSaving else {
+            print("⏸️ Monthly notes save already in progress - skipping duplicate save request")
+            return
+        }
+        
+        // Set saving flag immediately to block subsequent calls
+        isSaving = true
+        print("🔒 Setting monthly notes isSaving flag to TRUE - blocking future saves")
+        
+        // Cancel any existing timer
+        saveTimer?.invalidate()
+        
+        // Set up a debounced save with 0.5 second delay
+        saveTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { _ in
+            performSave()
+        }
+    }
+    
+    private func performSave() {
+        print("🚀 Monthly notes performSave() starting - isSaving flag should be TRUE")
         let monthComp = calendar.component(.month, from: month)
         let yearComp = calendar.component(.year, from: month)
         
-        // Use saveMonthlyNotes for both creating and updating
-        cloudKitManager.saveMonthlyNotes(
+        // Use smart save that handles deletion when all fields are empty
+        cloudKitManager.saveOrDeleteMonthlyNotes(
+            existingRecordName: existingRecord?.id,
             month: monthComp,
             year: yearComp,
             line1: line1.isEmpty ? nil : line1,
             line2: line2.isEmpty ? nil : line2,
             line3: line3.isEmpty ? nil : line3
         ) { success, error in
-            // Completion handled silently
+            DispatchQueue.main.async {
+                // Add delay before clearing flag to prevent rapid successive saves
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                    print("🔓 Clearing monthly notes isSaving flag after CloudKit operation + 1 second delay")
+                    self.isSaving = false
+                }
+                self.isEditing = false
+            }
         }
     }
 }
