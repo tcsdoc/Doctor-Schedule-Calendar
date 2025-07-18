@@ -14,6 +14,10 @@ class CloudKitManager: ObservableObject {
     @Published var errorMessage: String?
     @Published var cloudKitAvailable = false
     
+    // Track recent operations to prevent premature refresh
+    private var recentDeletionOperations: Set<String> = []
+    private var lastOperationTime: Date = Date()
+    
     init() {
         container = CKContainer(identifier: "iCloud.com.gulfcoast.ProviderCalendar")
         publicDatabase = container.publicCloudDatabase
@@ -51,6 +55,16 @@ class CloudKitManager: ObservableObject {
     
     // MARK: - Fetch Data
     func fetchAllData() {
+        print("🔄 fetchAllData called - refreshing from CloudKit")
+        
+        // Prevent fetching immediately after deletion operations
+        let timeSinceLastOperation = Date().timeIntervalSince(lastOperationTime)
+        if timeSinceLastOperation < 2.0 && !recentDeletionOperations.isEmpty {
+            print("⏸️ Skipping fetch - recent deletion operation detected (within 2 seconds)")
+            print("⏰ Time since last operation: \(timeSinceLastOperation)s, pending deletions: \(recentDeletionOperations.count)")
+            return
+        }
+        
         // Check CloudKit status first
         guard cloudKitAvailable else {
             checkCloudKitStatus() // Recheck status
@@ -64,19 +78,27 @@ class CloudKitManager: ObservableObject {
         
         // Fetch Daily Schedules
         group.enter()
-        fetchDailySchedules { [weak self] in
+        fetchDailySchedules {
             group.leave()
         }
         
         // Fetch Monthly Notes
         group.enter()
-        fetchMonthlyNotes { [weak self] in
+        fetchMonthlyNotes {
             group.leave()
         }
         
         group.notify(queue: .main) { [weak self] in
             self?.isLoading = false
+            print("📊 All data fetched successfully - dailySchedules count: \(self?.dailySchedules.count ?? 0), monthlyNotes count: \(self?.monthlyNotes.count ?? 0)")
         }
+    }
+    
+    /// Force fetch data bypassing deletion protection (for explicit user refresh)
+    func forceRefreshAllData() {
+        print("🔄 Force refresh called - bypassing deletion protection")
+        recentDeletionOperations.removeAll()
+        fetchAllData()
     }
     
     /// Fetch data and perform cleanup of duplicates
@@ -105,6 +127,7 @@ class CloudKitManager: ObservableObject {
     }
     
     private func fetchDailySchedules(completion: @escaping () -> Void) {
+        print("📅 Fetching daily schedules from CloudKit...")
         let query = CKQuery(recordType: "CD_DailySchedule", predicate: NSPredicate(value: true))
         query.sortDescriptors = [NSSortDescriptor(key: "CD_date", ascending: true)]
         
@@ -116,7 +139,9 @@ class CloudKitManager: ObservableObject {
                         try? result.get()
                     }
                     self?.dailySchedules = records.map(DailyScheduleRecord.init)
+                    print("✅ Daily schedules fetched: \(records.count) records")
                 case .failure(let error):
+                    print("❌ Failed to fetch daily schedules: \(error)")
                     self?.errorMessage = "Failed to fetch schedule data: \(error.localizedDescription)"
                     self?.dailySchedules = []
                 }
@@ -126,6 +151,7 @@ class CloudKitManager: ObservableObject {
     }
     
     private func fetchMonthlyNotes(completion: @escaping () -> Void) {
+        print("📝 Fetching monthly notes from CloudKit...")
         let query = CKQuery(recordType: "CD_MonthlyNotes", predicate: NSPredicate(value: true))
         query.sortDescriptors = [NSSortDescriptor(key: "CD_month", ascending: true)]
         
@@ -137,7 +163,9 @@ class CloudKitManager: ObservableObject {
                         try? result.get()
                     }
                     self?.monthlyNotes = records.map(MonthlyNotesRecord.init)
+                    print("✅ Monthly notes fetched: \(records.count) records")
                 case .failure(let error):
+                    print("❌ Failed to fetch monthly notes: \(error)")
                     self?.errorMessage = "Failed to fetch notes data: \(error.localizedDescription)"
                     self?.monthlyNotes = []
                 }
@@ -148,8 +176,11 @@ class CloudKitManager: ObservableObject {
     
     // MARK: - Save Data
     func saveDailySchedule(date: Date, line1: String?, line2: String?, line3: String?, completion: @escaping (Bool, Error?) -> Void) {
+        print("💾 Creating new daily schedule record for date: \(date)")
+        
         // Check CloudKit status first
         guard cloudKitAvailable else {
+            print("❌ CloudKit not available for save")
             completion(false, NSError(domain: "CloudKitManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "iCloud not available"]))
             return
         }
@@ -161,13 +192,21 @@ class CloudKitManager: ObservableObject {
         record["CD_line2"] = line2 as CKRecordValue?
         record["CD_line3"] = line3 as CKRecordValue?
         
+        print("💾 Saving new record with fields: line1='\(line1 ?? "nil")', line2='\(line2 ?? "nil")', line3='\(line3 ?? "nil")'")
+        
         publicDatabase.save(record) { [weak self] savedRecord, error in
             DispatchQueue.main.async {
                 if let error = error {
+                    print("❌ Failed to save new record: \(error.localizedDescription)")
                     self?.errorMessage = "Failed to save schedule: \(error.localizedDescription)"
                     completion(false, error)
                 } else {
-                    self?.fetchAllData() // Refresh data
+                    print("✅ Successfully saved new daily schedule record")
+                    // Update local array immediately instead of full refresh
+                    if let savedRecord = savedRecord {
+                        let newSchedule = DailyScheduleRecord(from: savedRecord)
+                        self?.dailySchedules.append(newSchedule)
+                    }
                     completion(true, nil)
                 }
             }
@@ -175,6 +214,8 @@ class CloudKitManager: ObservableObject {
     }
     
     func updateDailySchedule(recordName: String, date: Date, line1: String?, line2: String?, line3: String?, completion: @escaping (Bool, Error?) -> Void) {
+        print("🔄 Attempting to update record: \(recordName)")
+        
         // Check CloudKit status first
         guard cloudKitAvailable else {
             completion(false, NSError(domain: "CloudKitManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "iCloud not available"]))
@@ -186,20 +227,32 @@ class CloudKitManager: ObservableObject {
         publicDatabase.fetch(withRecordID: recordID) { [weak self] record, error in
             if let error = error {
                 DispatchQueue.main.async {
-                    self?.errorMessage = "Failed to update schedule: \(error.localizedDescription)"
-                    completion(false, error)
+                    print("❌ Failed to fetch record for update: \(error.localizedDescription)")
+                    
+                    // Check if this is a "Record not found" error - if so, create new record instead
+                    if error.localizedDescription.contains("Record not found") || (error as? CKError)?.code == .unknownItem {
+                        print("🔄 Record not found in CloudKit - creating new record instead")
+                        self?.saveDailySchedule(date: date, line1: line1, line2: line2, line3: line3, completion: completion)
+                    } else {
+                        self?.errorMessage = "Failed to fetch record: \(error.localizedDescription)"
+                        completion(false, error)
+                    }
                 }
                 return
             }
             
             guard let record = record else {
                 DispatchQueue.main.async {
-                    completion(false, NSError(domain: "CloudKitManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "Record not found"]))
+                    print("❌ Record not found, creating new one instead")
+                    // If record doesn't exist, create it instead
+                    self?.saveDailySchedule(date: date, line1: line1, line2: line2, line3: line3, completion: completion)
                 }
                 return
             }
             
-            // Update the record
+            print("✅ Fetched record for update, updating fields...")
+            
+            // Update the record with new values
             record["CD_date"] = date as CKRecordValue
             record["CD_line1"] = line1 as CKRecordValue?
             record["CD_line2"] = line2 as CKRecordValue?
@@ -208,10 +261,20 @@ class CloudKitManager: ObservableObject {
             self?.publicDatabase.save(record) { savedRecord, error in
                 DispatchQueue.main.async {
                     if let error = error {
+                        print("❌ Failed to update record: \(error.localizedDescription)")
                         self?.errorMessage = "Failed to update schedule: \(error.localizedDescription)"
                         completion(false, error)
                     } else {
-                        self?.fetchAllData() // Refresh data
+                        print("✅ Record updated successfully")
+                        // Update local array immediately instead of full refresh
+                        if let savedRecord = savedRecord, let self = self {
+                            let updatedSchedule = DailyScheduleRecord(from: savedRecord)
+                            if let index = self.dailySchedules.firstIndex(where: { $0.id == recordName }) {
+                                self.dailySchedules[index] = updatedSchedule
+                            } else {
+                                self.dailySchedules.append(updatedSchedule)
+                            }
+                        }
                         completion(true, nil)
                     }
                 }
@@ -227,19 +290,61 @@ class CloudKitManager: ObservableObject {
         }
         
         let recordID = CKRecord.ID(recordName: recordName)
+        print("🗑️ Attempting to delete record: \(recordName)")
         
         publicDatabase.delete(withRecordID: recordID) { [weak self] deletedRecordID, error in
             DispatchQueue.main.async {
                 if let error = error {
-                    print("Error deleting daily schedule: \(error)")
+                    print("❌ Error deleting daily schedule: \(error)")
                     self?.errorMessage = "Failed to delete schedule: \(error.localizedDescription)"
                     completion(false, error)
                 } else {
-                    print("Successfully deleted daily schedule")
-                    self?.fetchAllData() // Refresh data
+                    print("✅ Successfully deleted daily schedule from CloudKit: \(recordName)")
+                    // Remove from local array immediately instead of full refresh
+                    self?.dailySchedules.removeAll { $0.id == recordName }
+                    print("📱 Removed from local array. Local count now: \(self?.dailySchedules.count ?? 0)")
+                    
+                    // Track this deletion to prevent immediate re-fetch
+                    self?.recentDeletionOperations.insert(recordName)
+                    self?.lastOperationTime = Date()
+                    print("🕒 Tracking deletion operation for \(recordName) - preventing fetch for 2 seconds")
+                    
+                    // Clear tracking after 5 seconds
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
+                        self?.recentDeletionOperations.remove(recordName)
+                        print("🧹 Cleared deletion tracking for \(recordName)")
+                    }
+                    
                     completion(true, nil)
                 }
             }
+        }
+    }
+    
+    /// Smart save that handles deletion when all fields are empty
+    func saveOrDeleteDailySchedule(existingRecordName: String?, date: Date, line1: String?, line2: String?, line3: String?, completion: @escaping (Bool, Error?) -> Void) {
+        // Check if all fields are empty
+        let isEmpty = (line1?.isEmpty ?? true) && (line2?.isEmpty ?? true) && (line3?.isEmpty ?? true)
+        
+        print("🤔 Smart save called - isEmpty: \(isEmpty), existingRecord: \(existingRecordName ?? "none")")
+        print("📝 Field values - line1: '\(line1 ?? "nil")', line2: '\(line2 ?? "nil")', line3: '\(line3 ?? "nil")'")
+        
+        if isEmpty && existingRecordName != nil {
+            // Delete existing record if all fields are empty
+            print("🗑️ All fields empty + existing record - calling DELETE")
+            deleteDailySchedule(recordName: existingRecordName!, completion: completion)
+        } else if !isEmpty {
+            // Save or update if there's content
+            print("💾 Fields have content - calling SAVE/UPDATE")
+            if let recordName = existingRecordName {
+                updateDailySchedule(recordName: recordName, date: date, line1: line1, line2: line2, line3: line3, completion: completion)
+            } else {
+                saveDailySchedule(date: date, line1: line1, line2: line2, line3: line3, completion: completion)
+            }
+        } else {
+            // No existing record and no content - do nothing
+            print("⏸️ No existing record and no content - doing nothing")
+            completion(true, nil)
         }
     }
     
@@ -254,7 +359,7 @@ class CloudKitManager: ObservableObject {
         let predicate = NSPredicate(format: "CD_month == %d AND CD_year == %d", month, year)
         let query = CKQuery(recordType: "CD_MonthlyNotes", predicate: predicate)
         
-        publicDatabase.fetch(withQuery: query, inZoneWith: nil, desiredKeys: nil, resultsLimit: CKQueryOperation.maximumResults) { [weak self] result in
+        publicDatabase.fetch(withQuery: query, inZoneWith: nil, desiredKeys: nil, resultsLimit: CKQueryOperation.maximumResults) { [weak self] (result: Result<(matchResults: [(CKRecord.ID, Result<CKRecord, Error>)], queryCursor: CKQueryOperation.Cursor?), Error>) in
             let record: CKRecord
             
             switch result {
@@ -293,7 +398,15 @@ class CloudKitManager: ObservableObject {
                         self?.errorMessage = "Failed to save notes: \(error.localizedDescription)"
                         completion(false, error)
                     } else {
-                        self?.fetchAllData() // Refresh data
+                        // Update local array immediately instead of full refresh
+                        if let savedRecord = savedRecord, let self = self {
+                            let newNotes = MonthlyNotesRecord(from: savedRecord)
+                            if let index = self.monthlyNotes.firstIndex(where: { $0.month == month && $0.year == year }) {
+                                self.monthlyNotes[index] = newNotes
+                            } else {
+                                self.monthlyNotes.append(newNotes)
+                            }
+                        }
                         completion(true, nil)
                     }
                 }

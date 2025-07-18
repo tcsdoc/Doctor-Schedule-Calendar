@@ -42,7 +42,7 @@ struct ContentView: View {
                 cloudKitManager.fetchAllData()
             }
             .refreshable {
-                cloudKitManager.fetchAllData()
+                cloudKitManager.forceRefreshAllData()
             }
         }
         .navigationViewStyle(.stack)
@@ -195,6 +195,8 @@ struct DayCell: View {
     @State private var line3: String = ""
     @State private var existingRecord: DailyScheduleRecord?
     @State private var isEditing = false
+    @State private var saveTimer: Timer?
+    @State private var isSaving = false
     @FocusState private var focusedField: DayField?
     
     private let calendar = Calendar.current
@@ -214,7 +216,10 @@ struct DayCell: View {
             loadSchedule()
         }
         .onChange(of: cloudKitManager.dailySchedules) { _, _ in
-            loadSchedule()
+            // Only update from CloudKit if not currently editing
+            if !isEditing {
+                loadSchedule()
+            }
         }
         .onChange(of: existingRecord) { _, _ in
             if !isEditing {
@@ -222,10 +227,23 @@ struct DayCell: View {
             }
         }
         .onChange(of: focusedField) { oldField, newField in
-            // Save when user moves away from line3 (OFF field) or dismisses keyboard
-            if oldField == .line3 && (newField != .line3 || newField == nil) && isEditing {
+            // Save when user moves away from ANY field or dismisses keyboard
+            if oldField != nil && newField != oldField && isEditing {
+                print("🎯 Focus changed from \(String(describing: oldField)) to \(String(describing: newField)) - triggering save")
                 saveSchedule()
             }
+        }
+        .onChange(of: isEditing) { _, newValue in
+            // Save when editing state changes (keyboard dismiss, app backgrounding, etc.)
+            if !newValue {
+                print("🎯 Editing state changed to false - triggering save")
+                saveSchedule()
+            }
+        }
+        .onDisappear {
+            // Clean up timer and reset saving state to prevent memory leaks
+            saveTimer?.invalidate()
+            isSaving = false
         }
     }
     
@@ -295,7 +313,17 @@ struct DayCell: View {
         case .line2:
             focusedField = .line3
         case .line3:
-            saveSchedule()
+            // For final field, save immediately without debounce but check for duplicates
+            guard !isSaving else {
+                print("⏸️ Save already in progress - skipping final field save")
+                focusedField = nil
+                return
+            }
+            // Set saving flag immediately
+            isSaving = true
+            print("🔒 Final field save - setting isSaving flag to TRUE")
+            saveTimer?.invalidate()
+            performSave()
             focusedField = nil
         case .none:
             break
@@ -321,32 +349,46 @@ struct DayCell: View {
     }
     
     private func saveSchedule() {
-        let dayStart = calendar.startOfDay(for: date)
-        
-        if let existing = existingRecord {
-            // Update existing record
-            cloudKitManager.updateDailySchedule(
-                recordName: existing.id,
-                date: dayStart,
-                line1: line1.isEmpty ? nil : line1,
-                line2: line2.isEmpty ? nil : line2,
-                line3: line3.isEmpty ? nil : line3
-            ) { success, error in
-                // Completion handled silently
-            }
-        } else {
-            // Create new record
-            cloudKitManager.saveDailySchedule(
-                date: dayStart,
-                line1: line1.isEmpty ? nil : line1,
-                line2: line2.isEmpty ? nil : line2,
-                line3: line3.isEmpty ? nil : line3
-            ) { success, error in
-                // Completion handled silently
-            }
+        // Prevent duplicate saves if one is already in progress
+        guard !isSaving else {
+            print("⏸️ Save already in progress - skipping duplicate save request")
+            return
         }
         
-        isEditing = false
+        // Set saving flag immediately to block subsequent calls
+        isSaving = true
+        print("🔒 Setting isSaving flag to TRUE - blocking future saves")
+        
+        // Cancel any existing timer
+        saveTimer?.invalidate()
+        
+        // Set up a debounced save with 0.5 second delay (increased from 0.3)
+        saveTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { _ in
+            performSave()
+        }
+    }
+    
+    private func performSave() {
+        print("🚀 performSave() starting - isSaving flag should be TRUE")
+        let dayStart = calendar.startOfDay(for: date)
+        
+        // Use smart save that handles deletion when all fields are empty
+        cloudKitManager.saveOrDeleteDailySchedule(
+            existingRecordName: existingRecord?.id,
+            date: dayStart,
+            line1: line1.isEmpty ? nil : line1,
+            line2: line2.isEmpty ? nil : line2,
+            line3: line3.isEmpty ? nil : line3
+        ) { success, error in
+            DispatchQueue.main.async {
+                // Add delay before clearing flag to prevent rapid successive saves
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                    print("🔓 Clearing isSaving flag after CloudKit operation + 1 second delay")
+                    self.isSaving = false
+                }
+                self.isEditing = false
+            }
+        }
     }
 }
 
@@ -390,7 +432,10 @@ struct MonthlyNotesView: View {
             loadNotes()
         }
         .onChange(of: cloudKitManager.monthlyNotes) { _, _ in
-            loadNotes()
+            // Only update from CloudKit if not currently editing
+            if !isEditing {
+                loadNotes()
+            }
         }
         .onChange(of: existingRecord) { _, _ in
             if !isEditing {
