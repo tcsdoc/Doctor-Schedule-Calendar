@@ -120,16 +120,17 @@ struct MonthView: View {
     }()
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 15) {  // Increased spacing for better separation
             monthHeader
             notesSection
             daysOfWeekHeader
             calendarGrid
             LegendView()
         }
-        .padding()
-        .background(Color.gray.opacity(0.1))
-        .cornerRadius(10)
+        .padding(16)  // Slightly increased padding
+        .background(Color(.secondarySystemBackground))  // Better background contrast
+        .cornerRadius(12)  // Slightly more rounded for modern look
+        .shadow(color: Color.gray.opacity(0.2), radius: 4, x: 0, y: 2)  // Subtle shadow for depth
     }
     
     private var monthHeader: some View {
@@ -149,16 +150,19 @@ struct MonthView: View {
         HStack {
             ForEach(Calendar.current.shortWeekdaySymbols, id: \.self) { day in
                 Text(day)
-                    .font(.caption)
-                    .fontWeight(.semibold)
+                    .font(.system(size: 14, weight: .semibold))  // Slightly larger and bolder
+                    .foregroundColor(.secondary)
                     .frame(maxWidth: .infinity)
             }
         }
-        .padding(.top, 10)
+        .padding(.horizontal, 4)
+        .padding(.vertical, 8)
+        .background(Color(.tertiarySystemBackground))  // Subtle background for header
+        .cornerRadius(8)
     }
     
     private var calendarGrid: some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 1), count: 7), spacing: 1) {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 7), spacing: 4) {
             ForEach(daysInMonth, id: \.self) { date in
                 if calendar.isDate(date, equalTo: month, toGranularity: .month) {
                     DayCell(date: date)
@@ -166,7 +170,7 @@ struct MonthView: View {
                 } else {
                     Rectangle()
                         .fill(Color.clear)
-                        .frame(minHeight: 100)
+                        .frame(minHeight: 120)  // Slightly taller for better proportion
                 }
             }
         }
@@ -222,11 +226,13 @@ struct DayCell: View {
     }
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 0) {
             dayNumber
             scheduleFields
+                .padding(.horizontal, 8)
+                .padding(.bottom, 8)
         }
-        .frame(maxWidth: .infinity, minHeight: 100)
+        .frame(maxWidth: .infinity, minHeight: 120)  // Matching the clear cell height
         .background(background)
         .onAppear {
             print("📱 DayCell appeared for \(dayString) - loading schedule")
@@ -289,14 +295,18 @@ struct DayCell: View {
     }
     
     private var dayNumber: some View {
-        Text("\(calendar.component(.day, from: date))")
-            .font(.system(size: 16, weight: .semibold))
-            .foregroundColor(.primary)
-            .padding(.bottom, 2)
+        HStack {
+            Text("\(calendar.component(.day, from: date))")
+                .font(.system(size: 18, weight: .bold))  // Larger, bolder like printed version
+                .foregroundColor(.primary)
+                .padding(.leading, 8)
+                .padding(.top, 6)
+            Spacer()
+        }
     }
     
     private var scheduleFields: some View {
-        VStack(spacing: 4) {
+        VStack(spacing: 6) {  // Increased spacing for better visual separation
             scheduleTextField(prefix: "OS", text: $line1, color: .blue, field: .line1) {
                 moveToNextField()
             }
@@ -310,18 +320,20 @@ struct DayCell: View {
     }
     
     private func scheduleTextField(prefix: String, text: Binding<String>, color: Color, field: DayField, submitLabel: SubmitLabel = .next, onSubmit: @escaping () -> Void) -> some View {
-        HStack {
+        HStack(spacing: 8) {  // Increased spacing between prefix and field
             Text(prefix)
-                .font(.caption)
-                .frame(width: 25)
+                .font(.system(size: 12, weight: .medium))  // Slightly smaller but medium weight
+                .foregroundColor(.secondary)
+                .frame(width: 28, alignment: .leading)  // Slightly wider for better alignment
             TextField("", text: text)
-                .font(.system(size: 14))
-                .frame(height: 32)
-                .padding(6)
-                .background(color.opacity(0.1))
+                .font(.system(size: 14, weight: .medium))  // Medium weight for better readability
+                .frame(height: 28)  // Slightly smaller height for better proportion
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(color.opacity(0.15))  // Slightly more opacity for visibility
                 .overlay(
-                    RoundedRectangle(cornerRadius: 4)
-                        .stroke(color.opacity(0.6), lineWidth: 1.5)
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(color.opacity(0.4), lineWidth: 1.0)  // Thinner border for cleaner look
                 )
                 .focused($focusedField, equals: field)
                 .submitLabel(submitLabel)
@@ -337,12 +349,13 @@ struct DayCell: View {
     }
     
     private var background: some View {
-        RoundedRectangle(cornerRadius: 2)
-            .fill(Color.white)
+        RoundedRectangle(cornerRadius: 8)
+            .fill(Color(.systemBackground))  // Better contrast with system background
             .overlay(
-                RoundedRectangle(cornerRadius: 2)
-                    .stroke(Color.gray.opacity(0.3), lineWidth: 0.5)
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Color.primary, lineWidth: 2.0)  // Stronger border like printed version
             )
+            .shadow(color: Color.gray.opacity(0.3), radius: 2, x: 1, y: 1)  // Subtle shadow for depth
     }
     
     // MARK: - Enhanced Data Management Methods
@@ -926,13 +939,61 @@ struct LegendView: View {
 struct PrintView: View {
     @EnvironmentObject private var cloudKitManager: CloudKitManager
     @Environment(\.dismiss) private var dismiss
+    @State private var showingPrintPreview = false
+    @State private var currentDate = Date()
+    
+    private let calendar = Calendar.current
     
     var body: some View {
         NavigationView {
-            ScrollView {
-                Text("Print functionality to be implemented")
+            VStack(spacing: 20) {
+                Text("Print Provider Schedule")
+                    .font(.title2)
+                    .fontWeight(.semibold)
+                    .padding(.top)
+                
+                Text("Generates 12 months with each month on its own page")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                
+                Text("Use the print dialog to select which pages (months) to print")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                
+                // Current year display
+                VStack(spacing: 8) {
+                    Text("Starting Month:")
+                        .font(.headline)
+                    
+                    Text(monthFormatter.string(from: currentDate))
+                        .font(.title3)
+                        .fontWeight(.medium)
+                        .padding()
+                        .background(Color(.secondarySystemBackground))
+                        .cornerRadius(8)
+                }
+                
+                // Print button
+                Button(action: {
+                    showingPrintPreview = true
+                }) {
+                    HStack {
+                        Image(systemName: "printer")
+                        Text("Preview & Print 12 Months")
+                    }
+                    .font(.headline)
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
                     .padding()
+                    .background(Color.blue)
+                    .cornerRadius(12)
+                }
+                
+                Spacer()
             }
+            .padding()
             .navigationTitle("Print Calendar")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -942,17 +1003,441 @@ struct PrintView: View {
                     }
                 }
             }
+            .sheet(isPresented: $showingPrintPreview) {
+                FullYearPrintPreview(startingMonth: currentDate)
+                    .environmentObject(cloudKitManager)
+            }
+        }
+    }
+    
+    private let monthFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMMM yyyy"
+        return formatter
+    }()
+}
+
+// MARK: - FullYearPrintPreview
+struct FullYearPrintPreview: View {
+    let startingMonth: Date
+    @EnvironmentObject private var cloudKitManager: CloudKitManager
+    @Environment(\.dismiss) private var dismiss
+    
+    private let calendar = Calendar.current
+    
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    ForEach(monthsToShow, id: \.self) { month in
+                        PrintableMonthPage(month: month)
+                            .environmentObject(cloudKitManager)
+                            .frame(maxWidth: .infinity)
+                            .background(Color.white)
+                    }
+                }
+            }
+            .background(Color(.systemGray6))
+            .navigationTitle("Print Preview")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Back") {
+                        dismiss()
+                    }
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(action: printAllMonths) {
+                        HStack {
+                            Image(systemName: "printer")
+                            Text("Print")
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    private var monthsToShow: [Date] {
+        var months: [Date] = []
+        for i in 0..<12 {
+            if let month = calendar.date(byAdding: .month, value: i, to: startingMonth) {
+                months.append(month)
+            }
+        }
+        return months
+    }
+    
+    private func printAllMonths() {
+        let printController = UIPrintInteractionController.shared
+        let printInfo = UIPrintInfo.printInfo()
+        
+        printInfo.outputType = .general
+        printInfo.jobName = "Provider Schedule - 12 Months"
+        printInfo.orientation = .portrait
+        
+        printController.printInfo = printInfo
+        printController.showsNumberOfCopies = true
+        printController.showsPageRange = true  // Allow user to select which pages (months)
+        
+        // Create printable content
+        let htmlContent = generateFullYearHTML()
+        let formatter = UIMarkupTextPrintFormatter(markupText: htmlContent)
+        formatter.perPageContentInsets = UIEdgeInsets(top: 30, left: 30, bottom: 30, right: 30)
+        
+        printController.printFormatter = formatter
+        
+        // Present print dialog
+        printController.present(animated: true) { (controller, completed, error) in
+            if completed {
+                print("✅ Print job completed successfully")
+            } else if let error = error {
+                print("❌ Print error: \(error.localizedDescription)")
+            }
+        }
+    }
+    
+    private func generateFullYearHTML() -> String {
+        var fullHTML = """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <style>
+                body { font-family: Arial, sans-serif; margin: 0; padding: 0; }
+                .page { page-break-after: always; padding: 20px; height: 100vh; box-sizing: border-box; }
+                .page:last-child { page-break-after: avoid; }
+                .header { text-align: center; margin-bottom: 15px; }
+                .title { font-size: 24px; font-weight: bold; margin-bottom: 8px; }
+                .month-title { font-size: 18px; font-weight: bold; margin-bottom: 15px; }
+                .notes { margin-bottom: 15px; padding: 8px; background-color: #f0f0f0; font-size: 12px; }
+                .calendar { width: 100%; border-collapse: collapse; margin-bottom: 15px; }
+                .calendar th, .calendar td { border: 1.5px solid #000; padding: 4px; vertical-align: top; }
+                .calendar th { background-color: #e0e0e0; text-align: center; height: 25px; font-size: 12px; font-weight: bold; }
+                .calendar td { height: 80px; width: 14.28%; }
+                .day-number { font-weight: bold; font-size: 12px; margin-bottom: 3px; }
+                .schedule-line { font-size: 9px; margin: 1px 0; line-height: 1.2; }
+                .legend { font-size: 9px; text-align: center; border: 1px solid #666; padding: 5px; }
+                @page { margin: 0.5in; }
+            </style>
+        </head>
+        <body>
+        """
+        
+        // Generate each month as a separate page
+        for (index, month) in monthsToShow.enumerated() {
+            let monthFormatter = DateFormatter()
+            monthFormatter.dateFormat = "MMMM yyyy"
+            
+            let monthlyNotes = getMonthlyNotes(for: month)
+            let dailySchedules = getDailySchedules(for: month)
+            
+            fullHTML += """
+            <div class="page">
+                <div class="header">
+                    <div class="title">PROVIDER SCHEDULE</div>
+                    <div class="month-title">\(monthFormatter.string(from: month))</div>
+                </div>
+            """
+            
+            // Add monthly notes if they exist
+            if !monthlyNotes.isEmpty {
+                fullHTML += "<div class=\"notes\"><strong>Notes:</strong><br>"
+                for note in monthlyNotes {
+                    if !note.isEmpty {
+                        fullHTML += "• \(note)<br>"
+                    }
+                }
+                fullHTML += "</div>"
+            }
+            
+            // Add calendar table
+            fullHTML += "<table class=\"calendar\">"
+            
+            // Days of week header
+            fullHTML += "<tr>"
+            for day in calendar.shortWeekdaySymbols {
+                fullHTML += "<th>\(day)</th>"
+            }
+            fullHTML += "</tr>"
+            
+            // Get only the days that belong to this month (no spillover)
+            let monthDays = getActualMonthDays(for: month)
+            let weeks = monthDays.chunked(into: 7)
+            
+            for week in weeks {
+                fullHTML += "<tr>"
+                for i in 0..<7 {
+                    if i < week.count {
+                        let date = week[i]
+                        let dayNumber = calendar.component(.day, from: date)
+                        let schedule = dailySchedules[date] ?? ["", "", ""]
+                        
+                        fullHTML += "<td>"
+                        fullHTML += "<div class=\"day-number\">\(dayNumber)</div>"
+                        if !schedule[0].isEmpty { fullHTML += "<div class=\"schedule-line\"><strong>OS:</strong> \(schedule[0])</div>" }
+                        if !schedule[1].isEmpty { fullHTML += "<div class=\"schedule-line\"><strong>CL:</strong> \(schedule[1])</div>" }
+                        if !schedule[2].isEmpty { fullHTML += "<div class=\"schedule-line\"><strong>OFF:</strong> \(schedule[2])</div>" }
+                        fullHTML += "</td>"
+                    } else {
+                        fullHTML += "<td></td>"
+                    }
+                }
+                fullHTML += "</tr>"
+            }
+            
+            fullHTML += "</table>"
+            
+            // Add legend
+            fullHTML += """
+            <div class="legend">
+                O-Siddiqui. F-Freeman. P-Dixit. K-Watts. C-Carbajal. B-Brown  G-Grant. S-Sisodraker. A-Pitocchi.
+            </div>
+            </div>
+            """
+        }
+        
+        fullHTML += "</body></html>"
+        return fullHTML
+    }
+    
+    private func getActualMonthDays(for month: Date) -> [Date] {
+        guard let monthInterval = calendar.dateInterval(of: .month, for: month) else {
+            return []
+        }
+        
+        var days: [Date] = []
+        let startOfMonth = monthInterval.start
+        let endOfMonth = monthInterval.end
+        
+        var currentDate = startOfMonth
+        while currentDate < endOfMonth {
+            days.append(currentDate)
+            currentDate = calendar.date(byAdding: .day, value: 1, to: currentDate)!
+        }
+        
+        return days
+    }
+    
+    private func getMonthlyNotes(for month: Date) -> [String] {
+        let monthComp = calendar.component(.month, from: month)
+        let yearComp = calendar.component(.year, from: month)
+        
+        if let notes = cloudKitManager.monthlyNotes.first(where: { $0.month == monthComp && $0.year == yearComp }) {
+            return [notes.line1 ?? "", notes.line2 ?? "", notes.line3 ?? ""].filter { !$0.isEmpty }
+        }
+        return []
+    }
+    
+    private func getDailySchedules(for month: Date) -> [Date: [String]] {
+        var schedules: [Date: [String]] = [:]
+        
+        for schedule in cloudKitManager.dailySchedules {
+            if let date = schedule.date, calendar.isDate(date, equalTo: month, toGranularity: .month) {
+                let dayStart = calendar.startOfDay(for: date)
+                schedules[dayStart] = [
+                    schedule.line1 ?? "",
+                    schedule.line2 ?? "",
+                    schedule.line3 ?? ""
+                ]
+            }
+        }
+        
+        return schedules
+    }
+}
+
+// MARK: - PrintableMonthPage
+struct PrintableMonthPage: View {
+    let month: Date
+    @EnvironmentObject private var cloudKitManager: CloudKitManager
+    
+    private let calendar = Calendar.current
+    private let monthFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMMM yyyy"
+        return formatter
+    }()
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Header
+            VStack(spacing: 8) {
+                Text("PROVIDER SCHEDULE")
+                    .font(.title)
+                    .fontWeight(.bold)
+                    .frame(maxWidth: .infinity)
+                
+                Text(monthFormatter.string(from: month))
+                    .font(.title2)
+                    .fontWeight(.semibold)
+                    .frame(maxWidth: .infinity)
+            }
+            
+            // Monthly Notes
+            MonthlyNotesView(month: month)
+                .environmentObject(cloudKitManager)
+            
+            // Calendar - Only actual month days
+            VStack(spacing: 4) {
+                // Days of week header
+                HStack(spacing: 0) {
+                    ForEach(Calendar.current.shortWeekdaySymbols, id: \.self) { day in
+                        Text(day)
+                            .font(.system(size: 11, weight: .bold))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 6)
+                            .background(Color.gray.opacity(0.3))
+                            .border(Color.black, width: 1)
+                    }
+                }
+                
+                // Calendar grid - only actual month days
+                let monthDays = getActualMonthDays()
+                let weeks = monthDays.chunked(into: 7)
+                
+                ForEach(Array(weeks.enumerated()), id: \.offset) { weekIndex, week in
+                    HStack(spacing: 0) {
+                        ForEach(0..<7, id: \.self) { dayIndex in
+                            if dayIndex < week.count {
+                                PrintableActualDayCell(date: week[dayIndex])
+                                    .environmentObject(cloudKitManager)
+                            } else {
+                                Rectangle()
+                                    .fill(Color.clear)
+                                    .frame(height: 60)
+                                    .border(Color.black, width: 1)
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Legend
+            Text("O-Siddiqui. F-Freeman. P-Dixit. K-Watts. C-Carbajal. B-Brown  G-Grant. S-Sisodraker. A-Pitocchi.")
+                .font(.system(size: 9))
+                .padding(6)
+                .overlay(
+                    Rectangle()
+                        .stroke(Color.black, lineWidth: 1)
+                )
+                .padding(.top, 8)
+            
+            Spacer()
+        }
+        .padding(15)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(Color.white)
+    }
+    
+    private func getActualMonthDays() -> [Date] {
+        guard let monthInterval = calendar.dateInterval(of: .month, for: month) else {
+            return []
+        }
+        
+        var days: [Date] = []
+        let startOfMonth = monthInterval.start
+        let endOfMonth = monthInterval.end
+        
+        var currentDate = startOfMonth
+        while currentDate < endOfMonth {
+            days.append(currentDate)
+            currentDate = calendar.date(byAdding: .day, value: 1, to: currentDate)!
+        }
+        
+        return days
+    }
+}
+
+// MARK: - PrintableActualDayCell
+struct PrintableActualDayCell: View {
+    let date: Date
+    @EnvironmentObject private var cloudKitManager: CloudKitManager
+    
+    private let calendar = Calendar.current
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            // Day number
+            HStack {
+                Text("\(calendar.component(.day, from: date))")
+                    .font(.system(size: 10, weight: .bold))
+                Spacer()
+            }
+            
+            // Schedule fields
+            VStack(alignment: .leading, spacing: 1) {
+                if !schedule.line1.isEmpty {
+                    HStack(spacing: 2) {
+                        Text("OS")
+                            .font(.system(size: 8, weight: .medium))
+                            .frame(width: 14, alignment: .leading)
+                        Text(schedule.line1)
+                            .font(.system(size: 8))
+                            .lineLimit(1)
+                    }
+                }
+                
+                if !schedule.line2.isEmpty {
+                    HStack(spacing: 2) {
+                        Text("CL")
+                            .font(.system(size: 8, weight: .medium))
+                            .frame(width: 14, alignment: .leading)
+                        Text(schedule.line2)
+                            .font(.system(size: 8))
+                            .lineLimit(1)
+                    }
+                }
+                
+                if !schedule.line3.isEmpty {
+                    HStack(spacing: 2) {
+                        Text("OFF")
+                            .font(.system(size: 8, weight: .medium))
+                            .frame(width: 14, alignment: .leading)
+                        Text(schedule.line3)
+                            .font(.system(size: 8))
+                            .lineLimit(1)
+                    }
+                }
+            }
+            
+            Spacer(minLength: 0)
+        }
+        .frame(height: 60)
+        .padding(3)
+        .background(Color.white)
+        .border(Color.black, width: 1)
+    }
+    
+    private var schedule: (line1: String, line2: String, line3: String) {
+        let dayStart = calendar.startOfDay(for: date)
+        
+        if let record = cloudKitManager.dailySchedules.first(where: { record in
+            if let recordDate = record.date {
+                return calendar.isDate(recordDate, inSameDayAs: dayStart)
+            }
+            return false
+        }) {
+            return (
+                line1: record.line1 ?? "",
+                line2: record.line2 ?? "",
+                line3: record.line3 ?? ""
+            )
+        }
+        
+        return (line1: "", line2: "", line3: "")
+    }
+}
+
+// MARK: - Array Extension for Chunking
+extension Array {
+    func chunked(into size: Int) -> [[Element]] {
+        return stride(from: 0, to: count, by: size).map {
+            Array(self[$0..<Swift.min($0 + size, count)])
         }
     }
 }
 
 // MARK: - Utilities
-private let monthFormatter: DateFormatter = {
-    let formatter = DateFormatter()
-    formatter.dateFormat = "MMMM yyyy"
-    return formatter
-}()
-
 extension Calendar {
     func startOfMonth(for date: Date) -> Date {
         let components = dateComponents([.year, .month], from: date)
