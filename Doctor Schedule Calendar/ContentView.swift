@@ -210,9 +210,9 @@ struct ContentView: View {
                         
                         fullHTML += "<td>"
                         fullHTML += "<div class=\"day-number\">\(dayNumber)</div>"
-                        if !schedule[0].isEmpty { fullHTML += "<div class=\"schedule-line\"><strong>OS:</strong> \(schedule[0])</div>" }
-                        if !schedule[1].isEmpty { fullHTML += "<div class=\"schedule-line\"><strong>CL:</strong> \(schedule[1])</div>" }
-                        if !schedule[2].isEmpty { fullHTML += "<div class=\"schedule-line\"><strong>OFF:</strong> \(schedule[2])</div>" }
+                        fullHTML += "<div class=\"schedule-line\"><strong>OS:</strong> \(schedule[0])</div>"
+                        fullHTML += "<div class=\"schedule-line\"><strong>CL:</strong> \(schedule[1])</div>"
+                        fullHTML += "<div class=\"schedule-line\"><strong>OFF:</strong> \(schedule[2])</div>"
                         fullHTML += "</td>"
                     } else {
                         // Empty cell for days outside this month
