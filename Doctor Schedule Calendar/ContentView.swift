@@ -9,6 +9,16 @@
 import SwiftUI
 import CloudKit
 
+// MARK: - Next Day Navigation
+extension Notification.Name {
+    static let moveToNextDay = Notification.Name("moveToNextDay")
+}
+
+struct NextDayFocusRequest {
+    let fromDate: Date
+    let targetDate: Date
+}
+
 struct ContentView: View {
     @EnvironmentObject private var cloudKitManager: CloudKitManager
     @State private var currentDate = Date()
@@ -197,7 +207,13 @@ struct DayCell: View {
     @State private var isEditing = false
     @State private var saveTimer: Timer?
     @State private var isSaving = false
+    @State private var hasUnsavedChanges = false
+    @State private var lastSyncVersion: Date?
     @FocusState private var focusedField: DayField?
+    
+    // Track local state to prevent CloudKit overwrites
+    @State private var localDataProtected = false
+    @State private var userInitiatedChange = false
     
     private let calendar = Calendar.current
     
@@ -213,38 +229,63 @@ struct DayCell: View {
         .frame(maxWidth: .infinity, minHeight: 100)
         .background(background)
         .onAppear {
+            print("📱 DayCell appeared for \(dayString) - loading schedule")
             loadSchedule()
         }
-        .onChange(of: cloudKitManager.dailySchedules) { _, _ in
-            // Only update from CloudKit if not currently editing
-            if !isEditing {
-                loadSchedule()
-            }
+        .onChange(of: cloudKitManager.dailySchedules) { _, newSchedules in
+            // Enhanced protection against CloudKit overwrites during editing
+            handleCloudKitDataChange(newSchedules)
         }
-        .onChange(of: existingRecord) { _, _ in
-            if !isEditing {
+        .onChange(of: existingRecord) { oldRecord, newRecord in
+            // Only update if not actively editing and no unsaved changes
+            if !isEditing && !hasUnsavedChanges && !localDataProtected {
+                print("📋 Record changed for \(dayString) - updating from record")
                 updateScheduleFromRecord()
+            } else {
+                print("🛡️ Skipping record update for \(dayString) - protected (editing: \(isEditing), unsaved: \(hasUnsavedChanges), protected: \(localDataProtected))")
             }
         }
         .onChange(of: focusedField) { oldField, newField in
-            // Save when user moves away from ANY field or dismisses keyboard
-            if oldField != nil && newField != oldField && isEditing {
-                print("🎯 Focus changed from \(String(describing: oldField)) to \(String(describing: newField)) - triggering save")
-                saveSchedule()
-            }
+            handleFocusChange(from: oldField, to: newField)
         }
         .onChange(of: isEditing) { _, newValue in
             // Save when editing state changes (keyboard dismiss, app backgrounding, etc.)
-            if !newValue {
-                print("🎯 Editing state changed to false - triggering save")
+            if !newValue && hasUnsavedChanges {
+                print("🎯 Editing ended for \(dayString) with unsaved changes - triggering save")
                 saveSchedule()
             }
         }
         .onDisappear {
-            // Clean up timer and reset saving state to prevent memory leaks
-            saveTimer?.invalidate()
-            isSaving = false
+            // Clean up and save any pending changes
+            print("📱 DayCell disappeared for \(dayString) - cleaning up")
+            if hasUnsavedChanges {
+                performSave()
+            }
+            cleanupTimersAndState()
         }
+        .background(
+            // Hidden color to track when cell becomes visible again
+            Color.clear.onAppear {
+                // Reset protection when cell reappears
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    if !isEditing {
+                        localDataProtected = false
+                    }
+                }
+            }
+        )
+        // Listen for next day navigation requests
+        .onReceive(NotificationCenter.default.publisher(for: .moveToNextDay)) { notification in
+            if let request = notification.object as? NextDayFocusRequest {
+                handleNextDayFocusRequest(request)
+            }
+        }
+    }
+    
+    private var dayString: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "M/d"
+        return formatter.string(from: date)
     }
     
     private var dayNumber: some View {
@@ -263,7 +304,7 @@ struct DayCell: View {
                 moveToNextField()
             }
             scheduleTextField(prefix: "OFF", text: $line3, color: .orange, field: .line3, submitLabel: .done) {
-                saveSchedule()
+                finalizeEditing()
             }
         }
     }
@@ -284,15 +325,13 @@ struct DayCell: View {
                 )
                 .focused($focusedField, equals: field)
                 .submitLabel(submitLabel)
+                .textInputAutocapitalization(.characters)  // Force all uppercase
+                .disableAutocorrection(true)  // Disable autocorrect for cleaner input
                 .onSubmit {
                     onSubmit()
                 }
-                .onChange(of: text.wrappedValue) { _, newValue in
-                    // Limit to 16 characters
-                    if newValue.count > 16 {
-                        text.wrappedValue = String(newValue.prefix(16))
-                    }
-                    isEditing = true
+                .onChange(of: text.wrappedValue) { oldValue, newValue in
+                    handleTextChange(field: field, oldValue: oldValue, newValue: newValue, binding: text)
                 }
         }
     }
@@ -306,6 +345,64 @@ struct DayCell: View {
             )
     }
     
+    // MARK: - Enhanced Data Management Methods
+    
+    private func handleTextChange(field: DayField, oldValue: String, newValue: String, binding: Binding<String>) {
+        // Limit to 16 characters
+        if newValue.count > 16 {
+            binding.wrappedValue = String(newValue.prefix(16))
+            return
+        }
+        
+        // Track that this is a user-initiated change
+        userInitiatedChange = true
+        isEditing = true
+        hasUnsavedChanges = true
+        localDataProtected = true
+        
+        print("✏️ User editing \(dayString) field \(field) - setting protection flags")
+        print("📝 Field \(field) changed from '\(oldValue)' to '\(newValue)'")
+    }
+    
+    private func handleFocusChange(from oldField: DayField?, to newField: DayField?) {
+        if oldField != nil && newField != oldField {
+            print("🎯 Focus changed for \(dayString) from \(String(describing: oldField)) to \(String(describing: newField))")
+            
+            // If moving between fields with unsaved changes, save immediately
+            if hasUnsavedChanges && !isSaving {
+                print("💾 Focus change with unsaved changes - triggering immediate save")
+                saveSchedule()
+            }
+        }
+    }
+    
+    private func handleCloudKitDataChange(_ newSchedules: [DailyScheduleRecord]) {
+        // Only update from CloudKit if we're not actively protecting local data
+        if localDataProtected || isEditing || hasUnsavedChanges || isSaving {
+            print("🛡️ CloudKit data changed for \(dayString) - local data protected")
+            print("🔍 Protection reasons: protected=\(localDataProtected), editing=\(isEditing), unsaved=\(hasUnsavedChanges), saving=\(isSaving)")
+            return
+        }
+        
+        // Find the record for this date
+        let dayStart = calendar.startOfDay(for: date)
+        let updatedRecord = newSchedules.first { record in
+            if let recordDate = record.date {
+                return calendar.isDate(recordDate, inSameDayAs: dayStart)
+            }
+            return false
+        }
+        
+        // Only update if the record actually changed
+        if let newRecord = updatedRecord, newRecord.id != existingRecord?.id {
+            print("📊 CloudKit data updated for \(dayString) - applying changes")
+            existingRecord = newRecord
+        } else if updatedRecord == nil && existingRecord != nil {
+            print("🗑️ CloudKit record deleted for \(dayString) - clearing local data")
+            existingRecord = nil
+        }
+    }
+    
     private func moveToNextField() {
         switch focusedField {
         case .line1:
@@ -313,21 +410,59 @@ struct DayCell: View {
         case .line2:
             focusedField = .line3
         case .line3:
-            // For final field, save immediately without debounce but check for duplicates
-            guard !isSaving else {
-                print("⏸️ Save already in progress - skipping final field save")
-                focusedField = nil
-                return
-            }
-            // Set saving flag immediately
-            isSaving = true
-            print("🔒 Final field save - setting isSaving flag to TRUE")
-            saveTimer?.invalidate()
-            performSave()
-            focusedField = nil
+            finalizeEditing()
         case .none:
             break
         }
+    }
+    
+    private func finalizeEditing() {
+        print("🏁 Finalizing editing for \(dayString)")
+        
+        // Force immediate save if there are unsaved changes
+        if hasUnsavedChanges && !isSaving {
+            performSave()
+        }
+        
+        // For better data entry workflow, try to move to next day's first field
+        // If that fails, keep focus on current field to prevent cursor disappearing
+        moveToNextDayFirstField()
+        
+        isEditing = false
+        
+        // Delay clearing protection to allow save to complete
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            localDataProtected = false
+            print("🔓 Cleared local data protection for \(dayString)")
+        }
+    }
+    
+    private func moveToNextDayFirstField() {
+        // Calculate the next day
+        guard let nextDay = calendar.date(byAdding: .day, value: 1, to: date) else {
+            // Fallback: stay on current day's first field
+            focusedField = .line1
+            print("🔄 Could not calculate next day - staying on current day's OS field")
+            return
+        }
+        
+        // Clear current focus to allow next day to take over
+        focusedField = nil
+        
+        // Send notification to request focus on next day's first field
+        let request = NextDayFocusRequest(fromDate: date, targetDate: nextDay)
+        NotificationCenter.default.post(name: .moveToNextDay, object: request)
+        
+        print("🎯 Requesting focus move from \(dayString) to next day \(formatDate(nextDay))")
+        
+        // Note: Removed fallback logic that was causing focus to jump back
+        // If next day navigation fails, user can manually click to regain focus
+    }
+    
+    private func formatDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "M/d"
+        return formatter.string(from: date)
     }
     
     private func loadSchedule() {
@@ -339,38 +474,66 @@ struct DayCell: View {
             return false
         }
         
-        updateScheduleFromRecord()
+        // Only update if not protected
+        if !localDataProtected {
+            updateScheduleFromRecord()
+        }
     }
     
     private func updateScheduleFromRecord() {
+        // Store the current state to detect if we're overwriting user changes
+        let oldLine1 = line1
+        let oldLine2 = line2
+        let oldLine3 = line3
+        
         line1 = existingRecord?.line1 ?? ""
         line2 = existingRecord?.line2 ?? ""
         line3 = existingRecord?.line3 ?? ""
+        
+        // If we overwrote user changes, log it
+        if oldLine1 != line1 || oldLine2 != line2 || oldLine3 != line3 {
+            print("📋 Updated \(dayString) from record - line1: '\(oldLine1)' → '\(line1)', line2: '\(oldLine2)' → '\(line2)', line3: '\(oldLine3)' → '\(line3)'")
+        }
+        
+        // Update sync version
+        lastSyncVersion = Date()
+        hasUnsavedChanges = false
+        userInitiatedChange = false
     }
     
     private func saveSchedule() {
-        // Prevent duplicate saves if one is already in progress
+        // Prevent duplicate saves
         guard !isSaving else {
-            print("⏸️ Save already in progress - skipping duplicate save request")
+            print("⏸️ Save already in progress for \(dayString) - skipping duplicate request")
+            return
+        }
+        
+        // Don't save if no user changes were made
+        guard userInitiatedChange else {
+            print("⏸️ No user changes detected for \(dayString) - skipping save")
             return
         }
         
         // Set saving flag immediately to block subsequent calls
         isSaving = true
-        print("🔒 Setting isSaving flag to TRUE - blocking future saves")
+        localDataProtected = true
+        print("🔒 Setting saving flags for \(dayString)")
         
         // Cancel any existing timer
         saveTimer?.invalidate()
         
-        // Set up a debounced save with 0.5 second delay (increased from 0.3)
-        saveTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { _ in
+        // Set up a debounced save with 0.8 second delay (increased for stability)
+        saveTimer = Timer.scheduledTimer(withTimeInterval: 0.8, repeats: false) { _ in
             performSave()
         }
     }
     
     private func performSave() {
-        print("🚀 performSave() starting - isSaving flag should be TRUE")
+        print("🚀 Performing save for \(dayString) with protection active")
         let dayStart = calendar.startOfDay(for: date)
+        
+        // Log the current state
+        print("📊 Saving state - line1: '\(line1)', line2: '\(line2)', line3: '\(line3)'")
         
         // Use smart save that handles deletion when all fields are empty
         cloudKitManager.saveOrDeleteDailySchedule(
@@ -381,12 +544,62 @@ struct DayCell: View {
             line3: line3.isEmpty ? nil : line3
         ) { success, error in
             DispatchQueue.main.async {
-                // Add delay before clearing flag to prevent rapid successive saves
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                    print("🔓 Clearing isSaving flag after CloudKit operation + 1 second delay")
-                    self.isSaving = false
+                self.handleSaveCompletion(success: success, error: error)
+            }
+        }
+    }
+    
+    private func handleSaveCompletion(success: Bool, error: Error?) {
+        if success {
+            print("✅ Save completed successfully for \(dayString)")
+            hasUnsavedChanges = false
+            userInitiatedChange = false
+            lastSyncVersion = Date()
+        } else {
+            print("❌ Save failed for \(dayString): \(error?.localizedDescription ?? "Unknown error")")
+        }
+        
+        // Clear saving flag after a delay to prevent rapid successive operations
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            self.isSaving = false
+            print("🔓 Cleared saving flag for \(self.dayString)")
+            
+            // Clear protection after save completes and some time passes
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                if !self.isEditing {
+                    self.localDataProtected = false
+                    print("🔓 Cleared local data protection for \(self.dayString)")
                 }
-                self.isEditing = false
+            }
+        }
+    }
+    
+    private func cleanupTimersAndState() {
+        saveTimer?.invalidate()
+        saveTimer = nil
+        
+        // Don't clear protection immediately to allow any pending operations to complete
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            isSaving = false
+            if !isEditing {
+                localDataProtected = false
+            }
+        }
+    }
+    
+    private func handleNextDayFocusRequest(_ request: NextDayFocusRequest) {
+        let targetDayStart = calendar.startOfDay(for: request.targetDate)
+        let currentDayStart = calendar.startOfDay(for: date)
+        
+        // Check if this cell's date matches the target date
+        if calendar.isDate(currentDayStart, inSameDayAs: targetDayStart) {
+            // Small delay to ensure proper timing after previous day clears focus
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                // Only take focus if not currently being edited
+                if !self.isEditing && !self.localDataProtected {
+                    self.focusedField = .line1
+                    print("🎯 Next day navigation: Focus moved to OS field on \(self.dayString)")
+                }
             }
         }
     }
@@ -404,7 +617,13 @@ struct MonthlyNotesView: View {
     @State private var isEditing = false
     @State private var saveTimer: Timer?
     @State private var isSaving = false
+    @State private var hasUnsavedChanges = false
+    @State private var lastSyncVersion: Date?
     @FocusState private var focusedField: MonthlyNotesField?
+    
+    // Track local state to prevent CloudKit overwrites
+    @State private var localDataProtected = false
+    @State private var userInitiatedChange = false
     
     private let calendar = Calendar.current
     
@@ -431,38 +650,46 @@ struct MonthlyNotesView: View {
         .background(Color.blue.opacity(0.1))
         .cornerRadius(6)
         .onAppear {
+            print("📱 MonthlyNotesView appeared for \(monthString) - loading notes")
             loadNotes()
         }
-        .onChange(of: cloudKitManager.monthlyNotes) { _, _ in
-            // Only update from CloudKit if not currently editing
-            if !isEditing {
-                loadNotes()
-            }
+        .onChange(of: cloudKitManager.monthlyNotes) { _, newNotes in
+            // Enhanced protection against CloudKit overwrites during editing
+            handleCloudKitDataChange(newNotes)
         }
-        .onChange(of: existingRecord) { _, _ in
-            if !isEditing {
+        .onChange(of: existingRecord) { oldRecord, newRecord in
+            // Only update if not actively editing and no unsaved changes
+            if !isEditing && !hasUnsavedChanges && !localDataProtected {
+                print("📋 Monthly notes record changed for \(monthString) - updating from record")
                 updateNotesFromRecord()
+            } else {
+                print("🛡️ Skipping monthly notes record update for \(monthString) - protected (editing: \(isEditing), unsaved: \(hasUnsavedChanges), protected: \(localDataProtected))")
             }
         }
         .onChange(of: focusedField) { oldField, newField in
-            // Save when user moves away from ANY field or dismisses keyboard
-            if oldField != nil && newField != oldField && isEditing {
-                print("🎯 Monthly notes focus changed from \(String(describing: oldField)) to \(String(describing: newField)) - triggering save")
-                saveNotes()
-            }
+            handleFocusChange(from: oldField, to: newField)
         }
         .onChange(of: isEditing) { _, newValue in
             // Save when editing state changes (keyboard dismiss, app backgrounding, etc.)
-            if !newValue {
-                print("🎯 Monthly notes editing state changed to false - triggering save")
+            if !newValue && hasUnsavedChanges {
+                print("🎯 Monthly notes editing ended for \(monthString) with unsaved changes - triggering save")
                 saveNotes()
             }
         }
         .onDisappear {
-            // Clean up timer and reset saving state to prevent memory leaks
-            saveTimer?.invalidate()
-            isSaving = false
+            // Clean up and save any pending changes
+            print("📱 MonthlyNotesView disappeared for \(monthString) - cleaning up")
+            if hasUnsavedChanges {
+                performSave()
+            }
+            cleanupTimersAndState()
         }
+    }
+    
+    private var monthString: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM yyyy"
+        return formatter.string(from: month)
     }
     
     private func noteTextField(text: Binding<String>, placeholder: String, field: MonthlyNotesField) -> some View {
@@ -473,12 +700,88 @@ struct MonthlyNotesView: View {
             .cornerRadius(4)
             .focused($focusedField, equals: field)
             .submitLabel(.done)
-            .onChange(of: text.wrappedValue) { _, newValue in
-                isEditing = true
+            .textInputAutocapitalization(.characters)  // Force all uppercase
+            .disableAutocorrection(true)  // Disable autocorrect for cleaner input
+            .onChange(of: text.wrappedValue) { oldValue, newValue in
+                handleTextChange(field: field, oldValue: oldValue, newValue: newValue)
             }
             .onSubmit {
-                isEditing = false
+                finalizeEditing()
             }
+    }
+    
+    // MARK: - Enhanced Data Management Methods
+    
+    private func handleTextChange(field: MonthlyNotesField, oldValue: String, newValue: String) {
+        // Track that this is a user-initiated change
+        userInitiatedChange = true
+        isEditing = true
+        hasUnsavedChanges = true
+        localDataProtected = true
+        
+        print("✏️ User editing \(monthString) field \(field) - setting protection flags")
+        print("📝 Monthly notes field \(field) changed from '\(oldValue)' to '\(newValue)'")
+    }
+    
+    private func handleFocusChange(from oldField: MonthlyNotesField?, to newField: MonthlyNotesField?) {
+        if oldField != nil && newField != oldField {
+            print("🎯 Monthly notes focus changed for \(monthString) from \(String(describing: oldField)) to \(String(describing: newField))")
+            
+            // If moving between fields with unsaved changes, save immediately
+            if hasUnsavedChanges && !isSaving {
+                print("💾 Monthly notes focus change with unsaved changes - triggering immediate save")
+                saveNotes()
+            }
+        }
+    }
+    
+    private func handleCloudKitDataChange(_ newNotes: [MonthlyNotesRecord]) {
+        // Only update from CloudKit if we're not actively protecting local data
+        if localDataProtected || isEditing || hasUnsavedChanges || isSaving {
+            print("🛡️ CloudKit monthly notes data changed for \(monthString) - local data protected")
+            print("🔍 Protection reasons: protected=\(localDataProtected), editing=\(isEditing), unsaved=\(hasUnsavedChanges), saving=\(isSaving)")
+            return
+        }
+        
+        // Find the record for this month/year
+        let monthComp = calendar.component(.month, from: month)
+        let yearComp = calendar.component(.year, from: month)
+        
+        let updatedRecord = newNotes.first { record in
+            record.month == monthComp && record.year == yearComp
+        }
+        
+        // Only update if the record actually changed
+        if let newRecord = updatedRecord, newRecord.id != existingRecord?.id {
+            print("📊 CloudKit monthly notes data updated for \(monthString) - applying changes")
+            existingRecord = newRecord
+        } else if updatedRecord == nil && existingRecord != nil {
+            print("🗑️ CloudKit monthly notes record deleted for \(monthString) - clearing local data")
+            existingRecord = nil
+        }
+    }
+    
+    private func finalizeEditing() {
+        print("🏁 Finalizing monthly notes editing for \(monthString)")
+        
+        // Force immediate save if there are unsaved changes
+        if hasUnsavedChanges && !isSaving {
+            performSave()
+        }
+        
+        // For monthly notes, keep focus on current field after save
+        // This prevents cursor disappearing and allows continued editing
+        isEditing = false
+        
+        // Note: We intentionally do NOT set focusedField = nil here
+        // This maintains cursor visibility for continued editing
+        print("🎯 Keeping focus on current monthly notes field")
+        
+        // Delay clearing protection to allow save to complete
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            localDataProtected = false
+            print("🔓 Cleared local data protection for monthly notes \(monthString)")
+        }
     }
     
     private func loadNotes() {
@@ -489,39 +792,67 @@ struct MonthlyNotesView: View {
             record.month == monthComp && record.year == yearComp
         }
         
-        updateNotesFromRecord()
+        // Only update if not protected
+        if !localDataProtected {
+            updateNotesFromRecord()
+        }
     }
     
     private func updateNotesFromRecord() {
+        // Store the current state to detect if we're overwriting user changes
+        let oldLine1 = line1
+        let oldLine2 = line2
+        let oldLine3 = line3
+        
         line1 = existingRecord?.line1 ?? ""
         line2 = existingRecord?.line2 ?? ""
         line3 = existingRecord?.line3 ?? ""
+        
+        // If we overwrote user changes, log it
+        if oldLine1 != line1 || oldLine2 != line2 || oldLine3 != line3 {
+            print("📋 Updated monthly notes \(monthString) from record - line1: '\(oldLine1)' → '\(line1)', line2: '\(oldLine2)' → '\(line2)', line3: '\(oldLine3)' → '\(line3)'")
+        }
+        
+        // Update sync version
+        lastSyncVersion = Date()
+        hasUnsavedChanges = false
+        userInitiatedChange = false
     }
     
     private func saveNotes() {
-        // Prevent duplicate saves if one is already in progress
+        // Prevent duplicate saves
         guard !isSaving else {
-            print("⏸️ Monthly notes save already in progress - skipping duplicate save request")
+            print("⏸️ Monthly notes save already in progress for \(monthString) - skipping duplicate request")
+            return
+        }
+        
+        // Don't save if no user changes were made
+        guard userInitiatedChange else {
+            print("⏸️ No user changes detected for monthly notes \(monthString) - skipping save")
             return
         }
         
         // Set saving flag immediately to block subsequent calls
         isSaving = true
-        print("🔒 Setting monthly notes isSaving flag to TRUE - blocking future saves")
+        localDataProtected = true
+        print("🔒 Setting saving flags for monthly notes \(monthString)")
         
         // Cancel any existing timer
         saveTimer?.invalidate()
         
-        // Set up a debounced save with 0.5 second delay
-        saveTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { _ in
+        // Set up a debounced save with 0.8 second delay
+        saveTimer = Timer.scheduledTimer(withTimeInterval: 0.8, repeats: false) { _ in
             performSave()
         }
     }
     
     private func performSave() {
-        print("🚀 Monthly notes performSave() starting - isSaving flag should be TRUE")
+        print("🚀 Performing monthly notes save for \(monthString) with protection active")
         let monthComp = calendar.component(.month, from: month)
         let yearComp = calendar.component(.year, from: month)
+        
+        // Log the current state
+        print("📊 Saving monthly notes state - line1: '\(line1)', line2: '\(line2)', line3: '\(line3)'")
         
         // Use smart save that handles deletion when all fields are empty
         cloudKitManager.saveOrDeleteMonthlyNotes(
@@ -533,12 +864,45 @@ struct MonthlyNotesView: View {
             line3: line3.isEmpty ? nil : line3
         ) { success, error in
             DispatchQueue.main.async {
-                // Add delay before clearing flag to prevent rapid successive saves
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                    print("🔓 Clearing monthly notes isSaving flag after CloudKit operation + 1 second delay")
-                    self.isSaving = false
+                self.handleSaveCompletion(success: success, error: error)
+            }
+        }
+    }
+    
+    private func handleSaveCompletion(success: Bool, error: Error?) {
+        if success {
+            print("✅ Monthly notes save completed successfully for \(monthString)")
+            hasUnsavedChanges = false
+            userInitiatedChange = false
+            lastSyncVersion = Date()
+        } else {
+            print("❌ Monthly notes save failed for \(monthString): \(error?.localizedDescription ?? "Unknown error")")
+        }
+        
+        // Clear saving flag after a delay to prevent rapid successive operations
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            self.isSaving = false
+            print("🔓 Cleared saving flag for monthly notes \(self.monthString)")
+            
+            // Clear protection after save completes and some time passes
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                if !self.isEditing {
+                    self.localDataProtected = false
+                    print("🔓 Cleared local data protection for monthly notes \(self.monthString)")
                 }
-                self.isEditing = false
+            }
+        }
+    }
+    
+    private func cleanupTimersAndState() {
+        saveTimer?.invalidate()
+        saveTimer = nil
+        
+        // Don't clear protection immediately to allow any pending operations to complete
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            isSaving = false
+            if !isEditing {
+                localDataProtected = false
             }
         }
     }
