@@ -196,15 +196,15 @@ struct ContentView: View {
             }
             fullHTML += "</tr>"
             
-            // Get only the days that belong to this month (no spillover)
-            let monthDays = getActualMonthDays(for: month)
-            let weeks = monthDays.chunked(into: 7)
+            // Get properly aligned calendar grid (like the app does)
+            let calendarDays = getCalendarDaysWithAlignment(for: month)
+            let weeks = calendarDays.chunked(into: 7)
             
             for week in weeks {
                 fullHTML += "<tr>"
-                for i in 0..<7 {
-                    if i < week.count {
-                        let date = week[i]
+                for date in week {
+                    if calendar.isDate(date, equalTo: month, toGranularity: .month) {
+                        // This day belongs to the current month
                         let dayNumber = calendar.component(.day, from: date)
                         let schedule = dailySchedules[date] ?? ["", "", ""]
                         
@@ -215,6 +215,7 @@ struct ContentView: View {
                         if !schedule[2].isEmpty { fullHTML += "<div class=\"schedule-line\"><strong>OFF:</strong> \(schedule[2])</div>" }
                         fullHTML += "</td>"
                     } else {
+                        // Empty cell for days outside this month
                         fullHTML += "<td></td>"
                     }
                 }
@@ -234,6 +235,28 @@ struct ContentView: View {
         
         fullHTML += "</body></html>"
         return fullHTML
+    }
+    
+    private func getCalendarDaysWithAlignment(for month: Date) -> [Date] {
+        guard let monthInterval = calendar.dateInterval(of: .month, for: month) else {
+            return []
+        }
+        
+        let startOfMonth = monthInterval.start
+        guard let firstWeekday = calendar.dateInterval(of: .weekOfYear, for: startOfMonth)?.start else {
+            return []
+        }
+        
+        var days: [Date] = []
+        var currentDate = firstWeekday
+        
+        // Generate 6 weeks worth of dates (same as app)
+        for _ in 0..<42 {
+            days.append(currentDate)
+            currentDate = calendar.date(byAdding: .day, value: 1, to: currentDate)!
+        }
+        
+        return days
     }
     
     private func getActualMonthDays(for month: Date) -> [Date] {
