@@ -9,16 +9,33 @@ import SwiftUI
 
 @main
 struct Doctor_Schedule_CalendarApp: App {
-    let cloudKitManager = CloudKitManager.shared
+    let coreDataManager = CoreDataCloudKitManager.shared
 
     init() {
-        NSLog("🔥 APP STARTING - THIS SHOULD APPEAR IN CONSOLE")
+        NSLog("🔥 APP STARTING WITH CORE DATA + CLOUDKIT SHARING - THIS SHOULD APPEAR IN CONSOLE")
     }
 
     var body: some Scene {
         WindowGroup {
             ContentView()
-                .environmentObject(cloudKitManager)
+                .environment(\.managedObjectContext, coreDataManager.viewContext)
+                .environmentObject(coreDataManager)
+                .onOpenURL { url in
+                    // Handle CloudKit share URLs
+                    handleIncomingURL(url)
+                }
         }
+    }
+    
+    // MARK: - CloudKit Share URL Handling
+    private func handleIncomingURL(_ url: URL) {
+        guard url.scheme == "https" && url.host == "www.icloud.com" else { return }
+        
+        // This is a CloudKit share URL
+        print("📨 Received CloudKit share URL: \(url)")
+        
+        // Extract share metadata from URL
+        // The actual implementation would parse the CloudKit share URL
+        // and call coreDataManager.handleAcceptedShare()
     }
 }

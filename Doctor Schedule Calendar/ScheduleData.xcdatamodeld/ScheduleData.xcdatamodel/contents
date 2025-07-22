@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<model type="com.apple.IDECoreDataModeler.DataModel" documentVersion="1.0" lastSavedToolsVersion="22758" systemVersion="23F79" minimumToolsVersion="Automatic" sourceLanguage="Swift" usedWithCloudKit="YES">
+    <entity name="DailySchedule" representedClassName="DailySchedule" syncable="YES" codeGenerationType="class">
+        <attribute name="date" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="line1" optional="YES" attributeType="String" maxValueString="16"/>
+        <attribute name="line2" optional="YES" attributeType="String" maxValueString="16"/>
+        <attribute name="line3" optional="YES" attributeType="String" maxValueString="16"/>
+        <attribute name="recordID" optional="YES" attributeType="String"/>
+        <attribute name="recordSystemFields" optional="YES" attributeType="Binary" allowsCloudEncryption="YES"/>
+        <userInfo>
+            <entry key="cloudKitZoneName" value="ScheduleZone"/>
+        </userInfo>
+    </entity>
+    <entity name="MonthlyNotes" representedClassName="MonthlyNotes" syncable="YES" codeGenerationType="class">
+        <attribute name="line1" optional="YES" attributeType="String" maxValueString="100"/>
+        <attribute name="line2" optional="YES" attributeType="String" maxValueString="100"/>
+        <attribute name="line3" optional="YES" attributeType="String" maxValueString="100"/>
+        <attribute name="month" optional="YES" attributeType="Integer 16" defaultValueString="1" usesScalarValueType="YES"/>
+        <attribute name="recordID" optional="YES" attributeType="String"/>
+        <attribute name="recordSystemFields" optional="YES" attributeType="Binary" allowsCloudEncryption="YES"/>
+        <attribute name="year" optional="YES" attributeType="Integer 16" defaultValueString="2024" usesScalarValueType="YES"/>
+        <userInfo>
+            <entry key="cloudKitZoneName" value="ScheduleZone"/>
+        </userInfo>
+    </entity>
+    <configuration name="Local" usedWithCloudKit="NO">
+        <memberEntity name="DailySchedule"/>
+        <memberEntity name="MonthlyNotes"/>
+    </configuration>
+    <configuration name="CloudKit" usedWithCloudKit="YES">
+        <memberEntity name="DailySchedule"/>
+        <memberEntity name="MonthlyNotes"/>
+    </configuration>
+</model> 
