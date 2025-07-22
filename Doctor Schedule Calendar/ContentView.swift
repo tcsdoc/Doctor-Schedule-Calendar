@@ -45,14 +45,14 @@ struct ContentView: View {
                             MonthView(month: month)
                         }
                     }
-                    .padding()
+                    .padding(.vertical, 16)
+                    .padding(.horizontal, 8)  // Reduced horizontal padding for more width
                 }
             }
             .onAppear {
                 // Core Data automatically loads data via @FetchRequest
             }
             .refreshable {
-                print("🔄 User triggered refresh - Core Data handles automatically")
                 try? await Task.sleep(nanoseconds: 500_000_000)
             }
         }
@@ -70,15 +70,15 @@ struct ContentView: View {
             HStack {
                 Spacer()
                 
-                HStack(spacing: 15) {
-                    // Share button for admins (Core Data implementation)
-                    if coreDataManager.isCloudKitEnabled {
-                        Button(action: shareSchedule) {
-                            Image(systemName: "person.2.badge.plus")
-                                .font(.title2)
-                                .foregroundColor(.green)
+                                    HStack(spacing: 15) {
+                        // Share button for admins (Core Data implementation)
+                        if coreDataManager.isCloudKitEnabled {
+                            Button(action: shareSchedule) {
+                                Image(systemName: "person.2.badge.plus")
+                                    .font(.title2)
+                                    .foregroundColor(.green)
+                            }
                         }
-                    }
                     
                     Button(action: {
                         printAllMonths()
@@ -87,9 +87,6 @@ struct ContentView: View {
                             .font(.title2)
                             .foregroundColor(.blue)
                     }
-                    
-                    Text("Monthly Notes")
-                        .font(.headline)
                     
                     Text("v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "Unknown").\(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "Unknown")")
                         .font(.caption)
@@ -118,23 +115,22 @@ struct ContentView: View {
     private func shareSchedule() {
         let context = viewContext
         
-        // Fetch existing schedules to share
+        // Fetch ALL schedules to share (this shares the entire calendar data)
         let fetchRequest: NSFetchRequest<DailySchedule> = DailySchedule.fetchRequest()
         fetchRequest.sortDescriptors = [NSSortDescriptor(keyPath: \DailySchedule.date, ascending: true)]
-        fetchRequest.fetchLimit = 50 // Share up to 50 days of schedule
         
         do {
             let existingSchedules = try context.fetch(fetchRequest)
             
             if existingSchedules.isEmpty {
-                // Create a placeholder schedule for the current month to enable sharing
+                // Create schedules for the current year to enable comprehensive sharing
                 createInitialScheduleForSharing()
             } else {
-                // Share the first existing schedule (this will share the entire zone)
-                shareExistingSchedule(existingSchedules.first!)
+                // Share ALL existing schedules (this shares the entire calendar)
+                shareAllSchedules(existingSchedules)
             }
         } catch {
-            print("❌ Failed to fetch schedules for sharing: \(error)")
+            // Failed to fetch schedules
         }
     }
     
@@ -164,29 +160,59 @@ struct ContentView: View {
         
         do {
             try context.save()
-            print("✅ Created \(schedulesToShare.count) empty schedule entries for sharing")
             
             // Share the first schedule (this shares the entire zone)
             if let firstSchedule = schedulesToShare.first {
                 shareExistingSchedule(firstSchedule)
             }
         } catch {
-            print("❌ Failed to create initial schedules: \(error)")
+            // Failed to create initial schedules
         }
     }
     
     private func shareExistingSchedule(_ schedule: DailySchedule) {
-        print("🔗 Sharing schedule data starting from: \(schedule.date ?? Date())")
-        
         coreDataManager.createShare(for: schedule) { result in
             switch result {
             case .success(let share):
                 DispatchQueue.main.async {
-                    print("✅ Share created successfully")
                     self.presentSharingController(for: share)
                 }
-            case .failure(let error):
-                print("❌ Failed to create share: \(error)")
+            case .failure(_):
+                // Failed to create share
+                break
+            }
+        }
+    }
+    
+    private func shareAllSchedules(_ schedules: [DailySchedule]) {
+        // Check if we have any schedules to share
+        guard !schedules.isEmpty else {
+            return
+        }
+        
+        coreDataManager.createComprehensiveShare(for: schedules) { result in
+            switch result {
+            case .success(let share):
+                DispatchQueue.main.async {
+                    self.presentSharingController(for: share)
+                }
+            case .failure(_):
+                // Try simple share approach as fallback
+                self.trySimpleShare()
+            }
+        }
+    }
+    
+    private func trySimpleShare() {
+        coreDataManager.createCloudKitShare { result in
+            switch result {
+            case .success(let share):
+                DispatchQueue.main.async {
+                    self.presentSharingController(for: share)
+                }
+            case .failure(_):
+                // All sharing methods failed
+                break
             }
         }
     }
@@ -223,11 +249,7 @@ struct ContentView: View {
         
         // Present print dialog
         printController.present(animated: true) { (controller, completed, error) in
-            if completed {
-                print("✅ Print job completed successfully")
-            } else if let error = error {
-                print("❌ Print error: \(error.localizedDescription)")
-            }
+            // Print job handled
         }
     }
     
@@ -371,7 +393,7 @@ struct ContentView: View {
                 return [notes.line1 ?? "", notes.line2 ?? "", notes.line3 ?? ""].filter { !$0.isEmpty }
             }
         } catch {
-            print("❌ Error fetching monthly notes for print: \(error)")
+            // Error fetching monthly notes
         }
         
         return []
@@ -400,7 +422,7 @@ struct ContentView: View {
                 }
             }
         } catch {
-            print("❌ Error fetching daily schedules for print: \(error)")
+            // Error fetching daily schedules
         }
         
         return schedules
@@ -458,7 +480,7 @@ struct MonthView: View {
             calendarGrid
             LegendView()
         }
-        .padding(16)  // Original padding
+        .padding(12)  // Reduced padding to give more space for day cells
         .background(Color(.secondarySystemBackground))  // Original background
         .cornerRadius(12)  // Original corner radius
         .shadow(color: Color.gray.opacity(0.2), radius: 4, x: 0, y: 2)  // Original shadow
@@ -558,8 +580,8 @@ struct DayCell: View {
         VStack(alignment: .leading, spacing: 0) {
             dayNumber
             scheduleFields
-                .padding(.horizontal, 8)
-                .padding(.bottom, 8)
+                .padding(.horizontal, 2)  // Minimal padding to maximize text field space
+                .padding(.bottom, 4)
         }
         .frame(maxWidth: .infinity, minHeight: 120)  // Original height
         .background(background)
@@ -582,16 +604,16 @@ struct DayCell: View {
     private var dayNumber: some View {
         HStack {
             Text("\(calendar.component(.day, from: date))")
-                .font(.system(size: 18, weight: .bold))  // Original styling
+                .font(.system(size: 16, weight: .bold))  // Smaller to give more space to text fields
                 .foregroundColor(.primary)
-                .padding(.leading, 8)
-                .padding(.top, 6)
+                .padding(.leading, 6)
+                .padding(.top, 4)
             Spacer()
         }
     }
     
     private var scheduleFields: some View {
-        VStack(spacing: 6) {  // Original spacing
+        VStack(spacing: 2) {  // Minimal spacing for maximum field space
             scheduleTextField(prefix: "OS", text: $line1, color: .blue, field: .line1) {
                 moveToNextField()
             }
@@ -605,16 +627,18 @@ struct DayCell: View {
     }
     
     private func scheduleTextField(prefix: String, text: Binding<String>, color: Color, field: DayField, submitLabel: SubmitLabel = .next, onSubmit: @escaping () -> Void) -> some View {
-        HStack(spacing: 8) {  // Original spacing
+        HStack(spacing: 2) {  // Minimal spacing to maximize text space
             Text(prefix)
-                .font(.system(size: 12, weight: .medium))  // Original styling
+                .font(.system(size: 10, weight: .medium))  // Smaller prefix font
                 .foregroundColor(.secondary)
-                .frame(width: 28, alignment: .leading)  // Original width
+                .frame(width: 22, alignment: .leading)  // Smaller prefix width for more text space
             TextField("", text: text)
-                .font(.system(size: 14, weight: .medium))  // Original styling
-                .frame(height: 28)  // Original height
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
+                .font(.system(size: 11, weight: .medium))  // Even smaller font for more characters
+                .frame(maxWidth: .infinity, minHeight: 24)  // Smaller height to match font
+                .padding(.horizontal, 4)  // Minimal padding for maximum text space
+                .padding(.vertical, 1)
+                .lineLimit(1)  // Ensure single line
+                .truncationMode(.tail)  // Truncate with ... if needed
                 .background(color.opacity(0.15))  // Original background
                 .overlay(
                     RoundedRectangle(cornerRadius: 6)
@@ -622,13 +646,19 @@ struct DayCell: View {
                 )
                 .focused($focusedField, equals: field)
                 .submitLabel(submitLabel)
-                .textInputAutocapitalization(.characters)  // Original behavior
-                .disableAutocorrection(true)  // Original behavior
+                .textInputAutocapitalization(.characters)  // Force uppercase
+                .disableAutocorrection(true)  // Disable autocorrect completely
+                .autocorrectionDisabled(true)  // Additional autocorrect disabling for iOS 15+
                 .onSubmit {
                     onSubmit()
                 }
                 .onChange(of: text.wrappedValue) { oldValue, newValue in
-                    handleTextChange(newValue: newValue, binding: text)
+                    // Force uppercase transformation
+                    let uppercaseValue = newValue.uppercased()
+                    if uppercaseValue != newValue {
+                        text.wrappedValue = uppercaseValue
+                    }
+                    handleTextChange(newValue: uppercaseValue, binding: text)
                 }
         }
     }
@@ -706,9 +736,9 @@ struct DayCell: View {
     
     private func loadScheduleData() {
         if let schedule = schedule {
-            line1 = schedule.line1 ?? ""
-            line2 = schedule.line2 ?? ""
-            line3 = schedule.line3 ?? ""
+            line1 = (schedule.line1 ?? "").uppercased()
+            line2 = (schedule.line2 ?? "").uppercased()
+            line3 = (schedule.line3 ?? "").uppercased()
         } else {
             line1 = ""
             line2 = ""
@@ -800,14 +830,22 @@ struct MonthlyNotesView: View {
     private func noteTextField(text: Binding<String>, placeholder: String, field: MonthlyNotesField) -> some View {
         TextField(placeholder, text: text)
             .font(.caption)  // Original font
+            .foregroundColor(.black)  // Ensure text is visible on white background
             .padding(4)  // Original padding
             .background(Color.white)  // Original background
             .cornerRadius(4)  // Original corner radius
             .focused($focusedField, equals: field)
             .submitLabel(.done)
-            .textInputAutocapitalization(.characters)  // Original behavior
-            .disableAutocorrection(true)  // Original behavior
-            .onChange(of: text.wrappedValue) { _, _ in
+            .textInputAutocapitalization(.characters)  // Force uppercase
+            .disableAutocorrection(true)  // Disable autocorrect completely
+            .autocorrectionDisabled(true)  // Additional autocorrect disabling for iOS 15+
+            .onChange(of: text.wrappedValue) { oldValue, newValue in
+                // Force uppercase transformation and character limit
+                let uppercaseValue = newValue.uppercased()
+                let limitedValue = String(uppercaseValue.prefix(60))
+                if limitedValue != newValue {
+                    text.wrappedValue = limitedValue
+                }
                 updateNotes()
             }
     }
@@ -816,9 +854,9 @@ struct MonthlyNotesView: View {
     
     private func loadNotesData() {
         if let notes = monthlyNotes {
-            line1 = notes.line1 ?? ""
-            line2 = notes.line2 ?? ""
-            line3 = notes.line3 ?? ""
+            line1 = (notes.line1 ?? "").uppercased()
+            line2 = (notes.line2 ?? "").uppercased()
+            line3 = (notes.line3 ?? "").uppercased()
         } else {
             line1 = ""
             line2 = ""
