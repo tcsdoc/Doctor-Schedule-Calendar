@@ -6,7 +6,7 @@ class CloudKitManager: ObservableObject {
     static let shared = CloudKitManager()
     
     private let container: CKContainer
-    private let publicDatabase: CKDatabase
+    private let privateDatabase: CKDatabase
     
     @Published var dailySchedules: [DailyScheduleRecord] = []
     @Published var monthlyNotes: [MonthlyNotesRecord] = []
@@ -25,7 +25,7 @@ class CloudKitManager: ObservableObject {
     
     init() {
         container = CKContainer(identifier: "iCloud.com.gulfcoast.ProviderCalendar")
-        publicDatabase = container.publicCloudDatabase
+        privateDatabase = container.privateCloudDatabase
         checkCloudKitStatus()
         
         print("🚀 CloudKitManager initialized with enhanced sync protection")
@@ -139,7 +139,10 @@ class CloudKitManager: ObservableObject {
         
         let group = DispatchGroup()
         
-        // Fetch Daily Schedules
+        // Fetch Daily
+        // 
+        // 
+        // Schedules
         group.enter()
         fetchDailySchedules {
             group.leave()
@@ -211,7 +214,7 @@ class CloudKitManager: ObservableObject {
         let query = CKQuery(recordType: "CD_DailySchedule", predicate: NSPredicate(value: true))
         query.sortDescriptors = [NSSortDescriptor(key: "CD_date", ascending: true)]
         
-        publicDatabase.fetch(withQuery: query, inZoneWith: nil, desiredKeys: nil, resultsLimit: CKQueryOperation.maximumResults) { [weak self] result in
+        privateDatabase.fetch(withQuery: query, inZoneWith: nil, desiredKeys: nil, resultsLimit: CKQueryOperation.maximumResults) { [weak self] result in
             DispatchQueue.main.async {
                 switch result {
                 case .success(let (matchResults, _)):
@@ -251,7 +254,7 @@ class CloudKitManager: ObservableObject {
         let query = CKQuery(recordType: "CD_MonthlyNotes", predicate: NSPredicate(value: true))
         query.sortDescriptors = [NSSortDescriptor(key: "CD_month", ascending: true)]
         
-        publicDatabase.fetch(withQuery: query, inZoneWith: nil, desiredKeys: nil, resultsLimit: CKQueryOperation.maximumResults) { [weak self] result in
+        privateDatabase.fetch(withQuery: query, inZoneWith: nil, desiredKeys: nil, resultsLimit: CKQueryOperation.maximumResults) { [weak self] result in
             DispatchQueue.main.async {
                 switch result {
                 case .success(let (matchResults, _)):
@@ -310,7 +313,7 @@ class CloudKitManager: ObservableObject {
         
         print("💾 Saving new record with fields: line1='\(line1 ?? "nil")', line2='\(line2 ?? "nil")', line3='\(line3 ?? "nil")'")
         
-        publicDatabase.save(record) { [weak self] savedRecord, error in
+        privateDatabase.save(record) { [weak self] savedRecord, error in
             DispatchQueue.main.async {
                 if let error = error {
                     print("❌ Failed to save new record: \(error.localizedDescription)")
@@ -345,7 +348,7 @@ class CloudKitManager: ObservableObject {
         
         let recordID = CKRecord.ID(recordName: recordName)
         
-        publicDatabase.fetch(withRecordID: recordID) { [weak self] record, error in
+        privateDatabase.fetch(withRecordID: recordID) { [weak self] record, error in
             if let error = error {
                 DispatchQueue.main.async {
                     print("❌ Failed to fetch record for update: \(error.localizedDescription)")
@@ -383,7 +386,7 @@ class CloudKitManager: ObservableObject {
             record["CD_line2"] = line2 as CKRecordValue?
             record["CD_line3"] = line3 as CKRecordValue?
             
-            self?.publicDatabase.save(record) { savedRecord, error in
+            self?.privateDatabase.save(record) { savedRecord, error in
                 DispatchQueue.main.async {
                     if let error = error {
                         print("❌ Failed to update record: \(error.localizedDescription)")
@@ -422,7 +425,7 @@ class CloudKitManager: ObservableObject {
         // Mark operation as starting
         markOperationStarting(for: recordName, type: "DELETE")
         
-        publicDatabase.delete(withRecordID: recordID) { [weak self] deletedRecordID, error in
+        privateDatabase.delete(withRecordID: recordID) { [weak self] deletedRecordID, error in
             DispatchQueue.main.async {
                 if let error = error {
                     print("❌ Error deleting daily schedule: \(error)")
@@ -506,7 +509,7 @@ class CloudKitManager: ObservableObject {
         let predicate = NSPredicate(format: "CD_month == %d AND CD_year == %d", month, year)
         let query = CKQuery(recordType: "CD_MonthlyNotes", predicate: predicate)
         
-        publicDatabase.fetch(withQuery: query, inZoneWith: nil, desiredKeys: nil, resultsLimit: CKQueryOperation.maximumResults) { [weak self] (result: Result<(matchResults: [(CKRecord.ID, Result<CKRecord, Error>)], queryCursor: CKQueryOperation.Cursor?), Error>) in
+        privateDatabase.fetch(withQuery: query, inZoneWith: nil, desiredKeys: nil, resultsLimit: CKQueryOperation.maximumResults) { [weak self] (result: Result<(matchResults: [(CKRecord.ID, Result<CKRecord, Error>)], queryCursor: CKQueryOperation.Cursor?), Error>) in
             let record: CKRecord
             
             switch result {
@@ -545,7 +548,7 @@ class CloudKitManager: ObservableObject {
             
             print("📝 Saving monthly notes with fields: line1='\(line1 ?? "nil")', line2='\(line2 ?? "nil")', line3='\(line3 ?? "nil")'")
             
-            self?.publicDatabase.save(record) { savedRecord, error in
+            self?.privateDatabase.save(record) { savedRecord, error in
                 DispatchQueue.main.async {
                     if let error = error {
                         print("❌ Failed to save monthly notes: \(error.localizedDescription)")
@@ -619,7 +622,7 @@ class CloudKitManager: ObservableObject {
         
         let recordID = CKRecord.ID(recordName: recordName)
         
-        publicDatabase.delete(withRecordID: recordID) { [weak self] recordID, error in
+        privateDatabase.delete(withRecordID: recordID) { [weak self] recordID, error in
             DispatchQueue.main.async {
                 if let error = error {
                     print("❌ Failed to delete monthly notes record: \(error.localizedDescription)")
@@ -670,7 +673,7 @@ extension CloudKitManager {
         let query = CKQuery(recordType: "CD_DailySchedule", predicate: NSPredicate(value: true))
         query.sortDescriptors = [NSSortDescriptor(key: "CD_date", ascending: true)]
         
-        publicDatabase.fetch(withQuery: query, inZoneWith: nil, desiredKeys: nil, resultsLimit: CKQueryOperation.maximumResults) { [weak self] result in
+        privateDatabase.fetch(withQuery: query, inZoneWith: nil, desiredKeys: nil, resultsLimit: CKQueryOperation.maximumResults) { [weak self] result in
             let records: [CKRecord]
             
             switch result {
@@ -770,7 +773,7 @@ extension CloudKitManager {
         let query = CKQuery(recordType: "CD_MonthlyNotes", predicate: NSPredicate(value: true))
         query.sortDescriptors = [NSSortDescriptor(key: "CD_month", ascending: true)]
         
-        publicDatabase.fetch(withQuery: query, inZoneWith: nil, desiredKeys: nil, resultsLimit: CKQueryOperation.maximumResults) { [weak self] result in
+        privateDatabase.fetch(withQuery: query, inZoneWith: nil, desiredKeys: nil, resultsLimit: CKQueryOperation.maximumResults) { [weak self] result in
             let records: [CKRecord]
             
             switch result {
@@ -884,7 +887,7 @@ extension CloudKitManager {
             }
         }
         
-        publicDatabase.add(deleteOperation)
+        privateDatabase.add(deleteOperation)
     }
     
     /// Comprehensive cleanup function that removes all duplicates
