@@ -17,7 +17,7 @@ class CloudKitManager: ObservableObject {
     // Enhanced tracking for preventing race conditions
     private var recentDeletionOperations: Set<String> = []
     private var recentSaveOperations: Set<String> = []
-    private var lastOperationTime: Date = Date()
+    private(set) var lastOperationTime: Date = Date()
     private var pendingOperations: Set<String> = []
     
     // Track data versions to prevent overwrites
@@ -69,7 +69,7 @@ class CloudKitManager: ObservableObject {
     // MARK: - Enhanced Data Protection Methods
     
     /// Check if data should be protected from CloudKit overwrites
-    private func shouldProtectLocalData(for key: String) -> Bool {
+    func shouldProtectLocalData(for key: String) -> Bool {
         let timeSinceLastOperation = Date().timeIntervalSince(lastOperationTime)
         let hasRecentOperations = !pendingOperations.isEmpty || !recentSaveOperations.isEmpty
         let hasRecentDeletions = recentDeletionOperations.contains(key)

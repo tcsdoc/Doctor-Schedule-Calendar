@@ -52,7 +52,12 @@ struct ContentView: View {
                 cloudKitManager.fetchAllData()
             }
             .refreshable {
-                cloudKitManager.forceRefreshAllData()
+                print("🔄 User triggered refresh - smart data reload with protection")
+                await performSmartRefresh()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
+                // App became active - check for data integrity smartly
+                performSmartDataIntegrityCheck()
             }
         }
         .navigationViewStyle(.stack)
@@ -303,6 +308,77 @@ struct ContentView: View {
         
         return schedules
     }
+
+    // MARK: - Data Integrity and Recovery
+    
+    @MainActor
+    private func performSmartRefresh() async {
+        print("🔄 Performing smart refresh - respecting user edit protection")
+        
+        // Use the smart refresh that respects protection
+        cloudKitManager.forceRefreshAllData()
+        
+        // Wait a moment for data to be fetched
+        try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
+        
+        // Notify all cells to smart reload their data (respecting protection)
+        NotificationCenter.default.post(name: Notification.Name("smartDataRefresh"), object: nil)
+        
+        print("✅ Smart refresh completed")
+    }
+    
+    private func performSmartDataIntegrityCheck() {
+        print("🔍 Performing smart data integrity check...")
+        
+        // Check data quality but respect user edit protection
+        let dailyCount = cloudKitManager.dailySchedules.count
+        let monthlyCount = cloudKitManager.monthlyNotes.count
+        
+        print("📊 Current data counts - Daily: \(dailyCount), Monthly: \(monthlyCount)")
+        
+        // Only force refresh if data seems genuinely missing AND not protecting user edits
+        if dailyCount < 5 || monthlyCount < 2 {
+            print("⚠️ Data count seems low - requesting smart refresh")
+            cloudKitManager.forceRefreshAllData()
+        }
+        
+        // Trigger smart reloading that respects protection
+        NotificationCenter.default.post(name: Notification.Name("smartDataRefresh"), object: nil)
+        
+        print("✅ Smart data integrity check complete")
+    }
+    
+    private func checkDataIntegrityAndRecover() {
+        print("🔍 Checking data integrity and attempting recovery...")
+        
+        // Simple but effective: if we suspect data loss, force a complete refresh
+        let timeSinceLastFetch = Date().timeIntervalSince(cloudKitManager.lastOperationTime)
+        
+        // If it's been more than 30 seconds since last operation, force refresh
+        if timeSinceLastFetch > 30.0 {
+            print("⚠️ Potential data staleness detected. Forcing comprehensive refresh...")
+            cloudKitManager.forceRefreshAllData()
+        }
+        
+        // Alternative approach: check if we have a reasonable amount of data
+        let expectedMonthsWithData = 12 // Expect data for about 12 months
+        let actualDailyRecords = cloudKitManager.dailySchedules.count
+        let actualMonthlyRecords = cloudKitManager.monthlyNotes.count
+        
+        // If we have suspiciously little data, force a refresh
+        if actualDailyRecords < 10 || actualMonthlyRecords < 3 {
+            print("⚠️ Suspiciously low data count (daily: \(actualDailyRecords), monthly: \(actualMonthlyRecords)). Forcing refresh...")
+            cloudKitManager.forceRefreshAllData()
+        }
+        
+        print("✅ Data integrity check complete.")
+    }
+    
+    private func dayString(from date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "M/d"
+        return formatter.string(from: date)
+    }
 }
 
 // MARK: - MonthView
@@ -411,6 +487,7 @@ struct DayCell: View {
     @State private var isSaving = false
     @State private var hasUnsavedChanges = false
     @State private var lastSyncVersion: Date?
+    @State private var lastEditTime: Date?
     @FocusState private var focusedField: DayField?
     
     // Track local state to prevent CloudKit overwrites
@@ -433,27 +510,27 @@ struct DayCell: View {
         .frame(maxWidth: .infinity, minHeight: 120)  // Matching the clear cell height
         .background(background)
         .onAppear {
-            print("📱 DayCell appeared for \(dayString) - loading schedule")
-            loadSchedule()
+            print("📱 DayCell appeared for \(dayString) - smart data loading")
+            handleSmartCellAppearance()
         }
         .onChange(of: cloudKitManager.dailySchedules) { _, newSchedules in
-            // Enhanced protection against CloudKit overwrites during editing
-            handleCloudKitDataChange(newSchedules)
+            // Smart protection - only protect recent user edits, not cell reappearance
+            handleSmartCloudKitDataChange(newSchedules)
         }
         .onChange(of: existingRecord) { oldRecord, newRecord in
-            // Only update if not actively editing and no unsaved changes
-            if !isEditing && !hasUnsavedChanges && !localDataProtected {
-                print("📋 Record changed for \(dayString) - updating from record")
+            // Only update if not protecting fresh user input
+            if !isProtectingFreshUserInput() {
+                print("📋 Schedule record changed for \(dayString) - updating from record")
                 updateScheduleFromRecord()
             } else {
-                print("🛡️ Skipping record update for \(dayString) - protected (editing: \(isEditing), unsaved: \(hasUnsavedChanges), protected: \(localDataProtected))")
+                print("🛡️ Skipping schedule record update for \(dayString) - protecting fresh user input")
             }
         }
         .onChange(of: focusedField) { oldField, newField in
             handleFocusChange(from: oldField, to: newField)
         }
         .onChange(of: isEditing) { _, newValue in
-            // Save when editing state changes (keyboard dismiss, app backgrounding, etc.)
+            // Save when editing state changes
             if !newValue && hasUnsavedChanges {
                 print("🎯 Editing ended for \(dayString) with unsaved changes - triggering save")
                 saveSchedule()
@@ -467,23 +544,75 @@ struct DayCell: View {
             }
             cleanupTimersAndState()
         }
-        .background(
-            // Hidden color to track when cell becomes visible again
-            Color.clear.onAppear {
-                // Reset protection when cell reappears
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    if !isEditing {
-                        localDataProtected = false
-                    }
-                }
-            }
-        )
         // Listen for next day navigation requests
         .onReceive(NotificationCenter.default.publisher(for: .moveToNextDay)) { notification in
             if let request = notification.object as? NextDayFocusRequest {
                 handleNextDayFocusRequest(request)
             }
         }
+        // Listen for smart data refresh requests
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("smartDataRefresh"))) { _ in
+            print("🔄 Received smart refresh request for \(dayString)")
+            handleSmartCellAppearance()
+        }
+    }
+    
+    private func moveToNextField() {
+        switch focusedField {
+        case .line1:
+            focusedField = .line2
+        case .line2:
+            focusedField = .line3
+        case .line3:
+            finalizeEditing()
+        case .none:
+            break
+        }
+    }
+    
+    private func finalizeEditing() {
+        print("🏁 Finalizing editing for \(dayString)")
+        
+        // Force immediate save if there are unsaved changes
+        if hasUnsavedChanges && !isSaving {
+            performSave()
+        }
+        
+        // For better data entry workflow, try to move to next day's first field
+        moveToNextDayFirstField()
+        
+        isEditing = false
+        
+        // Clear protection after a short delay
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            self.localDataProtected = false
+            print("🔓 Cleared local data protection for \(self.dayString)")
+        }
+    }
+    
+    private func moveToNextDayFirstField() {
+        // Calculate the next day
+        guard let nextDay = calendar.date(byAdding: .day, value: 1, to: date) else {
+            // Fallback: stay on current day's first field
+            focusedField = .line1
+            print("🔄 Could not calculate next day - staying on current day's OS field")
+            return
+        }
+        
+        // Clear current focus to allow next day to take over
+        focusedField = nil
+        
+        // Send notification to request focus on next day's first field
+        let request = NextDayFocusRequest(fromDate: date, targetDate: nextDay)
+        NotificationCenter.default.post(name: .moveToNextDay, object: request)
+        
+        print("🎯 Requesting focus move from \(dayString) to next day \(formatDate(nextDay))")
+    }
+    
+    private func formatDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "M/d"
+        return formatter.string(from: date)
     }
     
     private var dayString: String {
@@ -494,9 +623,9 @@ struct DayCell: View {
     
     private var dayNumber: some View {
         HStack {
-            Text("\(calendar.component(.day, from: date))")
+        Text("\(calendar.component(.day, from: date))")
                 .font(.system(size: 18, weight: .bold))  // Larger, bolder like printed version
-                .foregroundColor(.primary)
+            .foregroundColor(.primary)
                 .padding(.leading, 8)
                 .padding(.top, 6)
             Spacer()
@@ -558,18 +687,162 @@ struct DayCell: View {
     
     // MARK: - Enhanced Data Management Methods
     
+    /// Aggressive data loading that prioritizes showing data over protection
+    private func aggressiveLoadSchedule() {
+        print("🚀 Aggressive load for \(dayString) - clearing protection flags")
+        
+        // Clear all protection flags first
+        localDataProtected = false
+        
+        // Load the schedule data
+        let dayStart = calendar.startOfDay(for: date)
+        let foundRecord = cloudKitManager.dailySchedules.first { record in
+            if let recordDate = record.date {
+                return calendar.isDate(recordDate, inSameDayAs: dayStart)
+            }
+            return false
+        }
+        
+        // Update existing record reference
+        existingRecord = foundRecord
+        
+        // Always update display unless user is actively typing right now
+        if !isActivelyTyping() {
+            updateScheduleFromRecord()
+            print("📅 Aggressively loaded schedule for \(dayString) - record: \(foundRecord?.id ?? "none")")
+        } else {
+            print("⌨️ User typing - will load after typing stops")
+            // Schedule load for when user stops typing
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                if !self.isActivelyTyping() {
+                    self.updateScheduleFromRecord()
+                    print("📅 Delayed load completed for \(self.dayString)")
+                }
+            }
+        }
+        
+        // Comprehensive data recovery check
+        performDataRecoveryCheck()
+    }
+    
+    /// Much simpler check - only true when user is actively typing
+    private func isActivelyTyping() -> Bool {
+        return focusedField != nil && isEditing
+    }
+    
+    /// Comprehensive data recovery check
+    private func performDataRecoveryCheck() {
+        // Check if we should have data but display is empty
+        let hasDisplayData = !line1.isEmpty || !line2.isEmpty || !line3.isEmpty
+        let dayStart = calendar.startOfDay(for: date)
+        
+        let shouldHaveData = cloudKitManager.dailySchedules.contains { record in
+            if let recordDate = record.date {
+                return calendar.isDate(recordDate, inSameDayAs: dayStart)
+            }
+            return false
+        }
+        
+        if shouldHaveData && !hasDisplayData {
+            print("🔄 Data recovery: \(dayString) should have data but display is empty - forcing reload")
+            
+            // Force update the display from CloudKit data
+            if let record = cloudKitManager.dailySchedules.first(where: { record in
+                if let recordDate = record.date {
+                    return calendar.isDate(recordDate, inSameDayAs: dayStart)
+                }
+                return false
+            }) {
+                print("🔄 Found CloudKit data for \(dayString) - applying immediately")
+                existingRecord = record
+                
+                // Force update display regardless of protection
+                line1 = record.line1 ?? ""
+                line2 = record.line2 ?? ""
+                line3 = record.line3 ?? ""
+                
+                hasUnsavedChanges = false
+                userInitiatedChange = false
+                print("✅ Data recovery completed for \(dayString)")
+            }
+        }
+    }
+    
+    /// Improved cell appearance handling with data recovery
+    private func handleCellAppearance() {
+        // Always try to load the schedule when cell appears
+        loadSchedule()
+        
+        // If we appear to have no data but CloudKit has records, force a reload
+        let hasLocalData = !line1.isEmpty || !line2.isEmpty || !line3.isEmpty
+        let shouldHaveData = cloudKitManager.dailySchedules.contains { record in
+            if let recordDate = record.date {
+                return Calendar.current.isDate(recordDate, inSameDayAs: Calendar.current.startOfDay(for: date))
+            }
+            return false
+        }
+        
+        if !hasLocalData && shouldHaveData && !isCurrentlyEditing() {
+            print("🔄 Data recovery: Cell \(dayString) appears empty but CloudKit has data - forcing reload")
+            forceReloadData()
+        }
+    }
+    
+    /// Check if currently editing (more specific than previous logic)
+    private func isCurrentlyEditing() -> Bool {
+        return isEditing && hasUnsavedChanges && focusedField != nil
+    }
+    
+    /// Clear stale protection flags that might prevent data loading
+    private func clearStaleProtection() {
+        // Only clear if we're not actively editing
+        if !isCurrentlyEditing() {
+            localDataProtected = false
+            print("🔓 Cleared stale protection for \(dayString)")
+            
+            // If we still don't have data, try to reload
+            let hasLocalData = !line1.isEmpty || !line2.isEmpty || !line3.isEmpty
+            if !hasLocalData {
+                print("🔄 No local data after clearing protection - attempting reload for \(dayString)")
+                loadSchedule()
+            }
+        }
+    }
+    
+    /// Force reload data (used for data recovery)
+    private func forceReloadData() {
+        // Temporarily clear all protection flags
+        let wasProtected = localDataProtected
+        let wasEditing = isEditing
+        
+        localDataProtected = false
+        isEditing = false
+        
+        // Reload the schedule
+        loadSchedule()
+        
+        // Restore states only if they were legitimately set
+        if wasEditing && focusedField != nil {
+            isEditing = true
+            localDataProtected = wasProtected
+        }
+        
+        print("🔄 Force reload completed for \(dayString)")
+    }
+    
     private func handleTextChange(field: DayField, oldValue: String, newValue: String, binding: Binding<String>) {
-        // Limit to 16 characters
-        if newValue.count > 16 {
+                    // Limit to 16 characters
+                    if newValue.count > 16 {
             binding.wrappedValue = String(newValue.prefix(16))
             return
-        }
+                    }
         
         // Track that this is a user-initiated change
         userInitiatedChange = true
-        isEditing = true
+                    isEditing = true
         hasUnsavedChanges = true
         localDataProtected = true
+        lastEditTime = Date()  // Track when this edit happened
         
         print("✏️ User editing \(dayString) field \(field) - setting protection flags")
         print("📝 Field \(field) changed from '\(oldValue)' to '\(newValue)'")
@@ -588,10 +861,14 @@ struct DayCell: View {
     }
     
     private func handleCloudKitDataChange(_ newSchedules: [DailyScheduleRecord]) {
-        // Only update from CloudKit if we're not actively protecting local data
-        if localDataProtected || isEditing || hasUnsavedChanges || isSaving {
-            print("🛡️ CloudKit data changed for \(dayString) - local data protected")
-            print("🔍 Protection reasons: protected=\(localDataProtected), editing=\(isEditing), unsaved=\(hasUnsavedChanges), saving=\(isSaving)")
+        // Only protect if user is actively typing - much more permissive
+        if isActivelyTyping() {
+            print("⌨️ CloudKit data changed for \(dayString) - user actively typing, will delay")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                if !self.isActivelyTyping() {
+                    self.handleCloudKitDataChange(newSchedules)
+                }
+            }
             return
         }
         
@@ -604,90 +881,48 @@ struct DayCell: View {
             return false
         }
         
-        // Only update if the record actually changed
-        if let newRecord = updatedRecord, newRecord.id != existingRecord?.id {
-            print("📊 CloudKit data updated for \(dayString) - applying changes")
-            existingRecord = newRecord
-        } else if updatedRecord == nil && existingRecord != nil {
-            print("🗑️ CloudKit record deleted for \(dayString) - clearing local data")
-            existingRecord = nil
+        // Always update - prioritize data visibility
+        let shouldUpdate = true // Much more aggressive
+        
+        if shouldUpdate {
+            if let newRecord = updatedRecord {
+                print("📊 CloudKit data updated for \(dayString) - applying changes immediately")
+                existingRecord = newRecord
+                // Force update display
+                updateScheduleFromRecord()
+            } else if existingRecord != nil {
+                print("🗑️ CloudKit record deleted for \(dayString) - clearing local data")
+                existingRecord = nil
+                // Clear display
+                line1 = ""
+                line2 = ""
+                line3 = ""
+                hasUnsavedChanges = false
+                userInitiatedChange = false
+            }
         }
-    }
-    
-    private func moveToNextField() {
-        switch focusedField {
-        case .line1:
-            focusedField = .line2
-        case .line2:
-            focusedField = .line3
-        case .line3:
-            finalizeEditing()
-        case .none:
-            break
-        }
-    }
-    
-    private func finalizeEditing() {
-        print("🏁 Finalizing editing for \(dayString)")
-        
-        // Force immediate save if there are unsaved changes
-        if hasUnsavedChanges && !isSaving {
-            performSave()
-        }
-        
-        // For better data entry workflow, try to move to next day's first field
-        // If that fails, keep focus on current field to prevent cursor disappearing
-        moveToNextDayFirstField()
-        
-        isEditing = false
-        
-        // Delay clearing protection to allow save to complete
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-            localDataProtected = false
-            print("🔓 Cleared local data protection for \(dayString)")
-        }
-    }
-    
-    private func moveToNextDayFirstField() {
-        // Calculate the next day
-        guard let nextDay = calendar.date(byAdding: .day, value: 1, to: date) else {
-            // Fallback: stay on current day's first field
-            focusedField = .line1
-            print("🔄 Could not calculate next day - staying on current day's OS field")
-            return
-        }
-        
-        // Clear current focus to allow next day to take over
-        focusedField = nil
-        
-        // Send notification to request focus on next day's first field
-        let request = NextDayFocusRequest(fromDate: date, targetDate: nextDay)
-        NotificationCenter.default.post(name: .moveToNextDay, object: request)
-        
-        print("🎯 Requesting focus move from \(dayString) to next day \(formatDate(nextDay))")
-        
-        // Note: Removed fallback logic that was causing focus to jump back
-        // If next day navigation fails, user can manually click to regain focus
-    }
-    
-    private func formatDate(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "M/d"
-        return formatter.string(from: date)
     }
     
     private func loadSchedule() {
         let dayStart = calendar.startOfDay(for: date)
-        existingRecord = cloudKitManager.dailySchedules.first { record in
+        
+        // Find the existing record
+        let foundRecord = cloudKitManager.dailySchedules.first { record in
             if let recordDate = record.date {
                 return calendar.isDate(recordDate, inSameDayAs: dayStart)
             }
             return false
         }
         
-        // Only update if not protected
-        if !localDataProtected {
+        // Update existing record reference
+        existingRecord = foundRecord
+        
+        // Always update from record unless actively typing
+        if !isActivelyTyping() {
             updateScheduleFromRecord()
+            print("📅 Loaded schedule for \(dayString) - record: \(foundRecord?.id ?? "none")")
+        } else {
+            print("⌨️ Skipped loading schedule for \(dayString) - user actively typing")
         }
     }
     
@@ -772,7 +1007,7 @@ struct DayCell: View {
         
         // Clear saving flag after a delay to prevent rapid successive operations
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-            self.isSaving = false
+                    self.isSaving = false
             print("🔓 Cleared saving flag for \(self.dayString)")
             
             // Clear protection after save completes and some time passes
@@ -814,6 +1049,136 @@ struct DayCell: View {
             }
         }
     }
+
+    // MARK: - Smart Data Management Methods
+    
+    /// Smart cell appearance handling that respects CloudKit protection timing
+    private func handleSmartCellAppearance() {
+        // First, check if we should respect any existing protection
+        let shouldRespectProtection = isProtectingFreshUserInput()
+        
+        if shouldRespectProtection {
+            print("🛡️ Respecting existing protection for \(dayString) - user has fresh edits")
+            return
+        }
+        
+        // Load the schedule data since we're not protecting
+        loadScheduleSmartly()
+        
+        // Check for potential data loss scenario (cell reappeared but no data)
+        let hasLocalData = !line1.isEmpty || !line2.isEmpty || !line3.isEmpty
+        let shouldHaveData = cloudKitManager.dailySchedules.contains { record in
+            if let recordDate = record.date {
+                return Calendar.current.isDate(recordDate, inSameDayAs: Calendar.current.startOfDay(for: date))
+            }
+            return false
+        }
+        
+        if !hasLocalData && shouldHaveData {
+            print("🔄 Data recovery needed for \(dayString) - forcing reload")
+            forceReloadFromCloudKit()
+        }
+    }
+    
+    /// Improved protection logic that only protects truly fresh user input
+    private func isProtectingFreshUserInput() -> Bool {
+        // Protect if user is currently focused and editing
+        if focusedField != nil && isEditing {
+            print("🎯 Protecting \(dayString) - user is actively focused and editing")
+            return true
+        }
+        
+        // Protect if user just made changes (within last 5 seconds) and has unsaved changes
+        if hasUnsavedChanges && userInitiatedChange {
+            let timeSinceEdit = Date().timeIntervalSince(lastEditTime ?? Date.distantPast)
+            if timeSinceEdit < 5.0 {
+                print("⏰ Protecting \(dayString) - fresh user edit \(timeSinceEdit)s ago")
+                return true
+            }
+        }
+        
+        // Also check CloudKit manager's protection for this specific day
+        let dayKey = dayString
+        if cloudKitManager.shouldProtectLocalData(for: dayKey) {
+            print("☁️ CloudKit manager protecting \(dayString)")
+            return true
+        }
+        
+        return false
+    }
+    
+    /// Smart CloudKit data change handling
+    private func handleSmartCloudKitDataChange(_ newSchedules: [DailyScheduleRecord]) {
+        // Only protect if we have fresh user input
+        if isProtectingFreshUserInput() {
+            print("🛡️ CloudKit data changed for \(dayString) - protecting fresh user input")
+            // Schedule a retry for later when protection expires
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+                if !self.isProtectingFreshUserInput() {
+                    print("🔄 Retrying CloudKit update for \(self.dayString) - protection expired")
+                    self.handleSmartCloudKitDataChange(newSchedules)
+                }
+            }
+            return
+        }
+        
+        // Find the record for this date
+        let dayStart = calendar.startOfDay(for: date)
+        let updatedRecord = newSchedules.first { record in
+            if let recordDate = record.date {
+                return calendar.isDate(recordDate, inSameDayAs: dayStart)
+            }
+            return false
+        }
+        
+        // Update our local state if we found a matching record
+        if let record = updatedRecord {
+            existingRecord = record
+            updateScheduleFromRecord()
+            print("✅ CloudKit update applied to \(dayString)")
+        }
+    }
+    
+    /// Smart schedule loading that respects protection
+    private func loadScheduleSmartly() {
+        let dayStart = calendar.startOfDay(for: date)
+        
+        // Find the existing record
+        let foundRecord = cloudKitManager.dailySchedules.first { record in
+            if let recordDate = record.date {
+                return calendar.isDate(recordDate, inSameDayAs: dayStart)
+            }
+            return false
+        }
+        
+        // Update existing record reference
+        existingRecord = foundRecord
+        
+        // Only update from record if not protecting fresh user input
+        if !isProtectingFreshUserInput() {
+            updateScheduleFromRecord()
+            print("📅 Smart loaded schedule for \(dayString) - record: \(foundRecord?.id ?? "none")")
+        } else {
+            print("🛡️ Skipped smart loading for \(dayString) - protecting fresh user input")
+        }
+    }
+    
+    /// Force reload from CloudKit for data recovery scenarios
+    private func forceReloadFromCloudKit() {
+        print("🚨 Force reloading \(dayString) from CloudKit for data recovery")
+        
+        // Clear protection flags temporarily for recovery
+        let wasProtected = localDataProtected
+        localDataProtected = false
+        
+        // Load from CloudKit
+        loadScheduleSmartly()
+        
+        // Restore protection if it was set
+        localDataProtected = wasProtected
+        
+        print("🔄 Force reload completed for \(dayString)")
+    }
 }
 
 // MARK: - MonthlyNotesView
@@ -830,6 +1195,7 @@ struct MonthlyNotesView: View {
     @State private var isSaving = false
     @State private var hasUnsavedChanges = false
     @State private var lastSyncVersion: Date?
+    @State private var lastEditTime: Date?
     @FocusState private var focusedField: MonthlyNotesField?
     
     // Track local state to prevent CloudKit overwrites
@@ -861,20 +1227,20 @@ struct MonthlyNotesView: View {
         .background(Color.blue.opacity(0.1))
         .cornerRadius(6)
         .onAppear {
-            print("📱 MonthlyNotesView appeared for \(monthString) - loading notes")
-            loadNotes()
+            print("📱 MonthlyNotesView appeared for \(monthString) - smart data loading")
+            handleSmartNotesAppearance()
         }
         .onChange(of: cloudKitManager.monthlyNotes) { _, newNotes in
-            // Enhanced protection against CloudKit overwrites during editing
-            handleCloudKitDataChange(newNotes)
+            // Smart protection - only protect recent user edits
+            handleSmartCloudKitNotesDataChange(newNotes)
         }
         .onChange(of: existingRecord) { oldRecord, newRecord in
-            // Only update if not actively editing and no unsaved changes
-            if !isEditing && !hasUnsavedChanges && !localDataProtected {
+            // Only update if not protecting fresh user input
+            if !isProtectingFreshUserNotesInput() {
                 print("📋 Monthly notes record changed for \(monthString) - updating from record")
                 updateNotesFromRecord()
             } else {
-                print("🛡️ Skipping monthly notes record update for \(monthString) - protected (editing: \(isEditing), unsaved: \(hasUnsavedChanges), protected: \(localDataProtected))")
+                print("🛡️ Skipping monthly notes record update for \(monthString) - protecting fresh user input")
             }
         }
         .onChange(of: focusedField) { oldField, newField in
@@ -894,6 +1260,11 @@ struct MonthlyNotesView: View {
                 performSave()
             }
             cleanupTimersAndState()
+        }
+        // Listen for aggressive reload requests
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("forceAggressiveReload"))) { _ in
+            print("🚀 Received aggressive reload request for \(monthString)")
+            aggressiveLoadNotes()
         }
     }
     
@@ -923,12 +1294,192 @@ struct MonthlyNotesView: View {
     
     // MARK: - Enhanced Data Management Methods
     
+    /// Improved notes appearance handling with data recovery
+    private func aggressiveLoadNotes() {
+        print("🚀 Aggressive load for \(monthString) - clearing protection flags")
+        
+        // Clear all protection flags first
+        localDataProtected = false
+        
+        // Load the notes data
+        let monthComp = calendar.component(.month, from: month)
+        let yearComp = calendar.component(.year, from: month)
+        
+        let foundRecord = cloudKitManager.monthlyNotes.first { record in
+            record.month == monthComp && record.year == yearComp
+        }
+        
+        // Update existing record reference
+        existingRecord = foundRecord
+        
+        // Always update display unless user is actively typing right now
+        if !isActivelyTypingNotes() {
+            updateNotesFromRecord()
+            print("📅 Aggressively loaded notes for \(monthString) - record: \(foundRecord?.id ?? "none")")
+        } else {
+            print("⌨️ User typing - will load after typing stops")
+            // Schedule load for when user stops typing
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                if !self.isActivelyTypingNotes() {
+                    self.updateNotesFromRecord()
+                    print("📅 Delayed load completed for \(self.monthString)")
+                }
+            }
+        }
+        
+        // Comprehensive data recovery check
+        performDataRecoveryCheck()
+    }
+    
+    /// Much simpler check - only true when user is actively typing
+    private func isActivelyTypingNotes() -> Bool {
+        return focusedField != nil && isEditing
+    }
+    
+    /// Comprehensive data recovery check
+    private func performDataRecoveryCheck() {
+        // Check if we should have data but display is empty
+        let hasDisplayData = !line1.isEmpty || !line2.isEmpty || !line3.isEmpty
+        let monthComp = calendar.component(.month, from: month)
+        let yearComp = calendar.component(.year, from: month)
+        
+        let shouldHaveData = cloudKitManager.monthlyNotes.contains { record in
+            record.month == monthComp && record.year == yearComp
+        }
+        
+        if shouldHaveData && !hasDisplayData {
+            print("🔄 Data recovery: \(monthString) should have data but display is empty - forcing reload")
+            
+            // Force update the display from CloudKit data
+            if let record = cloudKitManager.monthlyNotes.first(where: { record in
+                record.month == monthComp && record.year == yearComp
+            }) {
+                print("🔄 Found CloudKit data for \(monthString) - applying immediately")
+                existingRecord = record
+                
+                // Force update display regardless of protection
+                line1 = record.line1 ?? ""
+                line2 = record.line2 ?? ""
+                line3 = record.line3 ?? ""
+                
+                hasUnsavedChanges = false
+                userInitiatedChange = false
+                print("✅ Data recovery completed for \(monthString)")
+            }
+        }
+    }
+    
+    /// Improved cell appearance handling with data recovery
+    private func handleNotesAppearance() {
+        // Always try to load the notes when cell appears
+        loadNotes()
+        
+        // If we appear to have no data but CloudKit has records, force a reload
+        let hasLocalData = !line1.isEmpty || !line2.isEmpty || !line3.isEmpty
+        let monthComp = calendar.component(.month, from: month)
+        let yearComp = calendar.component(.year, from: month)
+        
+        let shouldHaveData = cloudKitManager.monthlyNotes.contains { record in
+            record.month == monthComp && record.year == yearComp
+        }
+        
+        if !hasLocalData && shouldHaveData && !isCurrentlyEditingNotes() {
+            print("🔄 Data recovery: Monthly notes \(monthString) appears empty but CloudKit has data - forcing reload")
+            forceReloadNotesData()
+        }
+    }
+    
+    /// Check if currently editing notes (more specific than previous logic)
+    private func isCurrentlyEditingNotes() -> Bool {
+        return isEditing && hasUnsavedChanges && focusedField != nil
+    }
+    
+    /// Clear stale protection flags that might prevent notes data loading
+    private func clearStaleNotesProtection() {
+        // Only clear if we're not actively editing
+        if !isCurrentlyEditingNotes() {
+            localDataProtected = false
+            print("🔓 Cleared stale protection for monthly notes \(monthString)")
+            
+            // If we still don't have data, try to reload
+            let hasLocalData = !line1.isEmpty || !line2.isEmpty || !line3.isEmpty
+            if !hasLocalData {
+                print("🔄 No local monthly notes data after clearing protection - attempting reload for \(monthString)")
+                loadNotes()
+            }
+        }
+    }
+    
+    /// Force reload notes data (used for data recovery)
+    private func forceReloadNotesData() {
+        // Temporarily clear all protection flags
+        let wasProtected = localDataProtected
+        let wasEditing = isEditing
+        
+        localDataProtected = false
+        isEditing = false
+        
+        // Reload the notes
+        loadNotes()
+        
+        // Restore states only if they were legitimately set
+        if wasEditing && focusedField != nil {
+            isEditing = true
+            localDataProtected = wasProtected
+        }
+        
+        print("🔄 Force reload completed for monthly notes \(monthString)")
+    }
+    
+    private func handleCloudKitNotesDataChange(_ newNotes: [MonthlyNotesRecord]) {
+        // Only protect if user is actively typing - much more permissive
+        if isActivelyTypingNotes() {
+            print("⌨️ CloudKit monthly notes data changed for \(monthString) - user actively typing, will delay")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                if !self.isActivelyTypingNotes() {
+                    self.handleCloudKitNotesDataChange(newNotes)
+                }
+            }
+            return
+        }
+        
+        // Find the record for this month/year
+        let monthComp = calendar.component(.month, from: month)
+        let yearComp = calendar.component(.year, from: month)
+        
+        let updatedRecord = newNotes.first { record in
+            record.month == monthComp && record.year == yearComp
+        }
+        
+        // Always update - prioritize data visibility
+        let shouldUpdate = true // Much more aggressive
+        
+        if shouldUpdate {
+            if let newRecord = updatedRecord {
+                print("📊 CloudKit monthly notes data updated for \(monthString) - applying changes immediately")
+                existingRecord = newRecord
+                // Force update display
+                updateNotesFromRecord()
+            } else if existingRecord != nil {
+                print("🗑️ CloudKit monthly notes record deleted for \(monthString) - clearing local data")
+                existingRecord = nil
+                // Clear display
+                line1 = ""
+                line2 = ""
+                line3 = ""
+                hasUnsavedChanges = false
+                userInitiatedChange = false
+            }
+        }
+    }
+    
     private func handleTextChange(field: MonthlyNotesField, oldValue: String, newValue: String) {
         // Track that this is a user-initiated change
         userInitiatedChange = true
         isEditing = true
         hasUnsavedChanges = true
         localDataProtected = true
+        lastEditTime = Date()  // Track when this edit happened
         
         print("✏️ User editing \(monthString) field \(field) - setting protection flags")
         print("📝 Monthly notes field \(field) changed from '\(oldValue)' to '\(newValue)'")
@@ -946,32 +1497,6 @@ struct MonthlyNotesView: View {
         }
     }
     
-    private func handleCloudKitDataChange(_ newNotes: [MonthlyNotesRecord]) {
-        // Only update from CloudKit if we're not actively protecting local data
-        if localDataProtected || isEditing || hasUnsavedChanges || isSaving {
-            print("🛡️ CloudKit monthly notes data changed for \(monthString) - local data protected")
-            print("🔍 Protection reasons: protected=\(localDataProtected), editing=\(isEditing), unsaved=\(hasUnsavedChanges), saving=\(isSaving)")
-            return
-        }
-        
-        // Find the record for this month/year
-        let monthComp = calendar.component(.month, from: month)
-        let yearComp = calendar.component(.year, from: month)
-        
-        let updatedRecord = newNotes.first { record in
-            record.month == monthComp && record.year == yearComp
-        }
-        
-        // Only update if the record actually changed
-        if let newRecord = updatedRecord, newRecord.id != existingRecord?.id {
-            print("📊 CloudKit monthly notes data updated for \(monthString) - applying changes")
-            existingRecord = newRecord
-        } else if updatedRecord == nil && existingRecord != nil {
-            print("🗑️ CloudKit monthly notes record deleted for \(monthString) - clearing local data")
-            existingRecord = nil
-        }
-    }
-    
     private func finalizeEditing() {
         print("🏁 Finalizing monthly notes editing for \(monthString)")
         
@@ -982,7 +1507,7 @@ struct MonthlyNotesView: View {
         
         // For monthly notes, keep focus on current field after save
         // This prevents cursor disappearing and allows continued editing
-        isEditing = false
+                isEditing = false
         
         // Note: We intentionally do NOT set focusedField = nil here
         // This maintains cursor visibility for continued editing
@@ -992,20 +1517,27 @@ struct MonthlyNotesView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
             localDataProtected = false
             print("🔓 Cleared local data protection for monthly notes \(monthString)")
-        }
+            }
     }
     
     private func loadNotes() {
         let monthComp = calendar.component(.month, from: month)
         let yearComp = calendar.component(.year, from: month)
         
-        existingRecord = cloudKitManager.monthlyNotes.first { record in
+        // Find the existing record
+        let foundRecord = cloudKitManager.monthlyNotes.first { record in
             record.month == monthComp && record.year == yearComp
         }
         
-        // Only update if not protected
-        if !localDataProtected {
+        // Update existing record reference
+        existingRecord = foundRecord
+        
+        // Always update from record unless actively typing
+        if !isActivelyTypingNotes() {
             updateNotesFromRecord()
+            print("📝 Loaded monthly notes for \(monthString) - record: \(foundRecord?.id ?? "none")")
+        } else {
+            print("⌨️ Skipped loading monthly notes for \(monthString) - user actively typing")
         }
     }
     
@@ -1092,7 +1624,7 @@ struct MonthlyNotesView: View {
         
         // Clear saving flag after a delay to prevent rapid successive operations
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-            self.isSaving = false
+                    self.isSaving = false
             print("🔓 Cleared saving flag for monthly notes \(self.monthString)")
             
             // Clear protection after save completes and some time passes
@@ -1116,6 +1648,133 @@ struct MonthlyNotesView: View {
                 localDataProtected = false
             }
         }
+    }
+    
+    // MARK: - Smart Data Management Methods for Notes
+    
+    /// Smart notes appearance handling that respects CloudKit protection timing
+    private func handleSmartNotesAppearance() {
+        // First, check if we should respect any existing protection
+        let shouldRespectProtection = isProtectingFreshUserNotesInput()
+        
+        if shouldRespectProtection {
+            print("🛡️ Respecting existing protection for \(monthString) - user has fresh edits")
+            return
+        }
+        
+        // Load the notes data since we're not protecting
+        loadNotesSmartly()
+        
+        // Check for potential data loss scenario (notes reappeared but no data)
+        let hasLocalData = !line1.isEmpty || !line2.isEmpty || !line3.isEmpty
+        let monthComp = calendar.component(.month, from: month)
+        let yearComp = calendar.component(.year, from: month)
+        
+        let shouldHaveData = cloudKitManager.monthlyNotes.contains { record in
+            record.month == monthComp && record.year == yearComp
+        }
+        
+        if !hasLocalData && shouldHaveData {
+            print("🔄 Data recovery needed for \(monthString) - forcing reload")
+            forceReloadNotesFromCloudKit()
+        }
+    }
+    
+    /// Improved protection logic for notes that only protects truly fresh user input
+    private func isProtectingFreshUserNotesInput() -> Bool {
+        // Protect if user is currently focused and editing
+        if focusedField != nil && isEditing {
+            print("🎯 Protecting \(monthString) - user is actively focused and editing")
+            return true
+        }
+        
+        // Protect if user just made changes (within last 5 seconds) and has unsaved changes
+        if hasUnsavedChanges && userInitiatedChange {
+            let timeSinceEdit = Date().timeIntervalSince(lastEditTime ?? Date.distantPast)
+            if timeSinceEdit < 5.0 {
+                print("⏰ Protecting \(monthString) - fresh user edit \(timeSinceEdit)s ago")
+                return true
+            }
+        }
+        
+        // Also check CloudKit manager's protection for this specific month
+        let monthKey = monthString
+        if cloudKitManager.shouldProtectLocalData(for: monthKey) {
+            print("☁️ CloudKit manager protecting \(monthString)")
+            return true
+        }
+        
+        return false
+    }
+    
+    /// Smart CloudKit notes data change handling
+    private func handleSmartCloudKitNotesDataChange(_ newNotes: [MonthlyNotesRecord]) {
+        // Only protect if we have fresh user input
+        if isProtectingFreshUserNotesInput() {
+            print("🛡️ CloudKit notes data changed for \(monthString) - protecting fresh user input")
+            // Schedule a retry for later when protection expires
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+                if !self.isProtectingFreshUserNotesInput() {
+                    print("🔄 Retrying CloudKit notes update for \(self.monthString) - protection expired")
+                    self.handleSmartCloudKitNotesDataChange(newNotes)
+                }
+            }
+            return
+        }
+        
+        // Find the record for this month/year
+        let monthComp = calendar.component(.month, from: month)
+        let yearComp = calendar.component(.year, from: month)
+        
+        let updatedRecord = newNotes.first { record in
+            record.month == monthComp && record.year == yearComp
+        }
+        
+        // Update our local state if we found a matching record
+        if let record = updatedRecord {
+            existingRecord = record
+            updateNotesFromRecord()
+            print("✅ CloudKit notes update applied to \(monthString)")
+        }
+    }
+    
+    /// Smart notes loading that respects protection
+    private func loadNotesSmartly() {
+        let monthComp = calendar.component(.month, from: month)
+        let yearComp = calendar.component(.year, from: month)
+        
+        // Find the existing record
+        let foundRecord = cloudKitManager.monthlyNotes.first { record in
+            record.month == monthComp && record.year == yearComp
+        }
+        
+        // Update existing record reference
+        existingRecord = foundRecord
+        
+        // Only update from record if not protecting fresh user input
+        if !isProtectingFreshUserNotesInput() {
+            updateNotesFromRecord()
+            print("📝 Smart loaded notes for \(monthString) - record: \(foundRecord?.id ?? "none")")
+        } else {
+            print("🛡️ Skipped smart loading for \(monthString) - protecting fresh user input")
+        }
+    }
+    
+    /// Force reload from CloudKit for notes data recovery scenarios
+    private func forceReloadNotesFromCloudKit() {
+        print("🚨 Force reloading \(monthString) from CloudKit for data recovery")
+        
+        // Clear protection flags temporarily for recovery
+        let wasProtected = localDataProtected
+        localDataProtected = false
+        
+        // Load from CloudKit
+        loadNotesSmartly()
+        
+        // Restore protection if it was set
+        localDataProtected = wasProtected
+        
+        print("🔄 Force notes reload completed for \(monthString)")
     }
 }
 
@@ -1181,7 +1840,7 @@ struct PrintableMonthPage: View {
                 }
                 
                 // Calendar grid - only actual month days
-                let monthDays = getActualMonthDays()
+                let monthDays = getActualMonthDays(for: month)
                 let weeks = monthDays.chunked(into: 7)
                 
                 ForEach(Array(weeks.enumerated()), id: \.offset) { weekIndex, week in
@@ -1195,12 +1854,12 @@ struct PrintableMonthPage: View {
                                     .fill(Color.clear)
                                     .frame(height: 60)
                                     .border(Color.black, width: 1)
-                            }
-                        }
-                    }
                 }
             }
-            
+        }
+    }
+}
+
             // Legend
             Text("O-Siddiqui. F-Freeman. P-Dixit. K-Watts. C-Carbajal. B-Brown  G-Grant. S-Sisodraker. A-Pitocchi.")
                 .font(.system(size: 9))
@@ -1218,7 +1877,7 @@ struct PrintableMonthPage: View {
         .background(Color.white)
     }
     
-    private func getActualMonthDays() -> [Date] {
+    private func getActualMonthDays(for month: Date) -> [Date] {
         guard let monthInterval = calendar.dateInterval(of: .month, for: month) else {
             return []
         }
