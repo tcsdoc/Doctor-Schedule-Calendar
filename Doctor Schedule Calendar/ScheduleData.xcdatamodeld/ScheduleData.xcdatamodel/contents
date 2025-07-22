@@ -7,9 +7,6 @@
         <attribute name="line3" optional="YES" attributeType="String" maxValueString="16"/>
         <attribute name="recordID" optional="YES" attributeType="String"/>
         <attribute name="recordSystemFields" optional="YES" attributeType="Binary" allowsCloudEncryption="YES"/>
-        <userInfo>
-            <entry key="cloudKitZoneName" value="ScheduleZone"/>
-        </userInfo>
     </entity>
     <entity name="MonthlyNotes" representedClassName="MonthlyNotes" syncable="YES" codeGenerationType="class">
         <attribute name="line1" optional="YES" attributeType="String" maxValueString="100"/>
@@ -19,9 +16,6 @@
         <attribute name="recordID" optional="YES" attributeType="String"/>
         <attribute name="recordSystemFields" optional="YES" attributeType="Binary" allowsCloudEncryption="YES"/>
         <attribute name="year" optional="YES" attributeType="Integer 16" defaultValueString="2024" usesScalarValueType="YES"/>
-        <userInfo>
-            <entry key="cloudKitZoneName" value="ScheduleZone"/>
-        </userInfo>
     </entity>
     <configuration name="Local" usedWithCloudKit="NO">
         <memberEntity name="DailySchedule"/>

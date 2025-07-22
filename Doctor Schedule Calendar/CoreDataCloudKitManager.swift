@@ -21,12 +21,20 @@ class CoreDataCloudKitManager: NSObject, ObservableObject {
             fatalError("Could not retrieve a persistent store description.")
         }
         
+        // Use default configuration - let Core Data choose optimal setup
+        // description.configuration = "CloudKit"  // Removed - using default
+        
         // Set up CloudKit configuration
         description.setOption(true as NSNumber, forKey: NSPersistentHistoryTrackingKey)
         description.setOption(true as NSNumber, forKey: NSPersistentStoreRemoteChangeNotificationPostOptionKey)
         
-        // Configure CloudKit container options
+        // Configure CloudKit container options - let Core Data use DEFAULT behavior
         let cloudKitOptions = NSPersistentCloudKitContainerOptions(containerIdentifier: containerIdentifier)
+        
+        // Do NOT set database scope - let Core Data choose the appropriate default
+        print("🔧 Using DEFAULT CloudKit database scope (Core Data will choose)")
+        print("🔧 Container ID: \(cloudKitOptions.containerIdentifier)")
+        
         description.cloudKitContainerOptions = cloudKitOptions
         
         // Load the persistent stores
@@ -36,6 +44,10 @@ class CoreDataCloudKitManager: NSObject, ObservableObject {
                 fatalError("Unresolved error \(error), \(error.userInfo)")
             } else {
                 print("✅ Core Data store loaded successfully")
+                print("📊 Store configuration: \(storeDescription.configuration ?? "Default")")
+                print("📊 CloudKit container ID: \(storeDescription.cloudKitContainerOptions?.containerIdentifier ?? "None")")
+                print("📊 CloudKit database scope: \(storeDescription.cloudKitContainerOptions?.databaseScope.rawValue ?? -1)")
+                print("📊 Store URL: \(storeDescription.url?.absoluteString ?? "None")")
             }
         }
         
@@ -120,22 +132,53 @@ class CoreDataCloudKitManager: NSObject, ObservableObject {
     func save() {
         let context = viewContext
         
-        guard context.hasChanges else { return }
+        guard context.hasChanges else { 
+            print("📊 No Core Data changes to save")
+            return 
+        }
         
         do {
             try context.save()
-            print("✅ Core Data saved successfully")
+            print("✅ Core Data saved successfully - CloudKit sync should follow")
+            
+            // Check if we have any objects
+            let scheduleCount = try context.count(for: DailySchedule.fetchRequest())
+            let notesCount = try context.count(for: MonthlyNotes.fetchRequest())
+            print("📊 Current data count - Schedules: \(scheduleCount), Notes: \(notesCount)")
         } catch {
             print("❌ Core Data save error: \(error)")
+            print("❌ Error details: \(error.localizedDescription)")
         }
     }
     
     // MARK: - CloudKit Sharing Methods
     
+    /// Share a schedule object explicitly with other users (Private -> Shared Database)
+    func shareScheduleExplicitly(_ schedule: DailySchedule) {
+        print("🔗 Creating explicit share for schedule (Private -> Shared Database)")
+        
+        // Share from private database to shared database for specific users
+        persistentContainer.share([schedule], to: nil) { objectIDs, share, container, error in
+            if let error = error {
+                print("❌ Error creating explicit share: \(error)")
+                print("❌ Error details: \(error.localizedDescription)")
+            } else {
+                print("✅ Successfully created explicit share")
+                if let share = share {
+                    print("📊 Share created with title: \(share[CKShare.SystemFieldKey.title] ?? "Unknown")")
+                }
+            }
+        }
+    }
+    
     /// Create a share for the schedule data
     func createShare(for schedule: DailySchedule, completion: @escaping (Result<CKShare, Error>) -> Void) {
+        print("🔗 Creating share for schedule dated: \(schedule.date ?? Date())")
+        
+        // Create new share
         persistentContainer.share([schedule], to: nil) { [weak self] objectIDs, share, container, error in
             if let error = error {
+                print("❌ Error creating share: \(error)")
                 DispatchQueue.main.async {
                     completion(.failure(error))
                 }
@@ -143,6 +186,7 @@ class CoreDataCloudKitManager: NSObject, ObservableObject {
             }
             
             guard let share = share else {
+                print("❌ Share object is nil")
                 DispatchQueue.main.async {
                     completion(.failure(CoreDataError.shareCreationFailed))
                 }
@@ -150,8 +194,11 @@ class CoreDataCloudKitManager: NSObject, ObservableObject {
             }
             
             // Configure share properties
-            share[CKShare.SystemFieldKey.title] = "Provider Schedule"
+            share[CKShare.SystemFieldKey.title] = "Provider Schedule - \(DateFormatter.localizedString(from: schedule.date ?? Date(), dateStyle: .medium, timeStyle: .none))"
+            share[CKShare.SystemFieldKey.shareType] = "com.gulfcoast.ProviderCalendar.schedule"
             share.publicPermission = .none
+            
+            print("✅ Created share with title: \(share[CKShare.SystemFieldKey.title] ?? "Unknown")")
             
             DispatchQueue.main.async {
                 self?.currentShare = share
@@ -235,6 +282,23 @@ extension CoreDataCloudKitManager: UICloudSharingControllerDelegate {
     
     func itemTitle(for csc: UICloudSharingController) -> String? {
         return "Provider Schedule"
+    }
+    
+    func itemThumbnailData(for csc: UICloudSharingController) -> Data? {
+        // Return nil to use default thumbnail
+        return nil
+    }
+    
+    func itemType(for csc: UICloudSharingController) -> String? {
+        return "Schedule Data"
+    }
+    
+    func cloudSharingControllerDidSaveShare(_ csc: UICloudSharingController) {
+        print("✅ Share saved successfully")
+    }
+    
+    func cloudSharingControllerDidStopSharing(_ csc: UICloudSharingController) {
+        print("🛑 Sharing stopped")
     }
 }
 
