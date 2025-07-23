@@ -1,6 +1,6 @@
 //
-//  Doctor_Schedule_CalendarApp.swift
-//  Doctor Schedule Calendar
+//  Provider_Schedule_CalendarApp.swift
+//  Provider Schedule Calendar
 //
 //  Created by mark on 7/5/25.
 //
@@ -8,7 +8,7 @@
 import SwiftUI
 
 @main
-struct Doctor_Schedule_CalendarApp: App {
+struct Provider_Schedule_CalendarApp: App {
     let coreDataManager = CoreDataCloudKitManager.shared
 
     init() {

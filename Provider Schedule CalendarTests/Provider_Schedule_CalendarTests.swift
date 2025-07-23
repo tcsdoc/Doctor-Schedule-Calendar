@@ -1,14 +1,14 @@
 //
-//  Doctor_Schedule_CalendarTests.swift
-//  Doctor Schedule CalendarTests
+//  Provider_Schedule_CalendarTests.swift
+//  Provider Schedule CalendarTests
 //
 //  Created by mark on 7/5/25.
 //
 
 import Testing
-@testable import Doctor_Schedule_Calendar
+@testable import Provider_Schedule_Calendar
 
-struct Doctor_Schedule_CalendarTests {
+struct Provider_Schedule_CalendarTests {
 
     @Test func example() async throws {
         // Write your test here and use APIs like `#expect(...)` to check expected conditions.

@@ -16,9 +16,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "4DA9E2642E18E67E001F106D"
-               BuildableName = "Doctor Schedule Calendar.app"
-               BlueprintName = "Doctor Schedule Calendar"
-               ReferencedContainer = "container:Doctor Schedule Calendar.xcodeproj">
+               BuildableName = "Provider Schedule Calendar.app"
+               BlueprintName = "Provider Schedule Calendar"
+               ReferencedContainer = "container:Provider Schedule Calendar.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -36,9 +36,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "4DA9E2762E18E67F001F106D"
-               BuildableName = "Doctor Schedule CalendarTests.xctest"
-               BlueprintName = "Doctor Schedule CalendarTests"
-               ReferencedContainer = "container:Doctor Schedule Calendar.xcodeproj">
+               BuildableName = "Provider Schedule CalendarTests.xctest"
+               BlueprintName = "Provider Schedule CalendarTests"
+               ReferencedContainer = "container:Provider Schedule Calendar.xcodeproj">
             </BuildableReference>
          </TestableReference>
          <TestableReference
@@ -47,9 +47,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "4DA9E2802E18E67F001F106D"
-               BuildableName = "Doctor Schedule CalendarUITests.xctest"
-               BlueprintName = "Doctor Schedule CalendarUITests"
-               ReferencedContainer = "container:Doctor Schedule Calendar.xcodeproj">
+               BuildableName = "Provider Schedule CalendarUITests.xctest"
+               BlueprintName = "Provider Schedule CalendarUITests"
+               ReferencedContainer = "container:Provider Schedule Calendar.xcodeproj">
             </BuildableReference>
          </TestableReference>
       </Testables>
@@ -69,9 +69,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "4DA9E2642E18E67E001F106D"
-            BuildableName = "Doctor Schedule Calendar.app"
-            BlueprintName = "Doctor Schedule Calendar"
-            ReferencedContainer = "container:Doctor Schedule Calendar.xcodeproj">
+            BuildableName = "Provider Schedule Calendar.app"
+            BlueprintName = "Provider Schedule Calendar"
+            ReferencedContainer = "container:Provider Schedule Calendar.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </LaunchAction>
@@ -86,9 +86,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "4DA9E2642E18E67E001F106D"
-            BuildableName = "Doctor Schedule Calendar.app"
-            BlueprintName = "Doctor Schedule Calendar"
-            ReferencedContainer = "container:Doctor Schedule Calendar.xcodeproj">
+            BuildableName = "Provider Schedule Calendar.app"
+            BlueprintName = "Provider Schedule Calendar"
+            ReferencedContainer = "container:Provider Schedule Calendar.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>

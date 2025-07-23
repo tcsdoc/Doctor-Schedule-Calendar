@@ -1,13 +1,13 @@
 //
-//  Doctor_Schedule_CalendarUITestsLaunchTests.swift
-//  Doctor Schedule CalendarUITests
+//  Provider_Schedule_CalendarUITestsLaunchTests.swift
+//  Provider Schedule CalendarUITests
 //
 //  Created by mark on 7/5/25.
 //
 
 import XCTest
 
-final class Doctor_Schedule_CalendarUITestsLaunchTests: XCTestCase {
+final class Provider_Schedule_CalendarUITestsLaunchTests: XCTestCase {
 
     override class var runsForEachTargetApplicationUIConfiguration: Bool {
         true

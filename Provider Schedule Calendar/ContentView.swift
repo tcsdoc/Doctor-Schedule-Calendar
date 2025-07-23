@@ -1,6 +1,6 @@
 //
 //  ContentView.swift
-//  Doctor Schedule Calendar
+//  Provider Schedule Calendar
 //
 //  Core Data + CloudKit Implementation with Original UI Design
 //
