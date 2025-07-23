@@ -9,6 +9,13 @@ import SwiftUI
 import CoreData
 import CloudKit
 
+// MARK: - Debug Logging Helper
+private func debugLog(_ message: String) {
+    #if DEBUG
+    print(message)
+    #endif
+}
+
 // MARK: - Next Day Navigation (Preserved from Original)
 extension Notification.Name {
     static let moveToNextDay = Notification.Name("moveToNextDay")
@@ -772,13 +779,13 @@ struct DayCell: View {
             
             // Auto-save after a short delay with proper logging
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                print("💾 Triggering Core Data save for July \(calendar.component(.day, from: dayStart))")
+                debugLog("💾 Triggering Core Data save for July \(calendar.component(.day, from: dayStart))")
                 coreDataManager.save()
                 // Private database auto-syncs to CloudKit - no explicit sharing needed for normal saves
             }
             
         } catch {
-            print("❌ Error updating schedule: \(error)")
+            debugLog("❌ Error updating schedule: \(error)")
         }
     }
 }
@@ -892,12 +899,12 @@ struct MonthlyNotesView: View {
             
             // Auto-save after a short delay with proper logging
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                print("💾 Triggering Core Data save for monthly notes \(monthComp)/\(yearComp)")
+                debugLog("💾 Triggering Core Data save for monthly notes \(monthComp)/\(yearComp)")
                 coreDataManager.save()
             }
             
         } catch {
-            print("❌ Error updating monthly notes: \(error)")
+            debugLog("❌ Error updating monthly notes: \(error)")
         }
     }
 }

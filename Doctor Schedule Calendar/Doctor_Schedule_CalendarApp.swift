@@ -12,7 +12,9 @@ struct Doctor_Schedule_CalendarApp: App {
     let coreDataManager = CoreDataCloudKitManager.shared
 
     init() {
+        #if DEBUG
         NSLog("🔥 APP STARTING WITH CORE DATA + CLOUDKIT SHARING - THIS SHOULD APPEAR IN CONSOLE")
+        #endif
     }
 
     var body: some Scene {
@@ -32,7 +34,7 @@ struct Doctor_Schedule_CalendarApp: App {
         guard url.scheme == "https" && url.host == "www.icloud.com" else { return }
         
         // This is a CloudKit share URL
-        print("📨 Received CloudKit share URL: \(url)")
+        debugLog("📨 Received CloudKit share URL: \(url)")
         
         // Extract share metadata from URL
         // The actual implementation would parse the CloudKit share URL
