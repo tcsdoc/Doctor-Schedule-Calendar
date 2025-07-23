@@ -34,7 +34,9 @@ struct Doctor_Schedule_CalendarApp: App {
         guard url.scheme == "https" && url.host == "www.icloud.com" else { return }
         
         // This is a CloudKit share URL
-        debugLog("📨 Received CloudKit share URL: \(url)")
+        #if DEBUG
+        print("📨 Received CloudKit share URL: \(url)")
+        #endif
         
         // Extract share metadata from URL
         // The actual implementation would parse the CloudKit share URL
