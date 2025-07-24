@@ -186,7 +186,7 @@
 					};
 				};
 			};
-			buildConfigurationList = 4DA9E2602E18E67E001F106D /* Build configuration list for PBXProject "Doctor Schedule Calendar" */;
+			buildConfigurationList = 4DA9E2602E18E67E001F106D /* Build configuration list for PBXProject "Provider Schedule Calendar" */;
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -403,7 +403,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "Doctor-Schedule-Calendar-Info.plist";
-				INFOPLIST_KEY_CFBundleDisplayName = "Provider Schedule";
+				INFOPLIST_KEY_CFBundleDisplayName = "Provider Schedule Calendar";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.medical";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -414,7 +414,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.6;
+				MARKETING_VERSION = 1.9;
 				PRODUCT_BUNDLE_IDENTIFIER = com.gulfcoast.ProviderCalendar;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -441,7 +441,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "Doctor-Schedule-Calendar-Info.plist";
-				INFOPLIST_KEY_CFBundleDisplayName = "Provider Schedule";
+				INFOPLIST_KEY_CFBundleDisplayName = "Provider Schedule Calendar";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.medical";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -452,7 +452,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.6;
+				MARKETING_VERSION = 1.9;
 				PRODUCT_BUNDLE_IDENTIFIER = com.gulfcoast.ProviderCalendar;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -541,7 +541,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		4DA9E2602E18E67E001F106D /* Build configuration list for PBXProject "Doctor Schedule Calendar" */ = {
+		4DA9E2602E18E67E001F106D /* Build configuration list for PBXProject "Provider Schedule Calendar" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				4DA9E2892E18E67F001F106D /* Debug */,

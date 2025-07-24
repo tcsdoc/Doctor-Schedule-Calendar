@@ -1,7 +1,7 @@
 {
   "images" : [
     {
-      "filename" : "ProviderSchedule.png",
+      "filename" : "ProviderScheduleIcon.png",
       "idiom" : "universal",
       "platform" : "ios",
       "size" : "1024x1024"
@@ -13,7 +13,7 @@
           "value" : "dark"
         }
       ],
-      "filename" : "ProviderSchedule 1.png",
+      "filename" : "ProviderScheduleIcon 1.png",
       "idiom" : "universal",
       "platform" : "ios",
       "size" : "1024x1024"
@@ -25,7 +25,7 @@
           "value" : "tinted"
         }
       ],
-      "filename" : "ProviderSchedule 2.png",
+      "filename" : "ProviderScheduleIcon 2.png",
       "idiom" : "universal",
       "platform" : "ios",
       "size" : "1024x1024"
