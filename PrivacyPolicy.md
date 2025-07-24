@@ -4,13 +4,13 @@
 
 ## Overview
 
-Provider Schedule Calendar ("the App") is designed to help healthcare providers manage and share their professional schedules. This privacy policy explains how we collect, use, and protect your information.
+Provider Schedule Calendar ("the App") is designed specifically for healthcare providers to manage and share their professional work schedules. This app is for doctor scheduling only and does not handle patient information or medical records.
 
 ## Information We Collect
 
 ### Personal Information
 - **iCloud Account Information**: We use your iCloud account to sync and share schedule data across your devices
-- **Schedule Data**: Work schedules, provider names, and related calendar information you enter into the app
+- **Schedule Data**: Doctor work schedules, provider names/initials, and related calendar information you enter into the app
 - **Device Information**: Basic device identifiers for CloudKit synchronization
 
 ### Data Storage and Synchronization
@@ -21,7 +21,7 @@ Provider Schedule Calendar ("the App") is designed to help healthcare providers 
 ## How We Use Your Information
 
 ### Primary Uses
-- **Schedule Management**: Store and organize your professional schedules
+- **Schedule Management**: Store and organize doctor work schedules
 - **Data Synchronization**: Keep your schedules updated across all your Apple devices
 - **Sharing**: Enable you to share schedules with authorized colleagues via CloudKit sharing
 
@@ -30,6 +30,7 @@ Provider Schedule Calendar ("the App") is designed to help healthcare providers 
 - Use your data for advertising purposes
 - Track your usage for marketing
 - Store data outside of Apple's CloudKit infrastructure
+- Handle patient information or medical records
 
 ## Data Sharing
 
@@ -75,17 +76,19 @@ Provider Schedule Calendar ("the App") is designed to help healthcare providers 
 - Remove the app to delete local data
 - Contact Apple iCloud support to manage iCloud data
 
-## Medical App Compliance
+## Medical Environment Use
 
-### HIPAA Considerations
-- This app is designed for healthcare provider schedule management
-- It is not intended to store patient health information (PHI)
-- Users are responsible for ensuring compliance with their organization's policies
+### Scope of Use
+- This app is designed for healthcare provider work schedule management only
+- It is **not intended** for patient health information (PHI) or medical records
+- The app handles only doctor scheduling information (who is working when)
+- No patient data, medical information, or health records are processed
 
 ### Professional Use
-- Intended for licensed healthcare professionals
-- Schedule data should not contain patient-specific information
-- Users must comply with their professional obligations regarding data handling
+- Intended for licensed healthcare professionals for scheduling purposes
+- Schedule data should contain only provider names, initials, and work assignments
+- Users must comply with their organization's data handling policies
+- Does not fall under HIPAA regulations as no patient information is involved
 
 ## Children's Privacy
 
@@ -104,7 +107,8 @@ We may update this privacy policy to reflect changes in our practices or applica
 For questions about this privacy policy or your data:
 
 **Developer Contact:**
-- Email: support@gulfcoast.com
+- Website: www.marlixholdings.com
+- Privacy Policy: Available at www.marlixholdings.com
 - App Store: Provider Schedule Calendar support
 
 **Apple CloudKit Privacy:**
@@ -117,13 +121,20 @@ For questions about this privacy policy or your data:
 This privacy policy complies with Apple App Store Review Guidelines section 5.1.1 regarding privacy policies for apps that collect user data.
 
 ### Medical App Category
-As a medical category app, we maintain enhanced privacy protections and do not use health data for advertising or other non-health purposes.
+As a medical category app focused on provider scheduling, we:
+- Do not handle patient health information
+- Do not use health data for advertising or other non-health purposes
+- Focus solely on healthcare provider work schedule management
 
 ### Data Minimization
-We collect only the minimum data necessary for the app's core functionality: professional schedule management and sharing.
+We collect only the minimum data necessary for the app's core functionality: healthcare provider schedule management and sharing.
+
+### No HIPAA Applicability
+This application does not process, store, or transmit patient health information (PHI) and therefore does not fall under HIPAA regulations. It is solely for healthcare provider work scheduling.
 
 ---
 
 **Provider Schedule Calendar Version 1.9**  
-**Privacy Policy Version 1.0**  
-**Effective Date: July 24, 2025** 
+**Privacy Policy Version 1.1**  
+**Effective Date: July 24, 2025**  
+**Full Privacy Statement: www.marlixholdings.com** 
