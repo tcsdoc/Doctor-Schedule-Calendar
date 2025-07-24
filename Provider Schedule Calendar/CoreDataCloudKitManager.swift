@@ -523,6 +523,7 @@ class CoreDataCloudKitManager: NSObject, ObservableObject {
                         completion(.failure(CoreDataError.shareCreationFailed))
                     }
                 }
+                #endif
                 
             } catch {
                 #if DEBUG
@@ -672,6 +673,7 @@ class CoreDataCloudKitManager: NSObject, ObservableObject {
                 }
                 #endif
             }
+            #endif
         }
     }
     
@@ -691,13 +693,13 @@ class CoreDataCloudKitManager: NSObject, ObservableObject {
             case .success:
                 #if DEBUG
                 print("✅ Successfully accepted share using CKAcceptSharesOperation")
+                #endif
                 DispatchQueue.main.async {
                     // Refresh data to show shared content
                     self?.objectWillChange.send()
                     // Trigger Core Data sync to pull in shared data
                     self?.persistentContainer.viewContext.refreshAllObjects()
                 }
-                #endif
             case .failure(let error):
                 #if DEBUG
                 print("❌ Error accepting share: \(error)")
@@ -776,4 +778,4 @@ enum CoreDataError: Error {
             return "Sharing not available"
         }
     }
-} 
+}
