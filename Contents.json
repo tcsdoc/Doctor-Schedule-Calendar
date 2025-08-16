@@ -1,12 +1,6 @@
 {
   "images" : [
     {
-      "filename" : "ProviderScheduleIcon.png",
-      "idiom" : "universal",
-      "platform" : "ios",
-      "size" : "1024x1024"
-    },
-    {
       "filename" : "icon-20.png",
       "idiom" : "iphone",
       "scale" : "2x",
@@ -109,8 +103,9 @@
       "size" : "83.5x83.5"
     },
     {
-      "idiom" : "ios-marketing",
-      "scale" : "1x",
+      "filename" : "ScheduleViewerIcon.png",
+      "idiom" : "universal",
+      "platform" : "ios",
       "size" : "1024x1024"
     }
   ],
@@ -118,4 +113,4 @@
     "author" : "xcode",
     "version" : 1
   }
-}
+} 

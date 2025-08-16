@@ -4,13 +4,13 @@
 
 ## Overview
 
-Provider Schedule Calendar ("the App") is designed specifically for healthcare providers to manage and share their professional work schedules. This app is for doctor scheduling only and does not handle patient information or medical records.
+Provider Schedule Calendar ("the App") is designed specifically for healthcare providers to manage and share their professional work schedules. This app is for Provider scheduling only and does not handle patient information or medical records.
 
 ## Information We Collect
 
 ### Personal Information
 - **iCloud Account Information**: We use your iCloud account to sync and share schedule data across your devices
-- **Schedule Data**: Doctor work schedules, provider names/initials, and related calendar information you enter into the app
+- **Schedule Data**: Provider work schedules, provider names/initials, and related calendar information you enter into the app
 - **Device Information**: Basic device identifiers for CloudKit synchronization
 
 ### Data Storage and Synchronization
@@ -21,7 +21,7 @@ Provider Schedule Calendar ("the App") is designed specifically for healthcare p
 ## How We Use Your Information
 
 ### Primary Uses
-- **Schedule Management**: Store and organize doctor work schedules
+- **Schedule Management**: Store and organize Provider work schedules
 - **Data Synchronization**: Keep your schedules updated across all your Apple devices
 - **Sharing**: Enable you to share schedules with authorized colleagues via CloudKit sharing
 
@@ -81,7 +81,7 @@ Provider Schedule Calendar ("the App") is designed specifically for healthcare p
 ### Scope of Use
 - This app is designed for healthcare provider work schedule management only
 - It is **not intended** for patient health information (PHI) or medical records
-- The app handles only doctor scheduling information (who is working when)
+- The app handles only Provider scheduling information (who is working when)
 - No patient data, medical information, or health records are processed
 
 ### Professional Use
@@ -134,7 +134,7 @@ This application does not process, store, or transmit patient health information
 
 ---
 
-**Provider Schedule Calendar Version 1.9**  
+**Provider Schedule Calendar Version 2.0**  
 **Privacy Policy Version 1.1**  
 **Effective Date: July 24, 2025**  
 **Full Privacy Statement: www.marlixholdings.com** 

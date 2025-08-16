@@ -5,17 +5,17 @@
 	<key>ApplicationProperties</key>
 	<dict>
 		<key>ApplicationPath</key>
-		<string>Applications/Doctor Schedule Calendar.app</string>
+		<string>Applications/Provider Schedule Calendar.app</string>
 		<key>Architectures</key>
 		<array>
 			<string>arm64</string>
 		</array>
 		<key>CFBundleIdentifier</key>
-		<string>com.marlixholdings.Doctor-Schedule-Calendar</string>
+		<string>com.gulfcoast.ProviderCalendar</string>
 		<key>CFBundleShortVersionString</key>
-		<string>1.0</string>
+		<string>1.9</string>
 		<key>CFBundleVersion</key>
-		<string>1</string>
+		<string>9</string>
 		<key>SigningIdentity</key>
 		<string>Apple Development: Mark Harvey (S996LVW54P)</string>
 		<key>Team</key>
@@ -24,10 +24,10 @@
 	<key>ArchiveVersion</key>
 	<integer>2</integer>
 	<key>CreationDate</key>
-	<date>2025-07-08T14:54:53Z</date>
+	<date>2025-07-25T01:23:36Z</date>
 	<key>Name</key>
-	<string>Doctor Schedule Calendar</string>
+	<string>Provider Schedule Calendar</string>
 	<key>SchemeName</key>
-	<string>Doctor Schedule Calendar</string>
+	<string>Provider Schedule Calendar</string>
 </dict>
 </plist>

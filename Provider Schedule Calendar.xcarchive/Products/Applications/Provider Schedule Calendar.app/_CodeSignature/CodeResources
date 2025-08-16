@@ -4,59 +4,92 @@
 <dict>
 	<key>files</key>
 	<dict>
-		<key>Doctor_Schedule_Calendar.momd/Doctor_Schedule_Calendar.mom</key>
+		<key>AppIcon60x60@2x.png</key>
 		<data>
-		IRsUgJPjY8TM0JE02/+c7Gpd8Dk=
+		mFd2JMXVvLc1lgDKVTz9jjD0MD4=
 		</data>
-		<key>Doctor_Schedule_Calendar.momd/Doctor_Schedule_Calendar.omo</key>
+		<key>AppIcon76x76@2x~ipad.png</key>
 		<data>
-		0AiV8+/O/kRCI4QeOlnYWyAQR9g=
+		X1U+e2XafaeKUCDzfAXsOAW3kRI=
 		</data>
-		<key>Doctor_Schedule_Calendar.momd/VersionInfo.plist</key>
+		<key>Assets.car</key>
 		<data>
-		66G2oqk2LfmnOmd4i9TD6X4GHoU=
+		RW7FXhDk5SY9QlBPmp7fD357s2k=
 		</data>
 		<key>Info.plist</key>
 		<data>
-		vqibV3oVz9j2YU3VYG2NwNdXAz4=
+		0PGVWOnlZm//H/7jS14j2IIybi4=
 		</data>
 		<key>PkgInfo</key>
 		<data>
 		n57qDP4tZfLD1rCS43W0B4LQjzE=
 		</data>
+		<key>PrivacyInfo.xcprivacy</key>
+		<data>
+		VYW/6H/Drua9kL4V532hkns70CA=
+		</data>
+		<key>ScheduleData.momd/ScheduleData.mom</key>
+		<data>
+		lTThH108UaPS1a7Hzs9qO8ahYC0=
+		</data>
+		<key>ScheduleData.momd/VersionInfo.plist</key>
+		<data>
+		6RBWESKO3XO8qOIJflEA7SEyTag=
+		</data>
 		<key>embedded.mobileprovision</key>
 		<data>
-		Rxc7GgxLJDiqxFUhKXJamrFInEA=
+		3lcgBl0/D+Jr+8hZHjPvQcDr05A=
 		</data>
 	</dict>
 	<key>files2</key>
 	<dict>
-		<key>Doctor_Schedule_Calendar.momd/Doctor_Schedule_Calendar.mom</key>
+		<key>AppIcon60x60@2x.png</key>
 		<dict>
 			<key>hash2</key>
 			<data>
-			V4iF8pcSaeGtLjKI47nzOxA/9cZi65EqvlykxriotDo=
+			2W6EgJ6ahxyuFoVRTv3X9FQiAPKzXxmWTzcr7xJAyTw=
 			</data>
 		</dict>
-		<key>Doctor_Schedule_Calendar.momd/Doctor_Schedule_Calendar.omo</key>
+		<key>AppIcon76x76@2x~ipad.png</key>
 		<dict>
 			<key>hash2</key>
 			<data>
-			YyTxGWZlOKlWia4MvXsX5HtkROPX984+z1MHqX+/4Zs=
+			7orc7lmEMM4dh/4eUXHhqBVpCefRkCn+TdEFBn2pX2M=
 			</data>
 		</dict>
-		<key>Doctor_Schedule_Calendar.momd/VersionInfo.plist</key>
+		<key>Assets.car</key>
 		<dict>
 			<key>hash2</key>
 			<data>
-			IXLLqBtu/2jBBObO0A5sP0nmV/WiuS9LB4HYF+uImZ4=
+			xPxyP7Sbs4Ws/+67pZYXGsHt8SxqCQb+S4LEyRxisCY=
+			</data>
+		</dict>
+		<key>PrivacyInfo.xcprivacy</key>
+		<dict>
+			<key>hash2</key>
+			<data>
+			LKm2ahWz8LR1RJpSu+YNJ6iVt3+OozS9lVcoZL2/Dfw=
+			</data>
+		</dict>
+		<key>ScheduleData.momd/ScheduleData.mom</key>
+		<dict>
+			<key>hash2</key>
+			<data>
+			93OML4HEmmGKLfsHXjDq/X8eh4gmJzvU3Loqnr7cOmw=
+			</data>
+		</dict>
+		<key>ScheduleData.momd/VersionInfo.plist</key>
+		<dict>
+			<key>hash2</key>
+			<data>
+			ZJUBq2Z+FMvBnY/c07r2z0vapf+NmjrA1jVy0qKPIG8=
 			</data>
 		</dict>
 		<key>embedded.mobileprovision</key>
 		<dict>
 			<key>hash2</key>
 			<data>
-			GLsojNs5VJG7imLfGF1ygc9oQsNBsRh5KYvR4tyjYHI=
+			8wwFrULmN2LG1g1wadflh0+uWt/Z6ypYEDMnD8KA3U0=
 			</data>
 		</dict>
 	</dict>
