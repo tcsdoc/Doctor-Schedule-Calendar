@@ -3,6 +3,7 @@ import CoreData
 import CloudKit
 import SwiftUI
 
+@MainActor
 class CoreDataCloudKitManager: NSObject, ObservableObject {
     static let shared = CoreDataCloudKitManager()
     
@@ -25,17 +26,19 @@ class CoreDataCloudKitManager: NSObject, ObservableObject {
             return container
         }
         
-        // Use default configuration - let Core Data choose optimal setup
-        // description.configuration = "CloudKit"  // Removed - using default
+        // Use CloudKit configuration for proper sharing support
+        description.configuration = "CloudKit"
         
         // Set up CloudKit configuration
         description.setOption(true as NSNumber, forKey: NSPersistentHistoryTrackingKey)
         description.setOption(true as NSNumber, forKey: NSPersistentStoreRemoteChangeNotificationPostOptionKey)
         
-        // Configure CloudKit container options - let Core Data use DEFAULT behavior
+        // Configure CloudKit container options for PRIVATE database (privacy-focused)
         let cloudKitOptions = NSPersistentCloudKitContainerOptions(containerIdentifier: containerIdentifier)
         
-        // Do NOT set database scope - let Core Data choose the appropriate default
+        // Set database scope to PRIVATE for secure access with sharing
+        // This keeps data private to the owner and only allows invited users to access it
+        cloudKitOptions.databaseScope = .private
         
         description.cloudKitContainerOptions = cloudKitOptions
         
@@ -49,7 +52,8 @@ class CoreDataCloudKitManager: NSObject, ObservableObject {
                 // Log error for debugging but continue execution
             } else {
                 #if DEBUG
-                print("✅ Core Data store loaded successfully")
+                print("✅ Core Data store loaded successfully with PRIVATE database scope")
+                print("🔒 Private database: Data is private by default, accessible only via secure sharing")
                 #endif
             }
         }
@@ -94,9 +98,9 @@ class CoreDataCloudKitManager: NSObject, ObservableObject {
                 switch status {
                 case .available:
                     self?.isCloudKitEnabled = true
-                    self?.cloudKitStatus = "CloudKit Available"
+                    self?.cloudKitStatus = "CloudKit Private Database Available"
                     #if DEBUG
-                    print("✅ CloudKit available for sharing")
+                    print("✅ CloudKit available - using PRIVATE database for privacy-focused sharing")
                     #endif
                 case .noAccount:
                     self?.isCloudKitEnabled = false
@@ -410,7 +414,7 @@ class CoreDataCloudKitManager: NSObject, ObservableObject {
     private func configureShare(_ share: CKShare) {
         let currentYear = Calendar.current.component(.year, from: Date())
         share[CKShare.SystemFieldKey.title] = "Provider Schedule \(currentYear)"
-        share[CKShare.SystemFieldKey.shareType] = "com.gulfcoast.ProviderCalendar.schedule"
+        // Remove custom share type that might cause App Store issues
         share.publicPermission = .none
         
         // Additional configuration that might help with participant addition
@@ -424,121 +428,83 @@ class CoreDataCloudKitManager: NSObject, ObservableObject {
         #endif
     }
     
-    /// Create a CloudKit share from existing Core Data records for ScheduleViewer compatibility
+    /// Create CloudKit share for private database using Core Data sharing
     func createCloudKitShare(completion: @escaping (Result<CKShare, Error>) -> Void) {
         #if DEBUG
-        print("🔗 Creating CloudKit share from existing Core Data calendar data")
+        print("🔗 Creating CloudKit share using Core Data + CloudKit integration")
         #endif
         
-        Task {
-            do {
-                let database = cloudKitContainer.privateCloudDatabase
-                
-                // Try to fetch an existing Core Data record that's already synced to CloudKit
+        // Use Core Data's built-in sharing instead of manual CloudKit sharing
+        let context = persistentContainer.viewContext
+        
+        // Get some recent schedule data to share
+        let fetchRequest: NSFetchRequest<DailySchedule> = DailySchedule.fetchRequest()
+        fetchRequest.sortDescriptors = [NSSortDescriptor(keyPath: \DailySchedule.date, ascending: false)]
+        fetchRequest.fetchLimit = 1
+        
+        do {
+            let schedules = try context.fetch(fetchRequest)
+            if let schedule = schedules.first {
                 #if DEBUG
-                print("🔗 Looking for existing Core Data records synced to CloudKit...")
+                print("🔗 Found schedule to share: \(schedule.date ?? Date())")
                 #endif
                 
-                                 // Query for existing CD_DailySchedule records in CloudKit
-                 let query = CKQuery(recordType: "CD_DailySchedule", predicate: NSPredicate(value: true))
-                 query.sortDescriptors = [NSSortDescriptor(key: "CD_date", ascending: false)]
-                 
-                 #if DEBUG
-                 print("🔍 Querying CloudKit for existing schedule records to share...")
-                 #endif
-                 let (existingRecords, _) = try await database.records(matching: query, resultsLimit: 1)
-                 #if DEBUG
-                 print("📊 Found \(existingRecords.count) existing CloudKit records to potentially share")
-                 #endif
-                
-                var rootRecord: CKRecord
-                
-                if let (_, result) = existingRecords.first,
-                   let existingRecord = try? result.get() {
-                    // Use existing CloudKit record
-                    rootRecord = existingRecord
-                    #if DEBUG
-                    print("✅ Found existing CloudKit record to share: \(rootRecord.recordID)")
-                    #endif
-                } else {
-                    // Create a new record representing the calendar
-                    #if DEBUG
-                    print("🔗 No existing CloudKit records found, creating new root record")
-                    #endif
-                    let today = Calendar.current.startOfDay(for: Date())
-                    let recordID = CKRecord.ID(recordName: "shared-calendar-root")
-                    
-                    rootRecord = CKRecord(recordType: "CD_DailySchedule", recordID: recordID)
-                    rootRecord["CD_date"] = today as CKRecordValue
-                    rootRecord["CD_line1"] = "PROVIDER SCHEDULE" as CKRecordValue
-                    rootRecord["CD_line2"] = "SHARED CALENDAR" as CKRecordValue
-                    rootRecord["CD_line3"] = "2025" as CKRecordValue
-                    
-                    #if DEBUG
-                    print("🔗 Created new root record for sharing")
-                    #endif
-                }
-                
-                // Create the share
-                let share = CKShare(rootRecord: rootRecord)
-                share[CKShare.SystemFieldKey.title] = "Provider Schedule 2025" as CKRecordValue
-                
+                // Use Core Data's sharing capabilities
+                createShare(for: schedule, completion: completion)
+            } else {
                 #if DEBUG
-                print("🔗 Created CloudKit share for ScheduleViewer compatibility")
-                print("🔗 Root record: \(rootRecord.recordID)")
-                print("🔗 Share title: Provider Schedule 2025")
-                
-                // Save both the root record and share together
-                let saveResults = try await database.modifyRecords(saving: [rootRecord, share], deleting: [])
-                
-                print("✅ CloudKit share created successfully")
-                print("🔗 Saved records: \(saveResults.saveResults.count)")
-                print("🔗 This shares access to ALL calendar data in the CloudKit zone")
-                
-                // Detailed share debugging
-                print("🔍 SHARE DEBUG INFO:")
-                print("   Share Record ID: \(share.recordID)")
-                print("   Share URL: \(share.url?.absoluteString ?? "No URL yet")")
-                print("   Share Owner: \(share.owner.debugDescription)")
-                print("   Share Participants: \(share.participants.count)")
-                print("   Share Public Permission: \(share.publicPermission.rawValue)")
-                print("   Root Record ID: \(rootRecord.recordID)")
-                print("   Root Record Type: \(rootRecord.recordType)")
-                
-                // Check what zone the root record is in
-                let zoneName = rootRecord.recordID.zoneID.zoneName
-                print("   Root Record Zone: \(zoneName)")
-                
-                // Find the saved share
-                if let savedShare = saveResults.saveResults.values.compactMap({ try? $0.get() }).first(where: { $0 is CKShare }) as? CKShare {
-                    print("🔗 Share URL: \(savedShare.url?.absoluteString ?? "Generating...")")
-                    
-                    await MainActor.run {
-                        self.currentShare = savedShare
-                        completion(.success(savedShare))
-                    }
-                } else {
-                    print("❌ Share not found in saved results")
-                    await MainActor.run {
-                        completion(.failure(CoreDataError.shareCreationFailed))
-                    }
-                }
+                print("🔗 No schedule data found, creating sample data for sharing")
                 #endif
                 
-            } catch {
-                #if DEBUG
-                print("❌ Failed to create CloudKit share: \(error)")
-                await MainActor.run {
-                    completion(.failure(error))
-                }
-                #endif
+                // Create sample data to enable sharing
+                let sampleSchedule = DailySchedule(context: context)
+                sampleSchedule.date = Date()
+                sampleSchedule.line1 = "PROVIDER"
+                sampleSchedule.line2 = "SCHEDULE"  
+                sampleSchedule.line3 = "SHARED"
+                
+                save()
+                
+                // Try sharing the sample data
+                createShare(for: sampleSchedule, completion: completion)
             }
+        } catch {
+            #if DEBUG
+            print("❌ Error fetching schedule data: \(error)")
+            #endif
+            completion(.failure(error))
         }
     }
     
 
     
 
+    
+    /// Direct participant invitation (works without App Store)
+    func inviteParticipantDirectly(email: String, completion: @escaping (Result<String, Error>) -> Void) {
+        #if DEBUG
+        print("🔗 Creating direct participant invitation for \(email)")
+        print("🔗 Note: For development builds, use UICloudSharingController 'Add People' instead")
+        #endif
+        
+        createCloudKitShare { result in
+            switch result {
+            case .success(let share):
+                // Use UICloudSharingController for proper participant management
+                // Skip complex user discovery - let UICloudSharingController handle it
+                #if DEBUG
+                print("✅ Share created successfully: \(share.recordID.recordName)")
+                print("💡 Use UICloudSharingController 'Add People' button to invite \(email)")
+                print("💡 This is the recommended approach for CloudKit sharing")
+                #endif
+                
+                completion(.success("Share created. Use 'Add People' button in the sharing interface to invite \(email)"))
+                
+            case .failure(let error):
+                completion(.failure(error))
+            }
+        }
+    }
     
     /// Add participant to share (UICloudSharingController handles this automatically)
     func addParticipant(email: String, permission: CKShare.ParticipantPermission, to share: CKShare, completion: @escaping (Result<Void, Error>) -> Void) {

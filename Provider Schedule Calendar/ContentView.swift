@@ -9,12 +9,6 @@ import SwiftUI
 import CoreData
 import CloudKit
 
-// MARK: - Debug Logging Helper
-private func debugLog(_ message: String) {
-    #if DEBUG
-    print(message)
-    #endif
-}
 
 // MARK: - Next Day Navigation (Preserved from Original)
 extension Notification.Name {
@@ -28,6 +22,7 @@ struct NextDayFocusRequest {
 
 struct ContentView: View {
     @EnvironmentObject private var coreDataManager: CoreDataCloudKitManager
+    @EnvironmentObject private var cloudKitManager: CloudKitManager
     @Environment(\.managedObjectContext) private var viewContext
     @State private var currentDate = Date()
     private let calendar = Calendar.current
@@ -78,13 +73,21 @@ struct ContentView: View {
                 Spacer()
                 
                                     HStack(spacing: 15) {
-                        // Share button for admins (Core Data implementation)
+                        // Share calendar button (Private database with invitations)
                         if coreDataManager.isCloudKitEnabled {
-                            Button(action: shareSchedule) {
-                                Image(systemName: "person.2.badge.plus")
+                            Button(action: shareApp) {
+                                Image(systemName: "square.and.arrow.up")
                                     .font(.title2)
                                     .foregroundColor(.green)
                             }
+                            
+                            #if DEBUG
+                            Button(action: getShareURL) {
+                                Image(systemName: "link.circle")
+                                    .font(.title2)
+                                    .foregroundColor(.purple)
+                            }
+                            #endif
                         }
                     
                     Button(action: {
@@ -117,121 +120,210 @@ struct ContentView: View {
         return months
     }
     
-    // MARK: - Sharing Methods (Core Data Implementation)
+    // MARK: - CloudKit Private Database Sharing (Development-Friendly)
     
-    private func shareSchedule() {
-        let context = viewContext
+    private func shareApp() {
+        #if DEBUG
+        print("🔗 Creating custom zone share for privacy-focused sharing")
+        #endif
         
-        // Fetch ALL schedules to share (this shares the entire calendar data)
+        // Use new CloudKitManager with custom zones for privacy
+        cloudKitManager.createCustomZoneShare { result in
+            DispatchQueue.main.async {
+                switch result {
+                case .success(let share):
+                    #if DEBUG
+                    print("✅ Custom zone share created successfully!")
+                    print("🔗 Share URL: \(share.url?.absoluteString ?? "Not available")")
+                    #endif
+                    self.presentCloudKitSharingController(for: share)
+                case .failure(let error):
+                    print("❌ Failed to create custom zone share: \(error)")
+                    print("🔄 Falling back to legacy Core Data sharing")
+                    #if DEBUG
+                    print("❌ Failed to create custom zone share: \(error)")
+                    #endif
+                    // Fallback to Core Data approach if needed
+                    self.fallbackToLegacySharing()
+                }
+            }
+        }
+    }
+    
+    private func fallbackToLegacySharing() {
+        #if DEBUG
+        print("🔄 Falling back to legacy Core Data sharing")
+        #endif
+        
+        // Fallback: Use Core Data's built-in sharing 
         let fetchRequest: NSFetchRequest<DailySchedule> = DailySchedule.fetchRequest()
-        fetchRequest.sortDescriptors = [NSSortDescriptor(keyPath: \DailySchedule.date, ascending: true)]
+        fetchRequest.sortDescriptors = [NSSortDescriptor(keyPath: \DailySchedule.date, ascending: false)]
+        fetchRequest.fetchLimit = 1
         
         do {
-            let existingSchedules = try context.fetch(fetchRequest)
-            
-            if existingSchedules.isEmpty {
-                // Create schedules for the current year to enable comprehensive sharing
-                createInitialScheduleForSharing()
+            let schedules = try viewContext.fetch(fetchRequest)
+            if let schedule = schedules.first {
+                coreDataManager.createShare(for: schedule) { result in
+                    DispatchQueue.main.async {
+                        switch result {
+                        case .success(let share):
+                            self.presentCloudKitSharingController(for: share)
+                        case .failure(let error):
+                            print("❌ Failed to create fallback share: \(error)")
+                        }
+                    }
+                }
             } else {
-                // Share ALL existing schedules (this shares the entire calendar)
-                shareAllSchedules(existingSchedules)
+                // No data to share yet
+                self.createSampleDataAndShare()
             }
         } catch {
-            // Failed to fetch schedules
+            print("❌ Failed to fetch schedule data: \(error)")
+            self.createSampleDataAndShare()
         }
     }
     
-    private func createInitialScheduleForSharing() {
-        let context = viewContext
-        
-        // Create schedules for the current month to enable sharing
-        let calendar = Calendar.current
-        let now = Date()
-        
-        guard let monthInterval = calendar.dateInterval(of: .month, for: now) else { return }
-        
-        var date = monthInterval.start
-        let endDate = monthInterval.end
-        
-        var schedulesToShare: [DailySchedule] = []
-        
-        // Create empty schedules for the current month
-        while date < endDate {
-            let schedule = DailySchedule(context: context)
-            schedule.date = calendar.startOfDay(for: date)
-            // Leave lines empty - user can fill them in later
-            schedulesToShare.append(schedule)
-            
-            date = calendar.date(byAdding: .day, value: 1, to: date) ?? endDate
-        }
-        
-        do {
-            try context.save()
-            
-            // Share the first schedule (this shares the entire zone)
-            if let firstSchedule = schedulesToShare.first {
-                shareExistingSchedule(firstSchedule)
-            }
-        } catch {
-            // Failed to create initial schedules
-        }
-    }
-    
-    private func shareExistingSchedule(_ schedule: DailySchedule) {
-        coreDataManager.createShare(for: schedule) { result in
-            switch result {
-            case .success(let share):
-                DispatchQueue.main.async {
-                    self.presentSharingController(for: share)
-                }
-            case .failure(_):
-                // Failed to create share
-                break
-            }
-        }
-    }
-    
-    private func shareAllSchedules(_ schedules: [DailySchedule]) {
-        // Check if we have any schedules to share
-        guard !schedules.isEmpty else {
-            return
-        }
-        
+    private func tryComprehensiveShare(with schedules: [DailySchedule]) {
         coreDataManager.createComprehensiveShare(for: schedules) { result in
-            switch result {
-            case .success(let share):
-                DispatchQueue.main.async {
-                    self.presentSharingController(for: share)
+            DispatchQueue.main.async {
+                switch result {
+                case .success(let share):
+                    self.presentCloudKitSharingController(for: share)
+                case .failure(let error):
+                    print("❌ Failed to create comprehensive share: \(error)")
+                    self.presentEmailInvitation()
                 }
-            case .failure(_):
-                // Try simple share approach as fallback
-                self.trySimpleShare()
             }
         }
     }
     
-    private func trySimpleShare() {
-        coreDataManager.createCloudKitShare { result in
-            switch result {
-            case .success(let share):
-                DispatchQueue.main.async {
-                    self.presentSharingController(for: share)
-                }
-            case .failure(_):
-                // All sharing methods failed
-                break
-            }
+    private func createSampleDataAndShare() {
+        // Create a sample schedule entry to enable sharing
+        let schedule = DailySchedule(context: viewContext)
+        schedule.date = Date()
+        schedule.line1 = "PROVIDER"
+        schedule.line2 = "SCHEDULE"
+        schedule.line3 = "SHARED"
+        
+        coreDataManager.save()
+        
+        // Try sharing again with the new data
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            self.shareApp()
         }
     }
-
-    private func presentSharingController(for share: CKShare) {
+    
+    private func presentCloudKitSharingController(for share: CKShare) {
         guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
               let rootViewController = windowScene.windows.first?.rootViewController else {
+            print("❌ Could not find root view controller")
             return
         }
-
+        
         coreDataManager.presentSharingController(for: share, from: rootViewController)
     }
+    
+    private func presentEmailInvitation() {
+        // Show error and guide user
+        let alert = UIAlertController(
+            title: "Sharing Setup", 
+            message: "CloudKit sharing requires:\n\n1. iCloud account signed in\n2. Schedule data to be synced to CloudKit\n3. Network connectivity\n\nPlease check these requirements and try again. Make sure you have some schedule entries and they've synced to iCloud.",
+            preferredStyle: .alert
+        )
+        
+        let tryAgainAction = UIAlertAction(title: "Try Again", style: .default) { _ in
+            self.shareApp()
+        }
+        
+        let cancelAction = UIAlertAction(title: "Cancel", style: .cancel)
+        
+        alert.addAction(tryAgainAction)
+        alert.addAction(cancelAction)
+        
+        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+           let rootViewController = windowScene.windows.first?.rootViewController {
+            rootViewController.present(alert, animated: true)
+        }
+    }
+    
+    private func sendDirectInvitation(to email: String) {
+        coreDataManager.inviteParticipantDirectly(email: email) { result in
+            DispatchQueue.main.async {
+                switch result {
+                case .success(let message):
+                    print("✅ \(message)")
+                    self.showInvitationResult(success: true, message: message)
+                case .failure(let error):
+                    print("❌ Failed to send invitation: \(error)")
+                    self.showInvitationResult(success: false, message: "Failed to send invitation. Please try again.")
+                }
+            }
+        }
+    }
+    
+    private func showInvitationResult(success: Bool, message: String) {
+        let alert = UIAlertController(
+            title: success ? "Invitation Sent" : "Invitation Failed",
+            message: message,
+            preferredStyle: .alert
+        )
+        
+        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        
+        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+           let rootViewController = windowScene.windows.first?.rootViewController {
+            rootViewController.present(alert, animated: true)
+        }
+    }
+    
+    #if DEBUG
+    private func getShareURL() {
+        print("🔗 Getting custom zone share URL...")
+        
+        // Create CUSTOM ZONE share and get URL for manual copying
+        cloudKitManager.createCustomZoneShare { result in
+            // Handle callback result
+            DispatchQueue.main.async {
+                switch result {
+                case .success(let share):
+                    print("✅ Share URL created: \(share.url?.absoluteString ?? "No URL")")
+                    if let shareURL = share.url {
+                        // Copy to clipboard
+                        UIPasteboard.general.string = shareURL.absoluteString
+                        
+                        let alert = UIAlertController(
+                            title: "Share URL Copied",
+                            message: "Share URL has been copied to clipboard:\n\n\(shareURL.absoluteString)\n\nPaste this into ScheduleViewer's 'Accept Share' button on the other device.",
+                            preferredStyle: .alert
+                        )
+                        
+                        alert.addAction(UIAlertAction(title: "OK", style: .default))
+                        
+                        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                           let rootViewController = windowScene.windows.first?.rootViewController {
+                            rootViewController.present(alert, animated: true)
+                        }
+                    } else {
+                        let alert = UIAlertController(
+                            title: "Error",
+                            message: "Share URL not available yet. Try again in a moment.",
+                            preferredStyle: .alert
+                        )
+                        alert.addAction(UIAlertAction(title: "OK", style: .default))
+                        
+                        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                           let rootViewController = windowScene.windows.first?.rootViewController {
+                            rootViewController.present(alert, animated: true)
+                        }
+                    }
+                case .failure(let error):
+                    print("❌ Failed to get share URL: \(error)")
+                    self.presentEmailInvitation()
+                }
+            }
+        }
+    }
+    #endif
     
     // MARK: - Original Print Functions (Preserved)
     
@@ -279,7 +371,7 @@ struct ContentView: View {
                 .calendar td { height: 80px; width: 14.28%; }
                 .day-number { font-weight: bold; font-size: 12px; margin-bottom: 3px; }
                 .schedule-line { font-size: 9px; margin: 1px 0; line-height: 1.2; }
-                .legend { font-size: 9px; text-align: center; border: 1px solid #666; padding: 5px; }
+
                 @page { margin: 0.5in; }
             </style>
         </head>
@@ -351,13 +443,7 @@ struct ContentView: View {
             
             fullHTML += "</table>"
             
-            // Add legend
-            fullHTML += """
-            <div class="legend">
-                O-Siddiqui. F-Freeman. P-Dixit. K-Watts. C-Carbajal. B-Brown  G-Grant. S-Sisodraker. A-Pitocchi.
-            </div>
-            </div>
-            """
+            fullHTML += "</div>"
         }
         
         fullHTML += "</body></html>"
@@ -485,7 +571,6 @@ struct MonthView: View {
             notesSection
             daysOfWeekHeader
             calendarGrid
-            LegendView()
         }
         .padding(12)  // Reduced padding to give more space for day cells
         .background(Color(.secondarySystemBackground))  // Original background
@@ -909,19 +994,7 @@ struct MonthlyNotesView: View {
     }
 }
 
-// MARK: - LegendView (Original Design)
-struct LegendView: View {
-    var body: some View {
-        Text("O-Siddiqui. F-Freeman. P-Dixit. K-Watts. C-Carbajal. B-Brown  G-Grant. S-Sisodraker. A-Pitocchi.")
-            .font(.caption)  // Original font
-            .padding(8)  // Original padding
-            .overlay(
-                RoundedRectangle(cornerRadius: 4)
-                    .stroke(Color.gray, lineWidth: 1)  // Original border
-            )
-            .padding(.top, 5)  // Original padding
-    }
-}
+
 
 // MARK: - Array Extension for Chunking (Original Utility)
 extension Array {

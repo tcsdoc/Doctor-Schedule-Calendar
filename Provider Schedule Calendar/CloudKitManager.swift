@@ -3,15 +3,20 @@ import CloudKit
 import SwiftUI
 
 // MARK: - Debug Logging Helper
-private func debugLog(_ message: String) {
+func debugLog(_ message: String) {
+    #if DEBUG
     print(message)
+    #endif
 }
 
+@MainActor
 class CloudKitManager: ObservableObject {
     static let shared = CloudKitManager()
     
     private let container: CKContainer
-    private let privateDatabase: CKDatabase
+    private let publicDatabase: CKDatabase
+    private var userCustomZone: CKRecordZone?
+    private let userZoneID: CKRecordZone.ID
     
     @Published var dailySchedules: [DailyScheduleRecord] = []
     @Published var monthlyNotes: [MonthlyNotesRecord] = []
@@ -25,15 +30,30 @@ class CloudKitManager: ObservableObject {
     private(set) var lastOperationTime: Date = Date()
     private var pendingOperations: Set<String> = []
     
+
+    
     // Track data versions to prevent overwrites
     private var localDataVersions: [String: Date] = [:]
     
     init() {
         container = CKContainer(identifier: "iCloud.com.gulfcoast.ProviderCalendar")
-        privateDatabase = container.privateCloudDatabase
-        checkCloudKitStatus()
+        publicDatabase = container.privateCloudDatabase  // Use private database with sharing for privacy
         
-        debugLog("🚀 CloudKitManager initialized with enhanced sync protection")
+        // Create user-specific zone for privacy and sharing
+        let userIdentifier = "user_\(container.containerIdentifier?.replacingOccurrences(of: "iCloud.", with: "") ?? "unknown")"
+        userZoneID = CKRecordZone.ID(zoneName: userIdentifier)
+        
+        // Force visible logging
+        NSLog("🚀 CloudKitManager INIT - Privacy-focused custom zones enabled")
+        NSLog("🔒 User zone will be: \(userZoneID.zoneName)")
+        print("🚀 CloudKitManager INIT - Privacy-focused custom zones enabled")
+        print("🔒 User zone will be: \(userZoneID.zoneName)")
+        
+        checkCloudKitStatus()
+        setupUserCustomZone()
+        
+        debugLog("🚀 CloudKitManager initialized with privacy-focused custom zones")
+        debugLog("🔒 User zone: \(userZoneID.zoneName) for data isolation")
     }
 
     
@@ -70,6 +90,44 @@ class CloudKitManager: ObservableObject {
             }
         }
     }
+    
+    // MARK: - Custom Zone Setup for Privacy
+    
+    /// Setup user-specific zone for data isolation and sharing
+    private func setupUserCustomZone() {
+        debugLog("🔒 Setting up custom zone for user data isolation...")
+        
+        Task {
+            do {
+                debugLog("🔒 SETUP: Checking for existing zones...")
+                
+                // Check if zone already exists
+                let existingZones = try await publicDatabase.allRecordZones()
+                
+                debugLog("🔒 SETUP: Found \(existingZones.count) existing zones")
+                
+                
+                if existingZones.contains(where: { $0.zoneID == userZoneID }) {
+                    debugLog("✅ Custom zone \(userZoneID.zoneName) already exists")
+                    userCustomZone = existingZones.first { $0.zoneID == userZoneID }
+                } else {
+                    // Create new custom zone
+                    let newZone = CKRecordZone(zoneID: userZoneID)
+                    let result = try await publicDatabase.modifyRecordZones(saving: [newZone], deleting: [])
+                    userCustomZone = try result.saveResults[userZoneID]?.get()
+                    NSLog("✅ SETUP: Created new custom zone: \(userZoneID.zoneName) for data isolation")
+                    print("✅ SETUP: Created new custom zone: \(userZoneID.zoneName) for data isolation")
+                    debugLog("✅ Created new custom zone: \(userZoneID.zoneName) for data isolation")
+                }
+            } catch {
+                NSLog("❌ SETUP: Failed to setup custom zone: \(error)")
+                print("❌ SETUP: Failed to setup custom zone: \(error)")
+                debugLog("❌ Failed to setup custom zone: \(error)")
+                debugLog("⚠️ Will continue with default zone for backward compatibility")
+            }
+        }
+    }
+    
     
     // MARK: - Enhanced Data Protection Methods
     
@@ -215,11 +273,81 @@ class CloudKitManager: ObservableObject {
     }
     
     private func fetchDailySchedules(completion: @escaping () -> Void) {
-        debugLog("📅 Fetching daily schedules from CloudKit...")
+        debugLog("📅 Fetching daily schedules from CloudKit (both default and custom zones)...")
+        
+        // Fetch from both default zone (existing data) and custom zone (new data) for backward compatibility
+        fetchDailySchedulesFromBothZones(completion: completion)
+    }
+    
+    /// Fetch from both default zone (existing data) and custom zone (new data) to preserve all data
+    private func fetchDailySchedulesFromBothZones(completion: @escaping () -> Void) {
         let query = CKQuery(recordType: "CD_DailySchedule", predicate: NSPredicate(value: true))
         query.sortDescriptors = [NSSortDescriptor(key: "CD_date", ascending: true)]
         
-        privateDatabase.fetch(withQuery: query, inZoneWith: nil, desiredKeys: nil, resultsLimit: CKQueryOperation.maximumResults) { [weak self] result in
+        var allSchedules: [DailyScheduleRecord] = []
+        let dispatchGroup = DispatchGroup()
+        
+        // Fetch from default zone (existing data)
+        dispatchGroup.enter()
+        publicDatabase.fetch(withQuery: query, inZoneWith: nil, desiredKeys: nil, resultsLimit: CKQueryOperation.maximumResults) { result in
+            switch result {
+            case .success(let (matchResults, _)):
+                let records = matchResults.compactMap { _, result in try? result.get() }
+                let schedules = records.map(DailyScheduleRecord.init)
+                allSchedules.append(contentsOf: schedules)
+                debugLog("✅ Found \(records.count) daily schedules in DEFAULT zone (existing data)")
+            case .failure(let error):
+                debugLog("❌ Failed to fetch from default zone: \(error)")
+            }
+            dispatchGroup.leave()
+        }
+        
+        // Fetch from custom zone (new data) if available
+        if let customZone = userCustomZone {
+            dispatchGroup.enter()
+            publicDatabase.fetch(withQuery: query, inZoneWith: customZone.zoneID, desiredKeys: nil, resultsLimit: CKQueryOperation.maximumResults) { result in
+                switch result {
+                case .success(let (matchResults, _)):
+                    let records = matchResults.compactMap { _, result in try? result.get() }
+                    let schedules = records.map(DailyScheduleRecord.init)
+                    allSchedules.append(contentsOf: schedules)
+                    debugLog("✅ Found \(records.count) daily schedules in CUSTOM zone \(customZone.zoneID.zoneName)")
+                case .failure(let error):
+                    debugLog("❌ Failed to fetch from custom zone: \(error)")
+                }
+                dispatchGroup.leave()
+            }
+        }
+        
+        // Combine results from both zones
+        dispatchGroup.notify(queue: .main) { [weak self] in
+            // Remove duplicates by ID and update
+            let uniqueSchedules = Array(Set(allSchedules))
+            
+            var protectedCount = 0
+            for schedule in uniqueSchedules {
+                if self?.shouldProtectLocalData(for: schedule.id) == true {
+                    protectedCount += 1
+                }
+            }
+            
+            if protectedCount == 0 {
+                self?.dailySchedules = uniqueSchedules.sorted { ($0.date ?? Date()) < ($1.date ?? Date()) }
+                debugLog("✅ Combined daily schedules updated: \(uniqueSchedules.count) total records")
+            } else {
+                debugLog("🛡️ Protected \(protectedCount) local daily schedule records from CloudKit overwrite")
+            }
+            
+            completion()
+        }
+    }
+    
+    /// Original fetch method for backward compatibility
+    private func fetchDailySchedulesLegacy(completion: @escaping () -> Void) {
+        let query = CKQuery(recordType: "CD_DailySchedule", predicate: NSPredicate(value: true))
+        query.sortDescriptors = [NSSortDescriptor(key: "CD_date", ascending: true)]
+        
+        publicDatabase.fetch(withQuery: query, inZoneWith: nil, desiredKeys: nil, resultsLimit: CKQueryOperation.maximumResults) { [weak self] result in
             DispatchQueue.main.async {
                 switch result {
                 case .success(let (matchResults, _)):
@@ -255,11 +383,80 @@ class CloudKitManager: ObservableObject {
     }
     
     private func fetchMonthlyNotes(completion: @escaping () -> Void) {
-        debugLog("📝 Fetching monthly notes from CloudKit...")
+        debugLog("📝 Fetching monthly notes from CloudKit (both default and custom zones)...")
+        
+        // Fetch from both zones for backward compatibility
+        fetchMonthlyNotesFromBothZones(completion: completion)
+    }
+    
+    /// Fetch monthly notes from both default zone (existing data) and custom zone (new data)
+    private func fetchMonthlyNotesFromBothZones(completion: @escaping () -> Void) {
         let query = CKQuery(recordType: "CD_MonthlyNotes", predicate: NSPredicate(value: true))
         query.sortDescriptors = [NSSortDescriptor(key: "CD_month", ascending: true)]
         
-        privateDatabase.fetch(withQuery: query, inZoneWith: nil, desiredKeys: nil, resultsLimit: CKQueryOperation.maximumResults) { [weak self] result in
+        var allNotes: [MonthlyNotesRecord] = []
+        let dispatchGroup = DispatchGroup()
+        
+        // Fetch from default zone (existing data)
+        dispatchGroup.enter()
+        publicDatabase.fetch(withQuery: query, inZoneWith: nil, desiredKeys: nil, resultsLimit: CKQueryOperation.maximumResults) { result in
+            switch result {
+            case .success(let (matchResults, _)):
+                let records = matchResults.compactMap { _, result in try? result.get() }
+                let notes = records.map(MonthlyNotesRecord.init)
+                allNotes.append(contentsOf: notes)
+                debugLog("✅ Found \(records.count) monthly notes in DEFAULT zone (existing data)")
+            case .failure(let error):
+                debugLog("❌ Failed to fetch monthly notes from default zone: \(error)")
+            }
+            dispatchGroup.leave()
+        }
+        
+        // Fetch from custom zone (new data) if available
+        if let customZone = userCustomZone {
+            dispatchGroup.enter()
+            publicDatabase.fetch(withQuery: query, inZoneWith: customZone.zoneID, desiredKeys: nil, resultsLimit: CKQueryOperation.maximumResults) { result in
+                switch result {
+                case .success(let (matchResults, _)):
+                    let records = matchResults.compactMap { _, result in try? result.get() }
+                    let notes = records.map(MonthlyNotesRecord.init)
+                    allNotes.append(contentsOf: notes)
+                    debugLog("✅ Found \(records.count) monthly notes in CUSTOM zone \(customZone.zoneID.zoneName)")
+                case .failure(let error):
+                    debugLog("❌ Failed to fetch monthly notes from custom zone: \(error)")
+                }
+                dispatchGroup.leave()
+            }
+        }
+        
+        // Combine results from both zones
+        dispatchGroup.notify(queue: .main) { [weak self] in
+            let uniqueNotes = Array(Set(allNotes))
+            
+            var protectedCount = 0
+            for note in uniqueNotes {
+                if self?.shouldProtectLocalData(for: note.id) == true {
+                    protectedCount += 1
+                }
+            }
+            
+            if protectedCount == 0 {
+                self?.monthlyNotes = uniqueNotes.sorted { $0.year < $1.year || ($0.year == $1.year && $0.month < $1.month) }
+                debugLog("✅ Combined monthly notes updated: \(uniqueNotes.count) total records")
+            } else {
+                debugLog("🛡️ Protected \(protectedCount) local monthly note records from CloudKit overwrite")
+            }
+            
+            completion()
+        }
+    }
+    
+    /// Original fetch method for backward compatibility
+    private func fetchMonthlyNotesLegacy(completion: @escaping () -> Void) {
+        let query = CKQuery(recordType: "CD_MonthlyNotes", predicate: NSPredicate(value: true))
+        query.sortDescriptors = [NSSortDescriptor(key: "CD_month", ascending: true)]
+        
+        publicDatabase.fetch(withQuery: query, inZoneWith: nil, desiredKeys: nil, resultsLimit: CKQueryOperation.maximumResults) { [weak self] result in
             DispatchQueue.main.async {
                 switch result {
                 case .success(let (matchResults, _)):
@@ -309,7 +506,17 @@ class CloudKitManager: ObservableObject {
         // Mark operation as starting
         markOperationStarting(for: dateKey, type: "SAVE")
         
-        let record = CKRecord(recordType: "CD_DailySchedule")
+        // Create record in custom zone for privacy and sharing (new data)
+        let recordID: CKRecord.ID
+        if let customZone = userCustomZone {
+            recordID = CKRecord.ID(recordName: UUID().uuidString, zoneID: customZone.zoneID)
+            debugLog("🔒 Saving to CUSTOM zone \(customZone.zoneID.zoneName) for privacy and sharing")
+        } else {
+            recordID = CKRecord.ID(recordName: UUID().uuidString)
+            debugLog("⚠️ Saving to DEFAULT zone (custom zone not available)")
+        }
+        
+        let record = CKRecord(recordType: "CD_DailySchedule", recordID: recordID)
         record["CD_date"] = date as CKRecordValue
         record["CD_id"] = UUID().uuidString as CKRecordValue
         record["CD_line1"] = line1 as CKRecordValue?
@@ -318,7 +525,7 @@ class CloudKitManager: ObservableObject {
         
         debugLog("💾 Saving new record with fields: line1='\(line1 ?? "nil")', line2='\(line2 ?? "nil")', line3='\(line3 ?? "nil")'")
         
-        privateDatabase.save(record) { [weak self] savedRecord, error in
+        publicDatabase.save(record) { [weak self] savedRecord, error in
             DispatchQueue.main.async {
                 if let error = error {
                     debugLog("❌ Failed to save new record: \(error.localizedDescription)")
@@ -353,7 +560,7 @@ class CloudKitManager: ObservableObject {
         
         let recordID = CKRecord.ID(recordName: recordName)
         
-        privateDatabase.fetch(withRecordID: recordID) { [weak self] record, error in
+        publicDatabase.fetch(withRecordID: recordID) { [weak self] record, error in
             if let error = error {
                 DispatchQueue.main.async {
                     debugLog("❌ Failed to fetch record for update: \(error.localizedDescription)")
@@ -391,7 +598,7 @@ class CloudKitManager: ObservableObject {
             record["CD_line2"] = line2 as CKRecordValue?
             record["CD_line3"] = line3 as CKRecordValue?
             
-            self?.privateDatabase.save(record) { savedRecord, error in
+            self?.publicDatabase.save(record) { savedRecord, error in
                 DispatchQueue.main.async {
                     if let error = error {
                         debugLog("❌ Failed to update record: \(error.localizedDescription)")
@@ -430,7 +637,7 @@ class CloudKitManager: ObservableObject {
         // Mark operation as starting
         markOperationStarting(for: recordName, type: "DELETE")
         
-        privateDatabase.delete(withRecordID: recordID) { [weak self] deletedRecordID, error in
+        publicDatabase.delete(withRecordID: recordID) { [weak self] deletedRecordID, error in
             DispatchQueue.main.async {
                 if let error = error {
                     debugLog("❌ Error deleting daily schedule: \(error)")
@@ -514,7 +721,7 @@ class CloudKitManager: ObservableObject {
         let predicate = NSPredicate(format: "CD_month == %d AND CD_year == %d", month, year)
         let query = CKQuery(recordType: "CD_MonthlyNotes", predicate: predicate)
         
-        privateDatabase.fetch(withQuery: query, inZoneWith: nil, desiredKeys: nil, resultsLimit: CKQueryOperation.maximumResults) { [weak self] (result: Result<(matchResults: [(CKRecord.ID, Result<CKRecord, Error>)], queryCursor: CKQueryOperation.Cursor?), Error>) in
+        publicDatabase.fetch(withQuery: query, inZoneWith: nil, desiredKeys: nil, resultsLimit: CKQueryOperation.maximumResults) { [weak self] (result: Result<(matchResults: [(CKRecord.ID, Result<CKRecord, Error>)], queryCursor: CKQueryOperation.Cursor?), Error>) in
             let record: CKRecord
             
             switch result {
@@ -553,7 +760,7 @@ class CloudKitManager: ObservableObject {
             
             debugLog("📝 Saving monthly notes with fields: line1='\(line1 ?? "nil")', line2='\(line2 ?? "nil")', line3='\(line3 ?? "nil")'")
             
-            self?.privateDatabase.save(record) { savedRecord, error in
+            self?.publicDatabase.save(record) { savedRecord, error in
                 DispatchQueue.main.async {
                     if let error = error {
                         debugLog("❌ Failed to save monthly notes: \(error.localizedDescription)")
@@ -627,7 +834,7 @@ class CloudKitManager: ObservableObject {
         
         let recordID = CKRecord.ID(recordName: recordName)
         
-        privateDatabase.delete(withRecordID: recordID) { [weak self] recordID, error in
+        publicDatabase.delete(withRecordID: recordID) { [weak self] recordID, error in
             DispatchQueue.main.async {
                 if let error = error {
                     debugLog("❌ Failed to delete monthly notes record: \(error.localizedDescription)")
@@ -678,7 +885,7 @@ extension CloudKitManager {
         let query = CKQuery(recordType: "CD_DailySchedule", predicate: NSPredicate(value: true))
         query.sortDescriptors = [NSSortDescriptor(key: "CD_date", ascending: true)]
         
-        privateDatabase.fetch(withQuery: query, inZoneWith: nil, desiredKeys: nil, resultsLimit: CKQueryOperation.maximumResults) { [weak self] result in
+        publicDatabase.fetch(withQuery: query, inZoneWith: nil, desiredKeys: nil, resultsLimit: CKQueryOperation.maximumResults) { [weak self] result in
             let records: [CKRecord]
             
             switch result {
@@ -778,7 +985,7 @@ extension CloudKitManager {
         let query = CKQuery(recordType: "CD_MonthlyNotes", predicate: NSPredicate(value: true))
         query.sortDescriptors = [NSSortDescriptor(key: "CD_month", ascending: true)]
         
-        privateDatabase.fetch(withQuery: query, inZoneWith: nil, desiredKeys: nil, resultsLimit: CKQueryOperation.maximumResults) { [weak self] result in
+        publicDatabase.fetch(withQuery: query, inZoneWith: nil, desiredKeys: nil, resultsLimit: CKQueryOperation.maximumResults) { [weak self] result in
             let records: [CKRecord]
             
             switch result {
@@ -863,7 +1070,7 @@ extension CloudKitManager {
     }
     
     /// Helper function to delete multiple records
-    private func deleteDuplicateRecords(recordIDs: [CKRecord.ID], type: String, completion: @escaping (Int, Error?) -> Void) {
+    nonisolated private func deleteDuplicateRecords(recordIDs: [CKRecord.ID], type: String, completion: @escaping (Int, Error?) -> Void) {
         guard !recordIDs.isEmpty else {
             debugLog("ℹ️ No duplicate \(type) records to delete")
             completion(0, nil)
@@ -880,10 +1087,12 @@ extension CloudKitManager {
                 debugLog("✅ Successfully deleted \(deletedCount) duplicate \(type) records")
                 
                 // Track these deletions to prevent immediate refresh conflicts
-                for recordID in recordIDs {
-                    self.recentDeletionOperations.insert(recordID.recordName)
+                Task { @MainActor in
+                    for recordID in recordIDs {
+                        self.recentDeletionOperations.insert(recordID.recordName)
+                    }
+                    self.lastOperationTime = Date()
                 }
-                self.lastOperationTime = Date()
                 
                 completion(deletedCount, nil)
             case .failure(let error):
@@ -892,7 +1101,7 @@ extension CloudKitManager {
             }
         }
         
-        privateDatabase.add(deleteOperation)
+        publicDatabase.add(deleteOperation)
     }
     
     /// Comprehensive cleanup function that removes all duplicates
@@ -933,10 +1142,154 @@ extension CloudKitManager {
             }
         }
     }
+    
+    // MARK: - Custom Zone Sharing for Privacy
+    
+    /// Create a share for user data (backward-compatible: checks both default and custom zones)
+    func createCustomZoneShare(completion: @escaping (Result<CKShare, Error>) -> Void) {
+        debugLog("🔗 Creating BACKWARD-COMPATIBLE share (checks both default and custom zones)")
+        
+        Task {
+            do {
+                let query = CKQuery(recordType: "CD_DailySchedule", predicate: NSPredicate(value: true))
+                
+                // First, try to find data in custom zone (for new data)
+                if let customZone = userCustomZone {
+                    debugLog("🔍 Checking custom zone for data...")
+                    let (customRecords, _) = try await publicDatabase.records(matching: query, inZoneWith: customZone.zoneID, resultsLimit: 1)
+                    
+                    if let (_, recordResult) = customRecords.first,
+                       let rootRecord = try? recordResult.get() {
+                        debugLog("✅ Found data in CUSTOM zone - creating privacy-focused share")
+                        await createShareFromRecord(rootRecord, completion: completion)
+                        return
+                    }
+                }
+                
+                // If no data in custom zone, check all zones for existing data
+                debugLog("🔍 Checking ALL zones for existing data...")
+                
+                // Query without zone restriction to find data anywhere
+                let (allRecords, _) = try await publicDatabase.records(matching: query, inZoneWith: nil, resultsLimit: 10)
+                
+                // Filter out records that are already in shares (can't share a shared record)
+                for (_, recordResult) in allRecords {
+                    if let record = try? recordResult.get() {
+                        let zoneName = record.recordID.zoneID.zoneName
+                        debugLog("🔍 Found record in zone: \(zoneName)")
+                        
+                        // Skip records that are already in sharing zones
+                        if zoneName.contains("share") && zoneName != userZoneID.zoneName {
+                            debugLog("⚠️ Skipping record in shared zone: \(zoneName)")
+                            continue
+                        }
+                        
+                        // Skip _defaultZone records - CloudKit cannot share records from default zone
+                        if zoneName == "_defaultZone" {
+                            debugLog("⚠️ Skipping _defaultZone record - cannot share records from default zone")
+                            continue
+                        }
+                        
+                        // Found a suitable record for sharing (must be in custom zone)
+                        debugLog("✅ Found suitable record in zone: \(zoneName)")
+                        await createShareFromRecord(record, completion: completion)
+                        return
+                    }
+                }
+
+                
+                // No shareable data found - create a new record for sharing
+                debugLog("❌ No shareable data found - creating new CloudKit record for sharing")
+                await createShareableRecord(completion: completion)
+                
+            } catch {
+                debugLog("❌ Error searching for data to share: \(error)")
+                completion(.failure(error))
+            }
+        }
+    }
+    
+    /// Create a new CloudKit record that can be shared (not Core Data managed)
+    private func createShareableRecord(completion: @escaping (Result<CKShare, Error>) -> Void) async {
+        do {
+            debugLog("🔗 Creating new shareable CloudKit record...")
+            
+            // Create a new record in the CUSTOM ZONE for sharing (required for CloudKit sharing)
+            let recordID = CKRecord.ID(recordName: "ShareableSchedule-\(UUID().uuidString)", zoneID: userZoneID)
+            let shareableRecord = CKRecord(recordType: "CD_DailySchedule", recordID: recordID)
+            
+            // Add some sample data (short text to avoid Core Data validation errors)
+            shareableRecord["CD_date"] = Date() as CKRecordValue
+            shareableRecord["CD_line1"] = "SHARED" as CKRecordValue
+            shareableRecord["CD_line2"] = "tcsdoc" as CKRecordValue
+            shareableRecord["CD_line3"] = "Test" as CKRecordValue
+            shareableRecord["CD_entityName"] = "DailySchedule" as CKRecordValue
+            
+            debugLog("🔗 Saving new shareable record to CUSTOM ZONE...")
+            
+            // Save the record first to PRIVATE database (shares must be in custom zones in private database)
+            let savedRecords = try await publicDatabase.modifyRecords(saving: [shareableRecord], deleting: [])
+            
+            if let savedRecord = try savedRecords.saveResults[recordID]?.get() {
+                debugLog("✅ Created new shareable record successfully")
+                debugLog("🔗 Record zone: \(savedRecord.recordID.zoneID.zoneName)")
+                
+                // Now create a share from this new record
+                await createShareFromRecord(savedRecord, completion: completion)
+            } else {
+                debugLog("❌ Failed to save new shareable record")
+                completion(.failure(NSError(domain: "CloudKitManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to create shareable record"])))
+            }
+        } catch {
+            debugLog("❌ Error creating shareable record: \(error)")
+            completion(.failure(error))
+        }
+    }
+    
+    /// Helper function to create share from a specific record
+    private func createShareFromRecord(_ rootRecord: CKRecord, completion: @escaping (Result<CKShare, Error>) -> Void) async {
+        do {
+            // Create share with the root record (from any zone)
+            let share = CKShare(rootRecord: rootRecord)
+            share[CKShare.SystemFieldKey.title] = "Provider Schedule \(Calendar.current.component(.year, from: Date()))"
+            share.publicPermission = .readOnly // Allow cross-Apple ID sharing with read-only access
+            
+            debugLog("🔗 Creating share from record in zone: \(rootRecord.recordID.zoneID.zoneName)")
+            
+            // CRITICAL: Save BOTH the root record AND the share in the same operation
+            // This is required by CloudKit when creating shares
+            let savedRecords = try await publicDatabase.modifyRecords(saving: [rootRecord, share], deleting: [])
+            
+            debugLog("🔍 DEBUG: Saved \(savedRecords.saveResults.count) records")
+            for (recordID, result) in savedRecords.saveResults {
+                debugLog("🔍 Record ID: \(recordID)")
+                switch result {
+                case .success(let record):
+                    debugLog("🔍 Saved record type: \(type(of: record))")
+                    if let shareRecord = record as? CKShare {
+                        debugLog("✅ Found CKShare in results!")
+                        debugLog("🔗 Share URL: \(shareRecord.url?.absoluteString ?? "Not available")")
+                        debugLog("🔒 Share covers zone: \(rootRecord.recordID.zoneID.zoneName)")
+                        completion(.success(shareRecord))
+                        return
+                    }
+                case .failure(let error):
+                    debugLog("❌ Failed to save record \(recordID): \(error)")
+                }
+            }
+            
+            // If we get here, no CKShare was found
+            debugLog("❌ No CKShare found in save results")
+            completion(.failure(NSError(domain: "CloudKitManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "No share found in save results"])))
+        } catch {
+            debugLog("❌ Error creating share from record: \(error)")
+            completion(.failure(error))
+        }
+    }
 }
 
 // MARK: - Data Models
-struct DailyScheduleRecord: Identifiable, Equatable {
+struct DailyScheduleRecord: Identifiable, Equatable, Hashable {
     let id: String
     let date: Date?
     let line1: String?
@@ -958,7 +1311,7 @@ struct DailyScheduleRecord: Identifiable, Equatable {
     }
 }
 
-struct MonthlyNotesRecord: Identifiable, Equatable {
+struct MonthlyNotesRecord: Identifiable, Equatable, Hashable {
     let id: String
     let month: Int
     let year: Int
@@ -980,4 +1333,4 @@ struct MonthlyNotesRecord: Identifiable, Equatable {
             self.uuid = nil
         }
     }
-} 
+}

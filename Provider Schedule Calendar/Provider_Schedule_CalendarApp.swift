@@ -9,37 +9,26 @@ import SwiftUI
 
 @main
 struct Provider_Schedule_CalendarApp: App {
-    let coreDataManager = CoreDataCloudKitManager.shared
+    let cloudKitManager = CloudKitManager.shared
+    let coreDataManager = CoreDataCloudKitManager.shared // Keep for Core Data if needed
 
     init() {
         #if DEBUG
-        NSLog("🔥 APP STARTING WITH CORE DATA + CLOUDKIT SHARING - THIS SHOULD APPEAR IN CONSOLE")
+        NSLog("🔥 APP STARTING WITH PRIVACY-FOCUSED CLOUDKIT CUSTOM ZONES")
+        print("🔥 APP STARTING WITH PRIVACY-FOCUSED CLOUDKIT CUSTOM ZONES")
         #endif
+        
+        // Force console output even in release
+        NSLog("🚀 Provider Schedule Calendar initialized - Version with Custom Zones")
+        print("🚀 Provider Schedule Calendar initialized - Version with Custom Zones")
     }
 
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environment(\.managedObjectContext, coreDataManager.viewContext)
-                .environmentObject(coreDataManager)
-                .onOpenURL { url in
-                    // Handle CloudKit share URLs
-                    handleIncomingURL(url)
-                }
+                .environmentObject(cloudKitManager) // Use new CloudKitManager for privacy
+                .environmentObject(coreDataManager) // Keep for Core Data compatibility
         }
-    }
-    
-    // MARK: - CloudKit Share URL Handling
-    private func handleIncomingURL(_ url: URL) {
-        guard url.scheme == "https" && url.host == "www.icloud.com" else { return }
-        
-        // This is a CloudKit share URL
-        #if DEBUG
-        print("📨 Received CloudKit share URL: \(url)")
-        #endif
-        
-        // Extract share metadata from URL
-        // The actual implementation would parse the CloudKit share URL
-        // and call coreDataManager.handleAcceptedShare()
     }
 }
