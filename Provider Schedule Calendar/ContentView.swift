@@ -2,12 +2,13 @@
 //  ContentView.swift
 //  Provider Schedule Calendar
 //
-//  Core Data + CloudKit Implementation with Original UI Design
+//  Clean CloudKit Implementation with Custom Zones for Privacy
 //
 
 import SwiftUI
-import CoreData
 import CloudKit
+import LinkPresentation
+
 
 
 // MARK: - Next Day Navigation (Preserved from Original)
@@ -21,9 +22,7 @@ struct NextDayFocusRequest {
 }
 
 struct ContentView: View {
-    @EnvironmentObject private var coreDataManager: CoreDataCloudKitManager
     @EnvironmentObject private var cloudKitManager: CloudKitManager
-    @Environment(\.managedObjectContext) private var viewContext
     @State private var currentDate = Date()
     private let calendar = Calendar.current
     
@@ -33,35 +32,47 @@ struct ContentView: View {
                 headerSection
                 
                 // Show CloudKit status messages
-                if !coreDataManager.isCloudKitEnabled {
-                    Text(coreDataManager.cloudKitStatus)
+                if !cloudKitManager.cloudKitAvailable {
+                    Text(cloudKitManager.errorMessage ?? "CloudKit not available")
                         .foregroundColor(.red)
                         .font(.caption)
                         .padding(.horizontal)
                         .multilineTextAlignment(.center)
                 }
                 
-                ScrollView {
-                    LazyVStack(spacing: 20) {
-                        ForEach(monthsToShow, id: \.self) { month in
-                            MonthView(month: month)
+                if cloudKitManager.isLoading {
+                    ProgressView("Loading calendar data...")
+                        .padding()
+                } else {
+                    ScrollView {
+                        LazyVStack(spacing: 20) {
+                            ForEach(monthsToShow, id: \.self) { month in
+                                MonthView(month: month)
+                            }
                         }
+                        .padding(.vertical, 16)
+                        .padding(.horizontal, 8)
                     }
-                    .padding(.vertical, 16)
-                    .padding(.horizontal, 8)  // Reduced horizontal padding for more width
                 }
             }
             .onAppear {
-                // Core Data automatically loads data via @FetchRequest
+                cloudKitManager.fetchAllData()
             }
             .refreshable {
-                try? await Task.sleep(nanoseconds: 500_000_000)
+                // CRITICAL: Never refresh if any field is being edited - protects precision codes
+                let isAnyFieldActive = cloudKitManager.isAnyFieldBeingEdited
+                if !isAnyFieldActive {
+                    debugLog("🔄 Manual refresh - safe to proceed")
+                    cloudKitManager.fetchAllData()
+                } else {
+                    debugLog("🛡️ BLOCKED manual refresh - field being edited")
+                }
             }
         }
         .navigationViewStyle(.stack)
     }
     
-    // MARK: - Original Header Design
+    // MARK: - Header Section
     private var headerSection: some View {
         VStack(spacing: 10) {
             Text("PROVIDER SCHEDULE")
@@ -72,23 +83,15 @@ struct ContentView: View {
             HStack {
                 Spacer()
                 
-                                    HStack(spacing: 15) {
-                        // Share calendar button (Private database with invitations)
-                        if coreDataManager.isCloudKitEnabled {
-                            Button(action: shareApp) {
-                                Image(systemName: "square.and.arrow.up")
-                                    .font(.title2)
-                                    .foregroundColor(.green)
-                            }
-                            
-                            #if DEBUG
-                            Button(action: getShareURL) {
-                                Image(systemName: "link.circle")
-                                    .font(.title2)
-                                    .foregroundColor(.purple)
-                            }
-                            #endif
+                HStack(spacing: 15) {
+                    // Share calendar button (CloudKit custom zones with privacy)
+                    if cloudKitManager.cloudKitAvailable {
+                        Button(action: shareSchedule) {
+                            Image(systemName: "person.2.badge.plus")
+                                .font(.title2)
+                                .foregroundColor(.green)
                         }
+                    }
                     
                     Button(action: {
                         printAllMonths()
@@ -120,154 +123,87 @@ struct ContentView: View {
         return months
     }
     
-    // MARK: - CloudKit Private Database Sharing (Development-Friendly)
-    
-    private func shareApp() {
+    // MARK: - CloudKit Custom Zone Sharing (Privacy-Focused)
+    private func shareSchedule() {
         #if DEBUG
         print("🔗 Creating custom zone share for privacy-focused sharing")
         #endif
         
-        // Use new CloudKitManager with custom zones for privacy
         cloudKitManager.createCustomZoneShare { result in
             DispatchQueue.main.async {
                 switch result {
                 case .success(let share):
-                    #if DEBUG
-                    print("✅ Custom zone share created successfully!")
-                    print("🔗 Share URL: \(share.url?.absoluteString ?? "Not available")")
-                    #endif
                     self.presentCloudKitSharingController(for: share)
                 case .failure(let error):
-                    print("❌ Failed to create custom zone share: \(error)")
-                    print("🔄 Falling back to legacy Core Data sharing")
-                    #if DEBUG
-                    print("❌ Failed to create custom zone share: \(error)")
-                    #endif
-                    // Fallback to Core Data approach if needed
-                    self.fallbackToLegacySharing()
-                }
-            }
-        }
-    }
-    
-    private func fallbackToLegacySharing() {
-        #if DEBUG
-        print("🔄 Falling back to legacy Core Data sharing")
-        #endif
-        
-        // Fallback: Use Core Data's built-in sharing 
-        let fetchRequest: NSFetchRequest<DailySchedule> = DailySchedule.fetchRequest()
-        fetchRequest.sortDescriptors = [NSSortDescriptor(keyPath: \DailySchedule.date, ascending: false)]
-        fetchRequest.fetchLimit = 1
-        
-        do {
-            let schedules = try viewContext.fetch(fetchRequest)
-            if let schedule = schedules.first {
-                coreDataManager.createShare(for: schedule) { result in
-                    DispatchQueue.main.async {
-                        switch result {
-                        case .success(let share):
-                            self.presentCloudKitSharingController(for: share)
-                        case .failure(let error):
-                            print("❌ Failed to create fallback share: \(error)")
-                        }
+                    print("❌ Failed to create share: \(error.localizedDescription)")
+                    
+                    let alert = UIAlertController(
+                        title: "Sharing Error",
+                        message: "Failed to create share: \(error.localizedDescription)",
+                        preferredStyle: .alert
+                    )
+                    alert.addAction(UIAlertAction(title: "OK", style: .default))
+                    
+                    if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                       let rootViewController = windowScene.windows.first?.rootViewController {
+                        rootViewController.present(alert, animated: true)
                     }
                 }
-            } else {
-                // No data to share yet
-                self.createSampleDataAndShare()
             }
-        } catch {
-            print("❌ Failed to fetch schedule data: \(error)")
-            self.createSampleDataAndShare()
-        }
-    }
-    
-    private func tryComprehensiveShare(with schedules: [DailySchedule]) {
-        coreDataManager.createComprehensiveShare(for: schedules) { result in
-            DispatchQueue.main.async {
-                switch result {
-                case .success(let share):
-                    self.presentCloudKitSharingController(for: share)
-                case .failure(let error):
-                    print("❌ Failed to create comprehensive share: \(error)")
-                    self.presentEmailInvitation()
-                }
-            }
-        }
-    }
-    
-    private func createSampleDataAndShare() {
-        // Create a sample schedule entry to enable sharing
-        let schedule = DailySchedule(context: viewContext)
-        schedule.date = Date()
-        schedule.line1 = "PROVIDER"
-        schedule.line2 = "SCHEDULE"
-        schedule.line3 = "SHARED"
-        
-        coreDataManager.save()
-        
-        // Try sharing again with the new data
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            self.shareApp()
         }
     }
     
     private func presentCloudKitSharingController(for share: CKShare) {
+        guard let shareURL = share.url else {
+            print("❌ No share URL available")
+            showAlert(title: "Sharing Error", message: "Unable to generate sharing link. Please try again.")
+            return
+        }
+        
+        // Present sharing options with the URL
+        let shareText = """
+        You're invited to view my Provider Schedule Calendar.
+        
+        Open this link on your iOS device:
+        
+        \(shareURL.absoluteString)
+        """
+        
+        // Create a custom activity item source for email subject
+        let customActivityItem = ShareActivityItemSource(
+            shareText: shareText,
+            shareURL: shareURL,
+            subject: "Provider Schedule Calendar Access Link"
+        )
+        
+        let activityViewController = UIActivityViewController(
+            activityItems: [customActivityItem],
+            applicationActivities: nil
+        )
+        
+        // Configure for iPad
+        if let popover = activityViewController.popoverPresentationController {
+            if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+               let window = windowScene.windows.first {
+                popover.sourceView = window
+                popover.sourceRect = CGRect(x: window.bounds.midX, y: window.bounds.midY, width: 0, height: 0)
+                popover.permittedArrowDirections = []
+            }
+        }
+        
         guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
               let rootViewController = windowScene.windows.first?.rootViewController else {
             print("❌ Could not find root view controller")
             return
         }
         
-        coreDataManager.presentSharingController(for: share, from: rootViewController)
+        rootViewController.present(activityViewController, animated: true)
+        
+        print("✅ Sharing link generated: \(shareURL.absoluteString)")
     }
     
-    private func presentEmailInvitation() {
-        // Show error and guide user
-        let alert = UIAlertController(
-            title: "Sharing Setup", 
-            message: "CloudKit sharing requires:\n\n1. iCloud account signed in\n2. Schedule data to be synced to CloudKit\n3. Network connectivity\n\nPlease check these requirements and try again. Make sure you have some schedule entries and they've synced to iCloud.",
-            preferredStyle: .alert
-        )
-        
-        let tryAgainAction = UIAlertAction(title: "Try Again", style: .default) { _ in
-            self.shareApp()
-        }
-        
-        let cancelAction = UIAlertAction(title: "Cancel", style: .cancel)
-        
-        alert.addAction(tryAgainAction)
-        alert.addAction(cancelAction)
-        
-        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-           let rootViewController = windowScene.windows.first?.rootViewController {
-            rootViewController.present(alert, animated: true)
-        }
-    }
-    
-    private func sendDirectInvitation(to email: String) {
-        coreDataManager.inviteParticipantDirectly(email: email) { result in
-            DispatchQueue.main.async {
-                switch result {
-                case .success(let message):
-                    print("✅ \(message)")
-                    self.showInvitationResult(success: true, message: message)
-                case .failure(let error):
-                    print("❌ Failed to send invitation: \(error)")
-                    self.showInvitationResult(success: false, message: "Failed to send invitation. Please try again.")
-                }
-            }
-        }
-    }
-    
-    private func showInvitationResult(success: Bool, message: String) {
-        let alert = UIAlertController(
-            title: success ? "Invitation Sent" : "Invitation Failed",
-            message: message,
-            preferredStyle: .alert
-        )
-        
+    private func showAlert(title: String, message: String) {
+        let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "OK", style: .default))
         
         if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
@@ -276,57 +212,7 @@ struct ContentView: View {
         }
     }
     
-    #if DEBUG
-    private func getShareURL() {
-        print("🔗 Getting custom zone share URL...")
-        
-        // Create CUSTOM ZONE share and get URL for manual copying
-        cloudKitManager.createCustomZoneShare { result in
-            // Handle callback result
-            DispatchQueue.main.async {
-                switch result {
-                case .success(let share):
-                    print("✅ Share URL created: \(share.url?.absoluteString ?? "No URL")")
-                    if let shareURL = share.url {
-                        // Copy to clipboard
-                        UIPasteboard.general.string = shareURL.absoluteString
-                        
-                        let alert = UIAlertController(
-                            title: "Share URL Copied",
-                            message: "Share URL has been copied to clipboard:\n\n\(shareURL.absoluteString)\n\nPaste this into ScheduleViewer's 'Accept Share' button on the other device.",
-                            preferredStyle: .alert
-                        )
-                        
-                        alert.addAction(UIAlertAction(title: "OK", style: .default))
-                        
-                        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-                           let rootViewController = windowScene.windows.first?.rootViewController {
-                            rootViewController.present(alert, animated: true)
-                        }
-                    } else {
-                        let alert = UIAlertController(
-                            title: "Error",
-                            message: "Share URL not available yet. Try again in a moment.",
-                            preferredStyle: .alert
-                        )
-                        alert.addAction(UIAlertAction(title: "OK", style: .default))
-                        
-                        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-                           let rootViewController = windowScene.windows.first?.rootViewController {
-                            rootViewController.present(alert, animated: true)
-                        }
-                    }
-                case .failure(let error):
-                    print("❌ Failed to get share URL: \(error)")
-                    self.presentEmailInvitation()
-                }
-            }
-        }
-    }
-    #endif
-    
-    // MARK: - Original Print Functions (Preserved)
-    
+    // MARK: - Print Functions (Preserved)
     private func printAllMonths() {
         let printController = UIPrintInteractionController.shared
         let printInfo = UIPrintInfo.printInfo()
@@ -337,7 +223,6 @@ struct ContentView: View {
         
         printController.printInfo = printInfo
         printController.showsNumberOfCopies = true
-        // Note: showsPageRange was deprecated in iOS 10.0, but functionality still works
         
         // Create printable content
         let htmlContent = generateFullYearHTML()
@@ -371,7 +256,6 @@ struct ContentView: View {
                 .calendar td { height: 80px; width: 14.28%; }
                 .day-number { font-weight: bold; font-size: 12px; margin-bottom: 3px; }
                 .schedule-line { font-size: 9px; margin: 1px 0; line-height: 1.2; }
-
                 @page { margin: 0.5in; }
             </style>
         </head>
@@ -415,7 +299,7 @@ struct ContentView: View {
             }
             fullHTML += "</tr>"
             
-            // Get properly aligned calendar grid (like the app does)
+            // Get properly aligned calendar grid
             let calendarDays = getCalendarDaysWithAlignment(for: month)
             let weeks = calendarDays.chunked(into: 7)
             
@@ -423,7 +307,6 @@ struct ContentView: View {
                 fullHTML += "<tr>"
                 for date in week {
                     if calendar.isDate(date, equalTo: month, toGranularity: .month) {
-                        // This day belongs to the current month
                         let dayNumber = calendar.component(.day, from: date)
                         let schedule = dailySchedules[date] ?? ["", "", ""]
                         
@@ -434,16 +317,13 @@ struct ContentView: View {
                         fullHTML += "<div class=\"schedule-line\"><strong>OFF:</strong> \(schedule[2])</div>"
                         fullHTML += "</td>"
                     } else {
-                        // Empty cell for days outside this month
                         fullHTML += "<td></td>"
                     }
                 }
                 fullHTML += "</tr>"
             }
             
-            fullHTML += "</table>"
-            
-            fullHTML += "</div>"
+            fullHTML += "</table></div>"
         }
         
         fullHTML += "</body></html>"
@@ -463,7 +343,6 @@ struct ContentView: View {
         var days: [Date] = []
         var currentDate = firstWeekday
         
-        // Generate 6 weeks worth of dates (same as app)
         for _ in 0..<42 {
             days.append(currentDate)
             currentDate = calendar.date(byAdding: .day, value: 1, to: currentDate)!
@@ -476,87 +355,39 @@ struct ContentView: View {
         let monthComp = calendar.component(.month, from: month)
         let yearComp = calendar.component(.year, from: month)
         
-        // Core Data fetch for monthly notes
-        let fetchRequest: NSFetchRequest<MonthlyNotes> = MonthlyNotes.fetchRequest()
-        fetchRequest.predicate = NSPredicate(format: "month == %d AND year == %d", monthComp, yearComp)
-        
-        do {
-            let results = try viewContext.fetch(fetchRequest)
-            if let notes = results.first {
-                return [notes.line1 ?? "", notes.line2 ?? "", notes.line3 ?? ""].filter { !$0.isEmpty }
-            }
-        } catch {
-            // Error fetching monthly notes
+        let note = cloudKitManager.monthlyNotes.first { note in
+            note.month == monthComp && note.year == yearComp
         }
         
-        return []
+        return [note?.line1 ?? "", note?.line2 ?? "", note?.line3 ?? ""].filter { !$0.isEmpty }
     }
     
     private func getDailySchedules(for month: Date) -> [Date: [String]] {
         var schedules: [Date: [String]] = [:]
         
-        // Core Data fetch for daily schedules
         let monthStart = calendar.dateInterval(of: .month, for: month)?.start ?? month
         let monthEnd = calendar.dateInterval(of: .month, for: month)?.end ?? month
         
-        let fetchRequest: NSFetchRequest<DailySchedule> = DailySchedule.fetchRequest()
-        fetchRequest.predicate = NSPredicate(format: "date >= %@ AND date < %@", monthStart as NSDate, monthEnd as NSDate)
-        
-        do {
-            let results = try viewContext.fetch(fetchRequest)
-            for schedule in results {
-                if let date = schedule.date {
-                    let dayStart = calendar.startOfDay(for: date)
-                    schedules[dayStart] = [
-                        schedule.line1 ?? "",
-                        schedule.line2 ?? "",
-                        schedule.line3 ?? ""
-                    ]
-                }
-            }
-        } catch {
-            // Error fetching daily schedules
+        for schedule in cloudKitManager.dailySchedules {
+            guard let date = schedule.date,
+                  date >= monthStart && date < monthEnd else { continue }
+            
+            let dayStart = calendar.startOfDay(for: date)
+            schedules[dayStart] = [
+                schedule.line1 ?? "",
+                schedule.line2 ?? "",
+                schedule.line3 ?? ""
+            ]
         }
         
         return schedules
     }
 }
 
-// MARK: - MonthView (Original Visual Design with Core Data)
+// MARK: - MonthView (Clean CloudKitManager Version)
 struct MonthView: View {
     let month: Date
-    @Environment(\.managedObjectContext) private var viewContext
-    
-    // Fetch daily schedules for this month using @FetchRequest
-    @FetchRequest private var dailySchedules: FetchedResults<DailySchedule>
-    
-    // Fetch monthly notes for this month
-    @FetchRequest private var monthlyNotes: FetchedResults<MonthlyNotes>
-    
-    init(month: Date) {
-        self.month = month
-        
-        // Create predicates for fetching data for this specific month
-        let monthStart = Calendar.current.dateInterval(of: .month, for: month)?.start ?? month
-        let monthEnd = Calendar.current.dateInterval(of: .month, for: month)?.end ?? month
-        
-        let monthComp = Calendar.current.component(.month, from: month)
-        let yearComp = Calendar.current.component(.year, from: month)
-        
-        // Fetch daily schedules for this month
-        self._dailySchedules = FetchRequest(
-            entity: DailySchedule.entity(),
-            sortDescriptors: [NSSortDescriptor(keyPath: \DailySchedule.date, ascending: true)],
-            predicate: NSPredicate(format: "date >= %@ AND date < %@", monthStart as NSDate, monthEnd as NSDate)
-        )
-        
-        // Fetch monthly notes for this month
-        self._monthlyNotes = FetchRequest(
-            entity: MonthlyNotes.entity(),
-            sortDescriptors: [NSSortDescriptor(keyPath: \MonthlyNotes.year, ascending: true)],
-            predicate: NSPredicate(format: "month == %d AND year == %d", monthComp, yearComp)
-        )
-    }
+    @EnvironmentObject private var cloudKitManager: CloudKitManager
     
     private let calendar = Calendar.current
     private let monthFormatter: DateFormatter = {
@@ -566,16 +397,16 @@ struct MonthView: View {
     }()
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 15) {  // Original spacing
+        VStack(alignment: .leading, spacing: 15) {
             monthHeader
             notesSection
             daysOfWeekHeader
             calendarGrid
         }
-        .padding(12)  // Reduced padding to give more space for day cells
-        .background(Color(.secondarySystemBackground))  // Original background
-        .cornerRadius(12)  // Original corner radius
-        .shadow(color: Color.gray.opacity(0.2), radius: 4, x: 0, y: 2)  // Original shadow
+        .padding(12)
+        .background(Color(.secondarySystemBackground))
+        .cornerRadius(12)
+        .shadow(color: Color.gray.opacity(0.2), radius: 4, x: 0, y: 2)
     }
     
     private var monthHeader: some View {
@@ -587,21 +418,21 @@ struct MonthView: View {
     }
     
     private var notesSection: some View {
-        MonthlyNotesView(month: month, monthlyNotes: monthlyNotes.first)
+        MonthlyNotesView(month: month)
     }
     
     private var daysOfWeekHeader: some View {
         HStack {
             ForEach(Calendar.current.shortWeekdaySymbols, id: \.self) { day in
                 Text(day)
-                    .font(.system(size: 14, weight: .semibold))  // Original styling
+                    .font(.system(size: 14, weight: .semibold))
                     .foregroundColor(.secondary)
                     .frame(maxWidth: .infinity)
             }
         }
         .padding(.horizontal, 4)
         .padding(.vertical, 8)
-        .background(Color(.tertiarySystemBackground))  // Original background
+        .background(Color(.tertiarySystemBackground))
         .cornerRadius(8)
     }
     
@@ -613,7 +444,7 @@ struct MonthView: View {
                 } else {
                     Rectangle()
                         .fill(Color.clear)
-                        .frame(minHeight: 120)  // Original height
+                        .frame(minHeight: 120)
                 }
             }
         }
@@ -632,7 +463,6 @@ struct MonthView: View {
         var days: [Date] = []
         var currentDate = firstWeekday
         
-        // Generate 6 weeks worth of dates
         for _ in 0..<42 {
             days.append(currentDate)
             currentDate = calendar.date(byAdding: .day, value: 1, to: currentDate)!
@@ -641,22 +471,21 @@ struct MonthView: View {
         return days
     }
     
-    private func scheduleForDate(_ date: Date) -> DailySchedule? {
+    private func scheduleForDate(_ date: Date) -> DailyScheduleRecord? {
         let dayStart = calendar.startOfDay(for: date)
-        return dailySchedules.first { schedule in
+        return cloudKitManager.dailySchedules.first { schedule in
             guard let scheduleDate = schedule.date else { return false }
             return calendar.isDate(scheduleDate, inSameDayAs: dayStart)
         }
     }
 }
 
-// MARK: - DayCell (Original Visual Design + Focus Management with Core Data)
+// MARK: - DayCell (CloudKitManager Version)
 struct DayCell: View {
     let date: Date
-    let schedule: DailySchedule?
+    let schedule: DailyScheduleRecord?
     
-    @Environment(\.managedObjectContext) private var viewContext
-    @EnvironmentObject private var coreDataManager: CoreDataCloudKitManager
+    @EnvironmentObject private var cloudKitManager: CloudKitManager
     @State private var line1: String = ""
     @State private var line2: String = ""
     @State private var line3: String = ""
@@ -672,18 +501,20 @@ struct DayCell: View {
         VStack(alignment: .leading, spacing: 0) {
             dayNumber
             scheduleFields
-                .padding(.horizontal, 2)  // Minimal padding to maximize text field space
+                .padding(.horizontal, 2)
                 .padding(.bottom, 4)
         }
-        .frame(maxWidth: .infinity, minHeight: 120)  // Original height
+        .frame(maxWidth: .infinity, minHeight: 120)
         .background(background)
         .onAppear {
             loadScheduleData()
         }
         .onChange(of: schedule) { _, _ in
-            loadScheduleData()
+            // Only reload data if user is not actively editing
+            if focusedField == nil {
+                loadScheduleData()
+            }
         }
-        // Listen for next day navigation requests (preserved from original)
         .onReceive(NotificationCenter.default.publisher(for: .moveToNextDay)) { notification in
             if let request = notification.object as? NextDayFocusRequest {
                 handleNextDayFocusRequest(request)
@@ -691,12 +522,10 @@ struct DayCell: View {
         }
     }
     
-    // MARK: - Original Visual Components
-    
     private var dayNumber: some View {
         HStack {
             Text("\(calendar.component(.day, from: date))")
-                .font(.system(size: 16, weight: .bold))  // Smaller to give more space to text fields
+                .font(.system(size: 16, weight: .bold))
                 .foregroundColor(.primary)
                 .padding(.leading, 6)
                 .padding(.top, 4)
@@ -705,7 +534,7 @@ struct DayCell: View {
     }
     
     private var scheduleFields: some View {
-        VStack(spacing: 2) {  // Minimal spacing for maximum field space
+        VStack(spacing: 2) {
             scheduleTextField(prefix: "OS", text: $line1, color: .blue, field: .line1) {
                 moveToNextField()
             }
@@ -719,33 +548,47 @@ struct DayCell: View {
     }
     
     private func scheduleTextField(prefix: String, text: Binding<String>, color: Color, field: DayField, submitLabel: SubmitLabel = .next, onSubmit: @escaping () -> Void) -> some View {
-        HStack(spacing: 2) {  // Minimal spacing to maximize text space
+        HStack(spacing: 2) {
             Text(prefix)
-                .font(.system(size: 10, weight: .medium))  // Smaller prefix font
+                .font(.system(size: 10, weight: .medium))
                 .foregroundColor(.secondary)
-                .frame(width: 22, alignment: .leading)  // Smaller prefix width for more text space
+                .frame(width: 22, alignment: .leading)
             TextField("", text: text)
-                .font(.system(size: 11, weight: .medium))  // Even smaller font for more characters
-                .frame(maxWidth: .infinity, minHeight: 24)  // Smaller height to match font
-                .padding(.horizontal, 4)  // Minimal padding for maximum text space
+                .font(.system(size: 11, weight: .medium))
+                .frame(maxWidth: .infinity, minHeight: 24)
+                .padding(.horizontal, 4)
                 .padding(.vertical, 1)
-                .lineLimit(1)  // Ensure single line
-                .truncationMode(.tail)  // Truncate with ... if needed
-                .background(color.opacity(0.15))  // Original background
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .background(color.opacity(0.15))
                 .overlay(
                     RoundedRectangle(cornerRadius: 6)
-                        .stroke(color.opacity(0.4), lineWidth: 1.0)  // Original border
+                        .stroke(color.opacity(0.4), lineWidth: 1.0)
                 )
                 .focused($focusedField, equals: field)
+                .onChange(of: focusedField) { oldField, newField in
+                    let sessionId = "\(date)_\(field)"
+                    
+                    // Register/unregister editing sessions for global protection
+                    if oldField != field && newField == field {
+                        // Gained focus - start protecting
+                        cloudKitManager.startEditingSession(for: sessionId)
+                    } else if oldField == field && newField != field {
+                        // Lost focus - stop protecting and save
+                        cloudKitManager.endEditingSession(for: sessionId)
+                        debugLog("🔄 Field completed via focus change")
+                        saveToCloudKit()
+                    }
+                }
                 .submitLabel(submitLabel)
-                .textInputAutocapitalization(.characters)  // Force uppercase
-                .disableAutocorrection(true)  // Disable autocorrect completely
-                .autocorrectionDisabled(true)  // Additional autocorrect disabling for iOS 15+
+                .textInputAutocapitalization(.characters)
+                .disableAutocorrection(true)
+                .autocorrectionDisabled(true)
                 .onSubmit {
-                    onSubmit()
+                    debugLog("🔄 Return pressed - moving to next field (save on focus loss)")
+                    onSubmit() // Just move to next field, save happens on focus change
                 }
                 .onChange(of: text.wrappedValue) { oldValue, newValue in
-                    // Force uppercase transformation
                     let uppercaseValue = newValue.uppercased()
                     if uppercaseValue != newValue {
                         text.wrappedValue = uppercaseValue
@@ -757,28 +600,26 @@ struct DayCell: View {
     
     private var background: some View {
         RoundedRectangle(cornerRadius: 8)
-            .fill(Color(.systemBackground))  // Original background
+            .fill(Color(.systemBackground))
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
-                    .stroke(Color.primary, lineWidth: 2.0)  // Original border
+                    .stroke(Color.primary, lineWidth: 2.0)
             )
-            .shadow(color: Color.gray.opacity(0.3), radius: 2, x: 1, y: 1)  // Original shadow
+            .shadow(color: Color.gray.opacity(0.3), radius: 2, x: 1, y: 1)
     }
     
-    // MARK: - Original Focus Management & Navigation
-    
     private func handleTextChange(newValue: String, binding: Binding<String>) {
-        // Limit to 16 characters (original behavior)
         if newValue.count > 16 {
             binding.wrappedValue = String(newValue.prefix(16))
             return
         }
         
-        // Auto-save with Core Data (simplified from original)
-        updateSchedule()
+        // DON'T save during typing - wait for user to finish editing
+        // saveToCloudKit() will be called when focus changes or form is submitted
     }
     
     private func moveToNextField() {
+        debugLog("➡️ Moving to next field")
         switch focusedField {
         case .line1:
             focusedField = .line2
@@ -792,21 +633,17 @@ struct DayCell: View {
     }
     
     private func finalizeEditing() {
-        // For better data entry workflow, try to move to next day's first field (original behavior)
+        debugLog("✅ Completed all fields for this day")
         moveToNextDayFirstField()
     }
     
     private func moveToNextDayFirstField() {
-        // Calculate the next day (original logic)
         guard let nextDay = calendar.date(byAdding: .day, value: 1, to: date) else {
             focusedField = .line1
             return
         }
         
-        // Clear current focus to allow next day to take over
         focusedField = nil
-        
-        // Send notification to request focus on next day's first field (original behavior)
         let request = NextDayFocusRequest(fromDate: date, targetDate: nextDay)
         NotificationCenter.default.post(name: .moveToNextDay, object: request)
     }
@@ -815,16 +652,12 @@ struct DayCell: View {
         let targetDayStart = calendar.startOfDay(for: request.targetDate)
         let currentDayStart = calendar.startOfDay(for: date)
         
-        // Check if this cell's date matches the target date (original logic)
         if calendar.isDate(currentDayStart, inSameDayAs: targetDayStart) {
-            // Small delay to ensure proper timing after previous day clears focus
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                 self.focusedField = .line1
             }
         }
     }
-    
-    // MARK: - Core Data Operations (Simplified)
     
     private func loadScheduleData() {
         if let schedule = schedule {
@@ -838,50 +671,38 @@ struct DayCell: View {
         }
     }
     
-    private func updateSchedule() {
-        let context = viewContext
+    private func saveToCloudKit() {
         let dayStart = calendar.startOfDay(for: date)
+        let line1Value = line1.isEmpty ? nil : line1
+        let line2Value = line2.isEmpty ? nil : line2
+        let line3Value = line3.isEmpty ? nil : line3
         
-        // Find or create schedule
-        let fetchRequest: NSFetchRequest<DailySchedule> = DailySchedule.fetchRequest()
-        fetchRequest.predicate = NSPredicate(format: "date == %@", dayStart as NSDate)
+        debugLog("💾 Saving \(dayStart): [\(line1Value ?? ""), \(line2Value ?? ""), \(line3Value ?? "")]")
         
-        do {
-            let results = try context.fetch(fetchRequest)
-            let scheduleToUpdate: DailySchedule
-            
-            if let existingSchedule = results.first {
-                scheduleToUpdate = existingSchedule
+        // Use CloudKitManager's smart save/delete method with zone information
+        let existingRecordName = schedule?.id
+        let existingZoneID = schedule?.zoneID
+        cloudKitManager.saveOrDeleteDailySchedule(
+            existingRecordName: existingRecordName,
+            existingZoneID: existingZoneID,
+            date: dayStart,
+            line1: line1Value,
+            line2: line2Value,
+            line3: line3Value
+        ) { success, error in
+            if let error = error {
+                debugLog("❌ Save failed: \(error.localizedDescription)")
             } else {
-                scheduleToUpdate = DailySchedule(context: context)
-                scheduleToUpdate.date = dayStart
+                debugLog("✅ Save completed")
             }
-            
-            // Update the schedule
-            scheduleToUpdate.line1 = line1.isEmpty ? nil : line1
-            scheduleToUpdate.line2 = line2.isEmpty ? nil : line2
-            scheduleToUpdate.line3 = line3.isEmpty ? nil : line3
-            
-            // Auto-save after a short delay with proper logging
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                debugLog("💾 Triggering Core Data save for July \(calendar.component(.day, from: dayStart))")
-                coreDataManager.save()
-                // Private database auto-syncs to CloudKit - no explicit sharing needed for normal saves
-            }
-            
-        } catch {
-            debugLog("❌ Error updating schedule: \(error)")
         }
     }
 }
 
-// MARK: - MonthlyNotesView (Original Visual Design with Core Data)
+// MARK: - MonthlyNotesView (CloudKitManager Version)
 struct MonthlyNotesView: View {
     let month: Date
-    let monthlyNotes: MonthlyNotes?
-    
-    @Environment(\.managedObjectContext) private var viewContext
-    @EnvironmentObject private var coreDataManager: CoreDataCloudKitManager
+    @EnvironmentObject private var cloudKitManager: CloudKitManager
     @State private var line1: String = ""
     @State private var line2: String = ""
     @State private var line3: String = ""
@@ -894,109 +715,101 @@ struct MonthlyNotesView: View {
     }
     
     var body: some View {
-        VStack(spacing: 4) {  // Original spacing
+        VStack(spacing: 4) {
             HStack {
                 Text("Notes:")
                     .font(.caption)
-                    .fontWeight(.medium)  // Original styling
+                    .fontWeight(.medium)
                 Spacer()
             }
             
-            VStack(spacing: 2) {  // Original spacing
+            VStack(spacing: 2) {
                 noteTextField(text: $line1, placeholder: "Note 1", field: .line1)
                 noteTextField(text: $line2, placeholder: "Note 2", field: .line2)
                 noteTextField(text: $line3, placeholder: "Note 3", field: .line3)
             }
         }
-        .padding(8)  // Original padding
-        .background(Color.blue.opacity(0.1))  // Original background
-        .cornerRadius(6)  // Original corner radius
+        .padding(8)
+        .background(Color.blue.opacity(0.1))
+        .cornerRadius(6)
         .onAppear {
             loadNotesData()
         }
-        .onChange(of: monthlyNotes) { _, _ in
-            loadNotesData()
+        .onChange(of: cloudKitManager.monthlyNotes) { _, _ in
+            // Only reload data if user is not actively editing
+            if focusedField == nil {
+                loadNotesData()
+            }
         }
     }
     
     private func noteTextField(text: Binding<String>, placeholder: String, field: MonthlyNotesField) -> some View {
         TextField(placeholder, text: text)
-            .font(.caption)  // Original font
-            .foregroundColor(.black)  // Ensure text is visible on white background
-            .padding(4)  // Original padding
-            .background(Color.white)  // Original background
-            .cornerRadius(4)  // Original corner radius
+            .font(.caption)
+            .foregroundColor(.black)
+            .padding(4)
+            .background(Color.white)
+            .cornerRadius(4)
             .focused($focusedField, equals: field)
             .submitLabel(.done)
-            .textInputAutocapitalization(.characters)  // Force uppercase
-            .disableAutocorrection(true)  // Disable autocorrect completely
-            .autocorrectionDisabled(true)  // Additional autocorrect disabling for iOS 15+
+            .textInputAutocapitalization(.characters)
+            .disableAutocorrection(true)
+            .autocorrectionDisabled(true)
             .onChange(of: text.wrappedValue) { oldValue, newValue in
-                // Force uppercase transformation and character limit
                 let uppercaseValue = newValue.uppercased()
                 let limitedValue = String(uppercaseValue.prefix(60))
                 if limitedValue != newValue {
                     text.wrappedValue = limitedValue
                 }
-                updateNotes()
+                // DON'T save during typing - wait for user to finish editing
+            }
+            .onSubmit {
+                debugLog("💾 Saving monthly notes")
+                saveToCloudKit()
             }
     }
     
-    // MARK: - Core Data Operations (Simplified)
-    
     private func loadNotesData() {
-        if let notes = monthlyNotes {
-            line1 = (notes.line1 ?? "").uppercased()
-            line2 = (notes.line2 ?? "").uppercased()
-            line3 = (notes.line3 ?? "").uppercased()
-        } else {
-            line1 = ""
-            line2 = ""
-            line3 = ""
-        }
-    }
-    
-    private func updateNotes() {
-        let context = viewContext
         let monthComp = calendar.component(.month, from: month)
         let yearComp = calendar.component(.year, from: month)
         
-        // Find or create monthly notes
-        let fetchRequest: NSFetchRequest<MonthlyNotes> = MonthlyNotes.fetchRequest()
-        fetchRequest.predicate = NSPredicate(format: "month == %d AND year == %d", monthComp, yearComp)
+        let note = cloudKitManager.monthlyNotes.first { note in
+            note.month == monthComp && note.year == yearComp
+        }
         
-        do {
-            let results = try context.fetch(fetchRequest)
-            let notesToUpdate: MonthlyNotes
-            
-            if let existingNotes = results.first {
-                notesToUpdate = existingNotes
+        line1 = (note?.line1 ?? "").uppercased()
+        line2 = (note?.line2 ?? "").uppercased()
+        line3 = (note?.line3 ?? "").uppercased()
+    }
+    
+    private func saveToCloudKit() {
+        let monthComp = calendar.component(.month, from: month)
+        let yearComp = calendar.component(.year, from: month)
+        
+        // Find existing record ID for this month/year
+        let existingRecord = cloudKitManager.monthlyNotes.first { note in
+            note.month == monthComp && note.year == yearComp
+        }
+        
+        // Use CloudKitManager's smart save/delete method for monthly notes
+        cloudKitManager.saveOrDeleteMonthlyNotes(
+            existingRecordName: existingRecord?.id,
+            month: monthComp,
+            year: yearComp,
+            line1: line1.isEmpty ? nil : line1,
+            line2: line2.isEmpty ? nil : line2,
+            line3: line3.isEmpty ? nil : line3
+        ) { success, error in
+            if let error = error {
+                debugLog("❌ Failed to save monthly notes: \(error.localizedDescription)")
             } else {
-                notesToUpdate = MonthlyNotes(context: context)
-                notesToUpdate.month = Int16(monthComp)
-                notesToUpdate.year = Int16(yearComp)
+                debugLog("✅ Successfully saved monthly notes for \(monthComp)/\(yearComp)")
             }
-            
-            // Update the notes
-            notesToUpdate.line1 = line1.isEmpty ? nil : line1
-            notesToUpdate.line2 = line2.isEmpty ? nil : line2
-            notesToUpdate.line3 = line3.isEmpty ? nil : line3
-            
-            // Auto-save after a short delay with proper logging
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                debugLog("💾 Triggering Core Data save for monthly notes \(monthComp)/\(yearComp)")
-                coreDataManager.save()
-            }
-            
-        } catch {
-            debugLog("❌ Error updating monthly notes: \(error)")
         }
     }
 }
 
-
-
-// MARK: - Array Extension for Chunking (Original Utility)
+// MARK: - Array Extension for Chunking
 extension Array {
     func chunked(into size: Int) -> [[Element]] {
         return stride(from: 0, to: count, by: size).map {
@@ -1005,10 +818,36 @@ extension Array {
     }
 }
 
+// MARK: - Share Activity Item Source for Custom Email Subject
+class ShareActivityItemSource: NSObject, UIActivityItemSource {
+    private let shareText: String
+    private let shareURL: URL
+    private let subject: String
+    
+    init(shareText: String, shareURL: URL, subject: String) {
+        self.shareText = shareText
+        self.shareURL = shareURL
+        self.subject = subject
+        super.init()
+    }
+    
+    func activityViewControllerPlaceholderItem(_ activityViewController: UIActivityViewController) -> Any {
+        return shareText
+    }
+    
+    func activityViewController(_ activityViewController: UIActivityViewController, itemForActivityType activityType: UIActivity.ActivityType?) -> Any? {
+        return shareText
+    }
+    
+    func activityViewController(_ activityViewController: UIActivityViewController, subjectForActivityType activityType: UIActivity.ActivityType?) -> String {
+        return subject
+    }
+}
+
 // MARK: - Preview
 struct ContentView_Previews: PreviewProvider {
     static var previews: some View {
         ContentView()
-            .environmentObject(CoreDataCloudKitManager.shared)
+            .environmentObject(CloudKitManager.shared)
     }
 }
