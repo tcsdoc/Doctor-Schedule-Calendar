@@ -5,7 +5,7 @@ import SwiftUI
 // MARK: - Debug Logging Helper
 func debugLog(_ message: String) {
     #if DEBUG
-    debugLog(message)
+    print(message)
     #endif
 }
 
@@ -146,13 +146,9 @@ class CloudKitManager: ObservableObject {
                     let result = try await publicDatabase.modifyRecordZones(saving: [newZone], deleting: [])
                     userCustomZone = try result.saveResults[userZoneID]?.get()
                     debugLog("✅ SETUP: Created new custom zone: \(userZoneID.zoneName) for data isolation")
-                    debugLog("✅ SETUP: Created new custom zone: \(userZoneID.zoneName) for data isolation")
-                    debugLog("✅ Created new custom zone: \(userZoneID.zoneName) for data isolation")
                 }
             } catch {
                 debugLog("❌ SETUP: Failed to setup custom zone: \(error)")
-                debugLog("❌ SETUP: Failed to setup custom zone: \(error)")
-                debugLog("❌ Failed to setup custom zone: \(error)")
                 debugLog("⚠️ Will continue with default zone for backward compatibility")
             }
         }
