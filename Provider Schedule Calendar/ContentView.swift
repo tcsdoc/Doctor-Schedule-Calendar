@@ -126,7 +126,7 @@ struct ContentView: View {
     // MARK: - CloudKit Custom Zone Sharing (Privacy-Focused)
     private func shareSchedule() {
         #if DEBUG
-        print("🔗 Creating custom zone share for privacy-focused sharing")
+        debugLog("🔗 Creating custom zone share for privacy-focused sharing")
         #endif
         
         cloudKitManager.createCustomZoneShare { result in
@@ -135,7 +135,7 @@ struct ContentView: View {
                 case .success(let share):
                     self.presentCloudKitSharingController(for: share)
                 case .failure(let error):
-                    print("❌ Failed to create share: \(error.localizedDescription)")
+                    debugLog("❌ Failed to create share: \(error.localizedDescription)")
                     
                     let alert = UIAlertController(
                         title: "Sharing Error",
@@ -155,7 +155,7 @@ struct ContentView: View {
     
     private func presentCloudKitSharingController(for share: CKShare) {
         guard let shareURL = share.url else {
-            print("❌ No share URL available")
+            debugLog("❌ No share URL available")
             showAlert(title: "Sharing Error", message: "Unable to generate sharing link. Please try again.")
             return
         }
@@ -193,13 +193,13 @@ struct ContentView: View {
         
         guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
               let rootViewController = windowScene.windows.first?.rootViewController else {
-            print("❌ Could not find root view controller")
+            debugLog("❌ Could not find root view controller")
             return
         }
         
         rootViewController.present(activityViewController, animated: true)
         
-        print("✅ Sharing link generated: \(shareURL.absoluteString)")
+        debugLog("✅ Sharing link generated: \(shareURL.absoluteString)")
     }
     
     private func showAlert(title: String, message: String) {

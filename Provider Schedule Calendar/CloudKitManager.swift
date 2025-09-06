@@ -5,7 +5,7 @@ import SwiftUI
 // MARK: - Debug Logging Helper
 func debugLog(_ message: String) {
     #if DEBUG
-    print(message)
+    debugLog(message)
     #endif
 }
 
@@ -61,11 +61,8 @@ class CloudKitManager: ObservableObject {
         let userIdentifier = "user_\(container.containerIdentifier?.replacingOccurrences(of: "iCloud.", with: "") ?? "unknown")"
         userZoneID = CKRecordZone.ID(zoneName: userIdentifier)
         
-        // Force visible logging
-        NSLog("🚀 CloudKitManager INIT - Privacy-focused custom zones enabled")
-        NSLog("🔒 User zone will be: \(userZoneID.zoneName)")
-        print("🚀 CloudKitManager INIT - Privacy-focused custom zones enabled")
-        print("🔒 User zone will be: \(userZoneID.zoneName)")
+        debugLog("🚀 CloudKitManager INIT - Privacy-focused custom zones enabled")
+        debugLog("🔒 User zone will be: \(userZoneID.zoneName)")
         
         checkCloudKitStatus()
         setupUserCustomZone()
@@ -137,24 +134,24 @@ class CloudKitManager: ObservableObject {
                     userCustomZone = existingZones.first { $0.zoneID == userZoneID }
                     
                     // Zone is ready, trigger initial data fetch if CloudKit is available
-                    DispatchQueue.main.async {
+                DispatchQueue.main.async {
                         if self.cloudKitAvailable && self.dailySchedules.isEmpty && self.monthlyNotes.isEmpty {
                             debugLog("🔄 Custom zone ready - triggering initial data fetch")
                             self.fetchAllData()
-                        }
-                    }
-                } else {
+                }
+            }
+            } else {
                     // Create new custom zone
-                    let newZone = CKRecordZone(zoneID: userZoneID)
+                let newZone = CKRecordZone(zoneID: userZoneID)
                     let result = try await publicDatabase.modifyRecordZones(saving: [newZone], deleting: [])
                     userCustomZone = try result.saveResults[userZoneID]?.get()
-                    NSLog("✅ SETUP: Created new custom zone: \(userZoneID.zoneName) for data isolation")
-                    print("✅ SETUP: Created new custom zone: \(userZoneID.zoneName) for data isolation")
+                    debugLog("✅ SETUP: Created new custom zone: \(userZoneID.zoneName) for data isolation")
+                    debugLog("✅ SETUP: Created new custom zone: \(userZoneID.zoneName) for data isolation")
                     debugLog("✅ Created new custom zone: \(userZoneID.zoneName) for data isolation")
                 }
             } catch {
-                NSLog("❌ SETUP: Failed to setup custom zone: \(error)")
-                print("❌ SETUP: Failed to setup custom zone: \(error)")
+                debugLog("❌ SETUP: Failed to setup custom zone: \(error)")
+                debugLog("❌ SETUP: Failed to setup custom zone: \(error)")
                 debugLog("❌ Failed to setup custom zone: \(error)")
                 debugLog("⚠️ Will continue with default zone for backward compatibility")
             }
@@ -437,8 +434,8 @@ class CloudKitManager: ObservableObject {
                 debugLog("🛡️ Protected \(protectedCount) local daily schedule records from CloudKit overwrite")
             }
             
-            completion()
-        }
+                    completion()
+                }
     }
     
     /// Original fetch method for backward compatibility
@@ -471,12 +468,12 @@ class CloudKitManager: ObservableObject {
                         debugLog("🛡️ Protected \(protectedCount) local daily schedule records from CloudKit overwrite")
                     }
                     
-                case .failure(let error):
-                    debugLog("❌ Failed to fetch daily schedules: \(error)")
+            case .failure(let error):
+                debugLog("❌ Failed to fetch daily schedules: \(error)")
                     self?.errorMessage = "Failed to fetch schedule data: \(error.localizedDescription)"
                     self?.dailySchedules = []
                 }
-                completion()
+                    completion()
             }
         }
     }
@@ -595,8 +592,8 @@ class CloudKitManager: ObservableObject {
                 debugLog("🛡️ Protected \(protectedCount) local monthly note records from CloudKit overwrite")
             }
             
-            completion()
-        }
+                    completion()
+                }
     }
     
     /// Original fetch method for backward compatibility
@@ -629,12 +626,12 @@ class CloudKitManager: ObservableObject {
                         debugLog("🛡️ Protected \(protectedCount) local monthly note records from CloudKit overwrite")
                     }
                     
-                case .failure(let error):
-                    debugLog("❌ Failed to fetch monthly notes: \(error)")
+            case .failure(let error):
+                debugLog("❌ Failed to fetch monthly notes: \(error)")
                     self?.errorMessage = "Failed to fetch notes data: \(error.localizedDescription)"
                     self?.monthlyNotes = []
                 }
-                completion()
+                    completion()
             }
         }
     }
@@ -677,8 +674,23 @@ class CloudKitManager: ObservableObject {
         debugLog("   CD_line1: '\(line1 ?? "nil")' (length: \(line1?.count ?? 0))")
         debugLog("   CD_line2: '\(line2 ?? "nil")' (length: \(line2?.count ?? 0))")
         debugLog("   CD_line3: '\(line3 ?? "nil")' (length: \(line3?.count ?? 0))")
-        debugLog("   About to save to CloudKit...")
         
+        // Link to container for sharing before saving
+        Task {
+            do {
+                let container = try await getOrCreateContainer()
+                record.parent = CKRecord.Reference(recordID: container.recordID, action: .none)
+                debugLog("🔗 Linked daily schedule to container for sharing")
+            } catch {
+                debugLog("⚠️ Failed to link to container: \(error)")
+            }
+            
+            debugLog("   About to save to CloudKit with container link...")
+            self.saveRecordWithCompletion(record, dateKey: dateKey, completion: completion)
+        }
+    }
+    
+    private func saveRecordWithCompletion(_ record: CKRecord, dateKey: String, completion: @escaping (Bool, Error?) -> Void) {
         publicDatabase.save(record) { [weak self] savedRecord, error in
             DispatchQueue.main.async {
                 if let error = error {
@@ -707,6 +719,35 @@ class CloudKitManager: ObservableObject {
         }
     }
     
+    private func saveMonthlyRecordWithCompletion(_ record: CKRecord, monthKey: String, month: Int, year: Int, completion: @escaping (Bool, Error?) -> Void) {
+        publicDatabase.save(record) { [weak self] savedRecord, error in
+            DispatchQueue.main.async {
+                if let error = error {
+                    debugLog("❌ Failed to save monthly notes record: \(error.localizedDescription)")
+                    self?.errorMessage = "Failed to save notes: \(error.localizedDescription)"
+                    self?.markOperationCompleted(for: monthKey, type: "SAVE_MONTHLY", success: false)
+                    completion(false, error)
+                } else {
+                    debugLog("✅ Successfully saved monthly notes record")
+                    if let savedRecord = savedRecord {
+                        debugLog("🔍 MONTHLY NOTES SAVE VERIFICATION:")
+                        debugLog("   Saved RecordID: \(savedRecord.recordID.recordName)")
+                        debugLog("   Saved Zone: \(savedRecord.recordID.zoneID.zoneName)")
+                        debugLog("   Saved CD_line1: '\(savedRecord["CD_line1"] as? String ?? "nil")'")
+                        debugLog("   Saved CD_line2: '\(savedRecord["CD_line2"] as? String ?? "nil")'")
+                        debugLog("   Saved CD_line3: '\(savedRecord["CD_line3"] as? String ?? "nil")'")
+                        
+                        // Update local array
+                        let newNote = MonthlyNotesRecord(from: savedRecord)
+                        self?.monthlyNotes.append(newNote)
+                        self?.markOperationCompleted(for: savedRecord.recordID.recordName, type: "SAVE_MONTHLY", success: true)
+                    }
+                    completion(true, nil)
+                }
+            }
+        }
+    }
+    
     func updateDailySchedule(recordName: String, zoneID: CKRecordZone.ID, date: Date, line1: String?, line2: String?, line3: String?, completion: @escaping (Bool, Error?) -> Void) {
         debugLog("🔄 Attempting to update record: \(recordName) in zone: \(zoneID.zoneName)")
         
@@ -722,7 +763,7 @@ class CloudKitManager: ObservableObject {
         let recordID = CKRecord.ID(recordName: recordName, zoneID: zoneID)
         
         publicDatabase.fetch(withRecordID: recordID) { [weak self] record, error in
-            if let error = error {
+                            if let error = error {
                 DispatchQueue.main.async {
                     debugLog("❌ Failed to fetch record for update: \(error.localizedDescription)")
                     
@@ -731,7 +772,7 @@ class CloudKitManager: ObservableObject {
                         debugLog("🔄 Record not found in CloudKit - creating new record instead")
                         self?.markOperationCompleted(for: recordName, type: "UPDATE", success: false)
                         self?.saveDailySchedule(date: date, line1: line1, line2: line2, line3: line3, completion: completion)
-                    } else {
+                            } else {
                         self?.errorMessage = "Failed to fetch record: \(error.localizedDescription)"
                         self?.markOperationCompleted(for: recordName, type: "UPDATE", success: false)
                         completion(false, error)
@@ -767,13 +808,13 @@ class CloudKitManager: ObservableObject {
             debugLog("   About to update CloudKit record...")
             
             self?.publicDatabase.save(record) { savedRecord, error in
-                DispatchQueue.main.async {
-                    if let error = error {
+                        DispatchQueue.main.async {
+                            if let error = error {
                         debugLog("❌ Failed to update record: \(error.localizedDescription)")
                         self?.errorMessage = "Failed to update schedule: \(error.localizedDescription)"
                         self?.markOperationCompleted(for: recordName, type: "UPDATE", success: false)
-                        completion(false, error)
-                    } else {
+                                completion(false, error)
+                            } else {
                         debugLog("✅ Record updated successfully")
                         // Verify what was actually updated in CloudKit
                         if let savedRecord = savedRecord, let self = self {
@@ -792,10 +833,10 @@ class CloudKitManager: ObservableObject {
                             }
                             self.markOperationCompleted(for: recordName, type: "UPDATE", success: true)
                         }
-                        completion(true, nil)
+                                completion(true, nil)
+                            }
+                        }
                     }
-                }
-            }
         }
     }
     
@@ -813,7 +854,7 @@ class CloudKitManager: ObservableObject {
         markOperationStarting(for: recordName, type: "DELETE")
         
         publicDatabase.delete(withRecordID: recordID) { [weak self] deletedRecordID, error in
-            DispatchQueue.main.async {
+                DispatchQueue.main.async {
                 if let error = error {
                     debugLog("❌ Error deleting daily schedule: \(error)")
                     self?.errorMessage = "Failed to delete schedule: \(error.localizedDescription)"
@@ -928,6 +969,29 @@ class CloudKitManager: ObservableObject {
                     record["CD_month"] = month as CKRecordValue
                     record["CD_year"] = year as CKRecordValue
                     debugLog("➕ Creating new monthly notes record for \(monthKey) in CUSTOM zone")
+                    
+                    // For new records, link to container for sharing before saving
+                    Task {
+                        do {
+                            let container = try await self?.getOrCreateContainer()
+                            if let container = container {
+                                record.parent = CKRecord.Reference(recordID: container.recordID, action: .none)
+                                debugLog("🔗 Linked new monthly notes to container for sharing")
+                            }
+                        } catch {
+                            debugLog("⚠️ Failed to link monthly notes to container: \(error)")
+                        }
+                        
+                        // Set data fields and save
+                        record["CD_line1"] = line1 as CKRecordValue?
+                        record["CD_line2"] = line2 as CKRecordValue?
+                        record["CD_line3"] = line3 as CKRecordValue?
+                        
+                        debugLog("📝 Saving NEW monthly notes with container link and fields: line1='\(line1 ?? "nil")', line2='\(line2 ?? "nil")', line3='\(line3 ?? "nil")'")
+                        
+                        self?.saveMonthlyRecordWithCompletion(record, monthKey: monthKey, month: month, year: year, completion: completion)
+                    }
+                    return // Exit early for new records - they are handled in the Task above
                 }
                 
             case .failure(let error):
@@ -948,13 +1012,13 @@ class CloudKitManager: ObservableObject {
             debugLog("📝 Saving monthly notes with fields: line1='\(line1 ?? "nil")', line2='\(line2 ?? "nil")', line3='\(line3 ?? "nil")'")
             
             self?.publicDatabase.save(record) { savedRecord, error in
-                DispatchQueue.main.async {
-                    if let error = error {
+                        DispatchQueue.main.async {
+                            if let error = error {
                         debugLog("❌ Failed to save monthly notes: \(error.localizedDescription)")
                         self?.errorMessage = "Failed to save notes: \(error.localizedDescription)"
                         self?.markOperationCompleted(for: monthKey, type: "SAVE_MONTHLY", success: false)
-                        completion(false, error)
-                    } else {
+                                completion(false, error)
+                            } else {
                         debugLog("✅ Successfully saved monthly notes for \(monthKey)")
                         // Update local array immediately instead of full refresh
                         if let savedRecord = savedRecord, let self = self {
@@ -965,11 +1029,11 @@ class CloudKitManager: ObservableObject {
                                 self.monthlyNotes.append(newNotes)
                             }
                             self.markOperationCompleted(for: savedRecord.recordID.recordName, type: "SAVE_MONTHLY", success: true)
+                                }
+                                completion(true, nil)
+                            }
                         }
-                        completion(true, nil)
                     }
-                }
-            }
         }
     }
     
@@ -1022,13 +1086,13 @@ class CloudKitManager: ObservableObject {
         let recordID = CKRecord.ID(recordName: recordName)
         
         publicDatabase.delete(withRecordID: recordID) { [weak self] recordID, error in
-            DispatchQueue.main.async {
-                if let error = error {
+                        DispatchQueue.main.async {
+                            if let error = error {
                     debugLog("❌ Failed to delete monthly notes record: \(error.localizedDescription)")
                     self?.errorMessage = "Failed to delete notes: \(error.localizedDescription)"
                     self?.markOperationCompleted(for: recordName, type: "DELETE_MONTHLY", success: false)
-                    completion(false, error)
-                } else {
+                                completion(false, error)
+                            } else {
                     debugLog("✅ Successfully deleted monthly notes from CloudKit: \(recordName)")
                     // Remove from local array immediately instead of full refresh
                     self?.monthlyNotes.removeAll { $0.month == month && $0.year == year }
@@ -1046,10 +1110,10 @@ class CloudKitManager: ObservableObject {
                         debugLog("🧹 Cleared monthly notes deletion tracking for \(recordName)")
                     }
                     
-                    completion(true, nil)
-                }
-            }
-        }
+                                completion(true, nil)
+                            }
+                        }
+                    }
     }
 }
 
@@ -1187,8 +1251,8 @@ extension CloudKitManager {
                     self?.markOperationCompleted(for: "DEDUP_MONTHLY", type: "DEDUPLICATION", success: false)
                     completion(0, error)
                 }
-                return
-            }
+                            return
+                        }
             
             guard !records.isEmpty else {
                 debugLog("ℹ️ No monthly notes records found - deduplication complete")
@@ -1196,8 +1260,8 @@ extension CloudKitManager {
                     self?.markOperationCompleted(for: "DEDUP_MONTHLY", type: "DEDUPLICATION", success: true)
                     completion(0, nil)
                 }
-                return
-            }
+                            return
+                        }
             
             // Group records by month/year combination
             var monthYearGroups: [String: [CKRecord]] = [:]
@@ -1316,7 +1380,7 @@ extension CloudKitManager {
             
             // Then clean up monthly notes
             self?.deduplicateMonthlyNotes { monthlyDeleted, error in
-                if let error = error {
+            if let error = error {
                     debugLog("❌ Monthly notes deduplication failed: \(error)")
                     completion(totalDeleted, error)
                     return
@@ -1334,65 +1398,43 @@ extension CloudKitManager {
     
     /// Create a share for user data (backward-compatible: checks both default and custom zones)
     func createCustomZoneShare(completion: @escaping (Result<CKShare, Error>) -> Void) {
-        debugLog("🔗 Creating BACKWARD-COMPATIBLE share (checks both default and custom zones)")
+        debugLog("🔗 Creating CONTAINER-BASED share for all schedule records")
         
         Task {
             do {
-                let query = CKQuery(recordType: "CD_DailySchedule", predicate: NSPredicate(value: true))
+                // Get or create the container record
+                let container = try await getOrCreateContainer()
+                debugLog("✅ Container ready - creating share from container")
                 
-                // First, try to find data in custom zone (for new data)
-                if let customZone = userCustomZone {
-                    debugLog("🔍 Checking custom zone for data...")
-                    let (customRecords, _) = try await publicDatabase.records(matching: query, inZoneWith: customZone.zoneID, resultsLimit: 1)
-                    
-                    if let (_, recordResult) = customRecords.first,
-                       let rootRecord = try? recordResult.get() {
-                        debugLog("✅ Found data in CUSTOM zone - creating privacy-focused share")
-                        await createShareFromRecord(rootRecord, completion: completion)
-                        return
-                    }
-                }
-                
-                // If no data in custom zone, check all zones for existing data
-                debugLog("🔍 Checking ALL zones for existing data...")
-                
-                // Query without zone restriction to find data anywhere
-                let (allRecords, _) = try await publicDatabase.records(matching: query, inZoneWith: nil, resultsLimit: 10)
-                
-                // Filter out records that are already in shares (can't share a shared record)
-                for (_, recordResult) in allRecords {
-                    if let record = try? recordResult.get() {
-                        let zoneName = record.recordID.zoneID.zoneName
-                        debugLog("🔍 Found record in zone: \(zoneName)")
-                        
-                        // Skip records that are already in sharing zones
-                        if zoneName.contains("share") && zoneName != userZoneID.zoneName {
-                            debugLog("⚠️ Skipping record in shared zone: \(zoneName)")
-                            continue
-                        }
-                        
-                        // Skip _defaultZone records - CloudKit cannot share records from default zone
-                        if zoneName == "_defaultZone" {
-                            debugLog("⚠️ Skipping _defaultZone record - cannot share records from default zone")
-                            continue
-                        }
-                        
-                        // Found a suitable record for sharing (must be in custom zone)
-                        debugLog("✅ Found suitable record in zone: \(zoneName)")
-                        await createShareFromRecord(record, completion: completion)
-                        return
-                    }
-                }
-
-                
-                // No shareable data found - create a new record for sharing
-                debugLog("❌ No shareable data found - creating new CloudKit record for sharing")
-                await createShareableRecord(completion: completion)
+                // Create share from the container record
+                await createShareFromRecord(container, completion: completion)
                 
             } catch {
                 debugLog("❌ Error searching for data to share: \(error)")
                 completion(.failure(error))
             }
+        }
+    }
+    
+    /// Get or create a container record for sharing all schedules and notes
+    private func getOrCreateContainer() async throws -> CKRecord {
+        let containerID = CKRecord.ID(recordName: "ScheduleContainer", zoneID: userZoneID)
+        
+        // Try to fetch existing container first
+        do {
+            let container = try await publicDatabase.record(for: containerID)
+            debugLog("✅ Found existing container record")
+            return container
+        } catch {
+            // Container doesn't exist, create it
+            debugLog("📦 Creating new container record for sharing")
+            let container = CKRecord(recordType: "ScheduleContainer", recordID: containerID)
+            container["title"] = "Provider Schedules" as CKRecordValue
+            container["created"] = Date() as CKRecordValue
+            
+            let savedContainer = try await publicDatabase.save(container)
+            debugLog("✅ Container record created successfully")
+            return savedContainer
         }
     }
     
@@ -1423,7 +1465,7 @@ extension CloudKitManager {
                 
                 // Now create a share from this new record
                 await createShareFromRecord(savedRecord, completion: completion)
-            } else {
+                } else {
                 debugLog("❌ Failed to save new shareable record")
                 completion(.failure(NSError(domain: "CloudKitManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to create shareable record"])))
             }
@@ -1459,8 +1501,8 @@ extension CloudKitManager {
                         debugLog("🔒 Share covers zone: \(rootRecord.recordID.zoneID.zoneName)")
                         completion(.success(shareRecord))
                         return
-                    }
-                case .failure(let error):
+                }
+            case .failure(let error):
                     debugLog("❌ Failed to save record \(recordID): \(error)")
                 }
             }
@@ -1533,7 +1575,7 @@ class CloudKitSharingDelegate: NSObject, UICloudSharingControllerDelegate {
     
     func cloudSharingController(_ csc: UICloudSharingController, failedToSaveShareWithError error: Error) {
         debugLog("❌ Failed to save share: \(error.localizedDescription)")
-        print("❌ SHARING ERROR: \(error)")
+        debugLog("❌ SHARING ERROR: \(error)")
     }
     
     func itemTitle(for csc: UICloudSharingController) -> String? {
@@ -1546,14 +1588,14 @@ class CloudKitSharingDelegate: NSObject, UICloudSharingControllerDelegate {
     
     func cloudSharingControllerDidSaveShare(_ csc: UICloudSharingController) {
         debugLog("✅ Share saved successfully")
-        print("✅ SHARING SUCCESS - Share URL should be available in the controller")
+        debugLog("✅ SHARING SUCCESS - Share URL should be available in the controller")
         if let share = csc.share {
-            print("🔗 Final share URL: \(share.url?.absoluteString ?? "Still no URL")")
+            debugLog("🔗 Final share URL: \(share.url?.absoluteString ?? "Still no URL")")
         }
     }
     
     func cloudSharingControllerDidStopSharing(_ csc: UICloudSharingController) {
         debugLog("🔗 Sharing stopped")
-        print("🔗 User stopped sharing")
+        debugLog("🔗 User stopped sharing")
     }
 }

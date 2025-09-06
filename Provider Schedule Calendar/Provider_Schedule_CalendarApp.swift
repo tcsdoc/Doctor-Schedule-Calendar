@@ -13,13 +13,13 @@ struct Provider_Schedule_CalendarApp: App {
 
     init() {
         #if DEBUG
-        NSLog("🔥 APP STARTING WITH PRIVACY-FOCUSED CLOUDKIT CUSTOM ZONES")
-        print("🔥 APP STARTING WITH PRIVACY-FOCUSED CLOUDKIT CUSTOM ZONES")
+        debugLog("🔥 APP STARTING WITH PRIVACY-FOCUSED CLOUDKIT CUSTOM ZONES")
+        debugLog("🔥 APP STARTING WITH PRIVACY-FOCUSED CLOUDKIT CUSTOM ZONES")
         #endif
         
         // Force console output even in release
-        NSLog("🚀 Provider Schedule Calendar initialized - Custom Zones: user_com.gulfcoast.ProviderCalendar")
-        print("🚀 Provider Schedule Calendar initialized - Custom Zones: user_com.gulfcoast.ProviderCalendar")
+        debugLog("🚀 Provider Schedule Calendar initialized - Custom Zones: user_com.gulfcoast.ProviderCalendar")
+        debugLog("🚀 Provider Schedule Calendar initialized - Custom Zones: user_com.gulfcoast.ProviderCalendar")
     }
 
     var body: some Scene {
