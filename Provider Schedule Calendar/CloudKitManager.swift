@@ -967,13 +967,12 @@ class CloudKitManager: ObservableObject {
                     debugLog("➕ Creating new monthly notes record for \(monthKey) in CUSTOM zone")
                     
                     // For new records, link to container for sharing before saving
-                    Task {
+                    Task { @MainActor in
                         do {
-                            let container = try await self?.getOrCreateContainer()
-                            if let container = container {
-                                record.parent = CKRecord.Reference(recordID: container.recordID, action: .none)
-                                debugLog("🔗 Linked new monthly notes to container for sharing")
-                            }
+                            guard let self = self else { return }
+                            let container = try await self.getOrCreateContainer()
+                            record.parent = CKRecord.Reference(recordID: container.recordID, action: .none)
+                            debugLog("🔗 Linked new monthly notes to container for sharing")
                         } catch {
                             debugLog("⚠️ Failed to link monthly notes to container: \(error)")
                         }
@@ -985,7 +984,8 @@ class CloudKitManager: ObservableObject {
                         
                         debugLog("📝 Saving NEW monthly notes with container link and fields: line1='\(line1 ?? "nil")', line2='\(line2 ?? "nil")', line3='\(line3 ?? "nil")'")
                         
-                        self?.saveMonthlyRecordWithCompletion(record, monthKey: monthKey, month: month, year: year, completion: completion)
+                        guard let self = self else { return }
+                        self.saveMonthlyRecordWithCompletion(record, monthKey: monthKey, month: month, year: year, completion: completion)
                     }
                     return // Exit early for new records - they are handled in the Task above
                 }
@@ -1395,14 +1395,15 @@ extension CloudKitManager {
     /// Create a share for user data (backward-compatible: checks both default and custom zones)
     func createCustomZoneShare(completion: @escaping (Result<CKShare, Error>) -> Void) {
         debugLog("🔗 Creating CONTAINER-BASED share for all schedule records")
+        debugLog("👤 Current Apple ID will be used for sharing")
         
-        Task {
+        Task { @MainActor in
             do {
-                // Get or create the container record
+                // Get or create the container record (this will force delete/recreate)
                 let container = try await getOrCreateContainer()
                 debugLog("✅ Container ready - creating share from container")
                 
-                // Create share from the container record
+                // Create share from the container record (async function with completion handler)
                 await createShareFromRecord(container, completion: completion)
                 
             } catch {
@@ -1412,26 +1413,30 @@ extension CloudKitManager {
         }
     }
     
+    
     /// Get or create a container record for sharing all schedules and notes
     private func getOrCreateContainer() async throws -> CKRecord {
         let containerID = CKRecord.ID(recordName: "ScheduleContainer", zoneID: userZoneID)
         
-        // Try to fetch existing container first
+        // FORCE DELETE any existing container to prevent Apple ID confusion
         do {
-            let container = try await publicDatabase.record(for: containerID)
-            debugLog("✅ Found existing container record")
-            return container
+            _ = try await publicDatabase.record(for: containerID)
+            debugLog("🗑️ Found existing container - deleting to ensure fresh creation")
+            try await publicDatabase.deleteRecord(withID: containerID)
+            debugLog("✅ Deleted existing container record")
         } catch {
-            // Container doesn't exist, create it
-            debugLog("📦 Creating new container record for sharing")
-            let container = CKRecord(recordType: "ScheduleContainer", recordID: containerID)
-            container["title"] = "Provider Schedules" as CKRecordValue
-            container["created"] = Date() as CKRecordValue
-            
-            let savedContainer = try await publicDatabase.save(container)
-            debugLog("✅ Container record created successfully")
-            return savedContainer
+            debugLog("📝 No existing container found (this is good)")
         }
+        
+        // Always create fresh container
+        debugLog("📦 Creating fresh container record for sharing (Apple ID: current user)")
+        let container = CKRecord(recordType: "ScheduleContainer", recordID: containerID)
+        container["title"] = "Provider Schedule \(Calendar.current.component(.year, from: Date()))" as CKRecordValue
+        container["created"] = Date() as CKRecordValue
+        
+        let savedContainer = try await publicDatabase.save(container)
+        debugLog("✅ Fresh container record created successfully")
+        return savedContainer
     }
     
     /// Create a new CloudKit record that can be shared (not Core Data managed)
