@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Provider Schedule Calendar.ipa</key>
+	<array>
+		<dict>
+			<key>architectures</key>
+			<array>
+				<string>arm64</string>
+			</array>
+			<key>buildNumber</key>
+			<string>6</string>
+			<key>certificate</key>
+			<dict>
+				<key>SHA1</key>
+				<string>C40A47161F1195F10886E49713F6F4BF62DDCB2A</string>
+				<key>dateExpires</key>
+				<string>7/19/26</string>
+				<key>type</key>
+				<string>Cloud Managed Apple Distribution</string>
+			</dict>
+			<key>entitlements</key>
+			<dict>
+				<key>application-identifier</key>
+				<string>KSFQHNX4S8.com.gulfcoast.ProviderCalendar</string>
+				<key>aps-environment</key>
+				<string>production</string>
+				<key>beta-reports-active</key>
+				<true/>
+				<key>com.apple.developer.icloud-container-environment</key>
+				<string>Production</string>
+				<key>com.apple.developer.icloud-container-identifiers</key>
+				<array>
+					<string>iCloud.com.gulfcoast.ProviderCalendar</string>
+				</array>
+				<key>com.apple.developer.icloud-services</key>
+				<array>
+					<string>CloudKit</string>
+					<string>CloudDocuments</string>
+				</array>
+				<key>com.apple.developer.team-identifier</key>
+				<string>KSFQHNX4S8</string>
+				<key>get-task-allow</key>
+				<false/>
+			</dict>
+			<key>name</key>
+			<string>Provider Schedule Calendar.app</string>
+			<key>profile</key>
+			<dict>
+				<key>UUID</key>
+				<string>dafe0e07-79b4-4323-878d-849e38ec9542</string>
+				<key>dateExpires</key>
+				<string>7/19/26</string>
+				<key>name</key>
+				<string>iOS Team Store Provisioning Profile: com.gulfcoast.ProviderCalendar</string>
+			</dict>
+			<key>symbols</key>
+			<true/>
+			<key>team</key>
+			<dict>
+				<key>id</key>
+				<string>KSFQHNX4S8</string>
+				<key>name</key>
+				<string></string>
+			</dict>
+			<key>versionNumber</key>
+			<string>3.0</string>
+		</dict>
+	</array>
+</dict>
+</plist>

@@ -634,6 +634,7 @@ struct DayCell: View {
     
     private func finalizeEditing() {
         debugLog("✅ Completed all fields for this day")
+        saveToCloudKit() // Save the current day's data first!
         moveToNextDayFirstField()
     }
     
@@ -755,6 +756,13 @@ struct MonthlyNotesView: View {
             .textInputAutocapitalization(.characters)
             .disableAutocorrection(true)
             .autocorrectionDisabled(true)
+            .onChange(of: focusedField) { oldField, newField in
+                // Save when focus leaves this field
+                if oldField == field && newField != field {
+                    debugLog("💾 Monthly field completed via focus change")
+                    saveToCloudKit()
+                }
+            }
             .onChange(of: text.wrappedValue) { oldValue, newValue in
                 let uppercaseValue = newValue.uppercased()
                 let limitedValue = String(uppercaseValue.prefix(60))
