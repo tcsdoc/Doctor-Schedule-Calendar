@@ -16,7 +16,7 @@ class CloudKitManager: ObservableObject {
     private let container: CKContainer
     private let privateDatabase: CKDatabase
     private(set) var userCustomZone: CKRecordZone?
-    private var userZoneID: CKRecordZone.ID
+    var userZoneID: CKRecordZone.ID
     
     @Published var dailySchedules: [DailyScheduleRecord] = []
     @Published var monthlyNotes: [MonthlyNotesRecord] = []
@@ -78,9 +78,8 @@ class CloudKitManager: ObservableObject {
     // MARK: - User-Specific Zone Setup
     private func setupUserSpecificZone() async {
         do {
-            // Get the actual user record ID for privacy-focused zone naming
-            let userRecordID = try await container.userRecordID()
-            let userIdentifier = userRecordID.recordName // This is unique per Apple ID
+            // Get the actual user record ID for privacy-focused zone naming  
+            let _ = try await container.userRecordID() // Verify user is authenticated
             
             // Create clean custom zone name without special characters
             userZoneID = CKRecordZone.ID(zoneName: "ProviderScheduleZone")
@@ -1348,7 +1347,7 @@ class CloudKitManager: ObservableObject {
     
     /// Check if there are any unsaved changes
     var hasUnsavedChanges: Bool {
-        return dailySchedules.contains { $0.isModified }
+        return dailySchedules.contains { $0.isModified } || monthlyNotes.contains { $0.isModified }
     }
     
     // MARK: - Custom Zone Sharing for Privacy
@@ -1476,6 +1475,41 @@ class CloudKitManager: ObservableObject {
         } catch {
             debugLog("❌ Error creating share from record: \(error)")
             completion(.failure(error))
+        }
+    }
+    
+    // MARK: - Monthly Notes Field Updates (ContentView Interface)
+    func createOrUpdateMonthlyNotes(month: Int, year: Int, fieldType: MonthlyNotesField, value: String) async {
+        // Find existing record if any
+        let existingRecord = self.monthlyNotes.first { $0.month == month && $0.year == year }
+        
+        // Get current values for all fields
+        var line1 = existingRecord?.line1 ?? ""
+        var line2 = existingRecord?.line2 ?? ""  
+        var line3 = existingRecord?.line3 ?? ""
+        
+        // Update the specific field
+        switch fieldType {
+        case .line1:
+            line1 = value
+        case .line2:
+            line2 = value
+        case .line3:
+            line3 = value
+        }
+        
+        // Use existing CloudKit function
+        await withCheckedContinuation { continuation in
+            self.saveOrDeleteMonthlyNotes(
+                existingRecordName: existingRecord?.id,
+                month: month,
+                year: year,
+                line1: line1.isEmpty ? nil : line1,
+                line2: line2.isEmpty ? nil : line2,
+                line3: line3.isEmpty ? nil : line3
+            ) { success, error in
+                continuation.resume()
+            }
         }
     }
 }

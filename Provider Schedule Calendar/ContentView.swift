@@ -420,8 +420,10 @@ struct ContentView: View {
         saveErrorMessage = ""
         
         // PRODUCTION DEBUG: Show status in alert
-        let modifiedCount = cloudKitManager.dailySchedules.filter { $0.isModified }.count
-        let totalCount = cloudKitManager.dailySchedules.count
+        let modifiedDailyCount = cloudKitManager.dailySchedules.filter { $0.isModified }.count
+        let modifiedMonthlyCount = cloudKitManager.monthlyNotes.filter { $0.isModified }.count
+        let totalDailyCount = cloudKitManager.dailySchedules.count
+        let totalMonthlyCount = cloudKitManager.monthlyNotes.count
         let zoneStatus = cloudKitManager.userCustomZone?.zoneID.zoneName ?? "nil"
         let cloudKitStatus = cloudKitManager.cloudKitAvailable ? "Available" : "Not Available"
         
@@ -430,10 +432,10 @@ struct ContentView: View {
         
         CloudKit: \(cloudKitStatus)
         Zone: \(zoneStatus)
-        Total Records: \(totalCount)
-        Modified Records: \(modifiedCount)
+        Daily Schedules: \(totalDailyCount) total, \(modifiedDailyCount) modified
+        Monthly Notes: \(totalMonthlyCount) total, \(modifiedMonthlyCount) modified
         
-        Will attempt to save \(modifiedCount) records.
+        Will attempt to save \(modifiedDailyCount + modifiedMonthlyCount) records.
         """
         
         // Show debug info in alert
@@ -461,8 +463,9 @@ struct ContentView: View {
         
         // NEW GLOBAL MEMORY SAVE: Process all modified records
         let modifiedRecords = cloudKitManager.dailySchedules.filter { $0.isModified }
+        let modifiedMonthlyNotes = cloudKitManager.monthlyNotes.filter { $0.isModified }
         
-        if modifiedRecords.isEmpty {
+        if modifiedRecords.isEmpty && modifiedMonthlyNotes.isEmpty {
             let alert = UIAlertController(title: "No Changes", message: "No changes to save.", preferredStyle: .alert)
             alert.addAction(UIAlertAction(title: "OK", style: .default))
             if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
@@ -482,7 +485,7 @@ struct ContentView: View {
             return
         }
         
-        // Save each modified record
+        // Save each modified daily schedule record
         let dispatchGroup = DispatchGroup()
         var saveErrors: [String] = []
         
@@ -506,6 +509,26 @@ struct ContentView: View {
             }
         }
         
+        // Also save modified monthly notes (already declared above)
+        for monthlyNote in modifiedMonthlyNotes {
+            dispatchGroup.enter()
+            
+            cloudKitManager.saveOrDeleteMonthlyNotes(
+                existingRecordName: monthlyNote.id,
+                month: monthlyNote.month,
+                year: monthlyNote.year,
+                line1: monthlyNote.line1,
+                line2: monthlyNote.line2,
+                line3: monthlyNote.line3
+            ) { success, error in
+                if !success {
+                    let errorMsg = "Failed to save monthly notes for \(monthlyNote.month)/\(monthlyNote.year): \(error?.localizedDescription ?? "Unknown error")"
+                    saveErrors.append(errorMsg)
+                }
+                dispatchGroup.leave()
+            }
+        }
+        
         // Wait for all saves to complete and show result
         dispatchGroup.notify(queue: .main) {
             if saveErrors.isEmpty {
@@ -513,9 +536,12 @@ struct ContentView: View {
                 for index in 0..<self.cloudKitManager.dailySchedules.count {
                     self.cloudKitManager.dailySchedules[index].isModified = false
                 }
+                for index in 0..<self.cloudKitManager.monthlyNotes.count {
+                    self.cloudKitManager.monthlyNotes[index].isModified = false
+                }
                 
                 // Show success alert
-                let alert = UIAlertController(title: "Save Complete", message: "Successfully saved \(modifiedRecords.count) records to CloudKit", preferredStyle: .alert)
+                let alert = UIAlertController(title: "Save Complete", message: "Successfully saved \(modifiedRecords.count) daily schedules and \(modifiedMonthlyNotes.count) monthly notes to CloudKit", preferredStyle: .alert)
                 alert.addAction(UIAlertAction(title: "OK", style: .default))
                 if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
                    let rootViewController = windowScene.windows.first?.rootViewController {
@@ -689,8 +715,54 @@ struct ContentView: View {
                     line-height: 1.2;
                 }
                 .other-month {
-                    color: #ccc;
-                    background-color: #fafafa;
+                    color: #666;
+                    background-color: #fff;
+                }
+                .monthly-notes {
+                    margin-top: 20px;
+                    padding: 12px;
+                    border: 1px solid #000;
+                    border-radius: 8px;
+                    background-color: #fff;
+                }
+                .monthly-notes-title {
+                    font-size: 16px;
+                    font-weight: bold;
+                    margin-bottom: 8px;
+                    color: #000;
+                }
+                .monthly-note-field {
+                    display: flex;
+                    align-items: center;
+                    margin-bottom: 6px;
+                    font-size: 10px;
+                }
+                .monthly-note-label {
+                    width: 48px;
+                    font-weight: medium;
+                    color: #000;
+                    margin-right: 6px;
+                }
+                .monthly-note-value {
+                    flex: 1;
+                    padding: 2px 4px;
+                    border-radius: 4px;
+                    font-weight: medium;
+                }
+                .monthly-note-line1 {
+                    background-color: #fff;
+                    border: 1px solid #000;
+                    color: #000;
+                }
+                .monthly-note-line2 {
+                    background-color: #fff;
+                    border: 1px solid #000;
+                    color: #000;
+                }
+                .monthly-note-line3 {
+                    background-color: #fff;
+                    border: 1px solid #000;
+                    color: #000;
                 }
             </style>
         </head>
@@ -768,6 +840,69 @@ struct ContentView: View {
             
             html += """
                 </table>
+            """
+            
+            // Add monthly notes for this month
+            let monthComponent = calendar.component(.month, from: monthDate)
+            let yearComponent = calendar.component(.year, from: monthDate)
+            let monthlyNote = getMonthlyNotesForMonth(month: monthComponent, year: yearComponent)
+            
+            html += """
+                <div class="monthly-notes">
+                    <div class="monthly-notes-title">Notes:</div>
+            """
+            
+            // Add each note field with same styling as app
+            if let line1 = monthlyNote?.line1, !line1.isEmpty {
+                html += """
+                    <div class="monthly-note-field">
+                        <span class="monthly-note-label">Note1:</span>
+                        <span class="monthly-note-value monthly-note-line1">\(line1)</span>
+                    </div>
+                """
+            } else {
+                html += """
+                    <div class="monthly-note-field">
+                        <span class="monthly-note-label">Note1:</span>
+                        <span class="monthly-note-value monthly-note-line1"></span>
+                    </div>
+                """
+            }
+            
+            if let line2 = monthlyNote?.line2, !line2.isEmpty {
+                html += """
+                    <div class="monthly-note-field">
+                        <span class="monthly-note-label">Note2:</span>
+                        <span class="monthly-note-value monthly-note-line2">\(line2)</span>
+                    </div>
+                """
+            } else {
+                html += """
+                    <div class="monthly-note-field">
+                        <span class="monthly-note-label">Note2:</span>
+                        <span class="monthly-note-value monthly-note-line2"></span>
+                    </div>
+                """
+            }
+            
+            if let line3 = monthlyNote?.line3, !line3.isEmpty {
+                html += """
+                    <div class="monthly-note-field">
+                        <span class="monthly-note-label">Note3:</span>
+                        <span class="monthly-note-value monthly-note-line3">\(line3)</span>
+                    </div>
+                """
+            } else {
+                html += """
+                    <div class="monthly-note-field">
+                        <span class="monthly-note-label">Note3:</span>
+                        <span class="monthly-note-value monthly-note-line3"></span>
+                    </div>
+                """
+            }
+            
+            html += """
+                </div>
             </div>
             """
         }
@@ -784,6 +919,12 @@ struct ContentView: View {
         return cloudKitManager.dailySchedules.first { schedule in
             guard let scheduleDate = schedule.date else { return false }
             return Calendar.current.isDate(scheduleDate, inSameDayAs: date)
+        }
+    }
+    
+    private func getMonthlyNotesForMonth(month: Int, year: Int) -> MonthlyNotesRecord? {
+        return cloudKitManager.monthlyNotes.first { note in
+            note.month == month && note.year == year
         }
     }
     
@@ -991,11 +1132,17 @@ struct MonthView: View {
     }
 }
 
+// MARK: - Monthly Notes Field Types
+enum MonthlyNotesField: CaseIterable {
+    case line1, line2, line3
+}
+
 // MARK: - MonthlyNotesView
 struct MonthlyNotesView: View {
     let month: Date
     let onDataChanged: () -> Void
     @EnvironmentObject private var cloudKitManager: CloudKitManager
+    @FocusState private var focusedField: MonthlyNotesField?
     
     private var monthComponent: Int {
         Calendar.current.component(.month, from: month)
@@ -1005,9 +1152,6 @@ struct MonthlyNotesView: View {
         Calendar.current.component(.year, from: month)
     }
     
-    private var monthlyRecord: MonthlyNotesRecord? {
-        cloudKitManager.monthlyNotes.first { $0.month == monthComponent && $0.year == yearComponent }
-    }
     
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -1016,15 +1160,9 @@ struct MonthlyNotesView: View {
                 .foregroundColor(.primary)
             
             VStack(spacing: 6) {
-                ForEach(1...3, id: \.self) { lineNumber in
-                    MonthlyNoteField(
-                        lineNumber: lineNumber,
-                        text: getFieldValue(lineNumber),
-                        onTextChanged: { newValue in
-                            updateField(lineNumber, value: newValue)
-                        }
-                    )
-                }
+                MonthlyNoteField(label: "Note 1", fieldType: .line1)
+                MonthlyNoteField(label: "Note 2", fieldType: .line2)
+                MonthlyNoteField(label: "Note 3", fieldType: .line3)
             }
         }
         .padding(12)
@@ -1032,43 +1170,127 @@ struct MonthlyNotesView: View {
         .cornerRadius(8)
     }
     
-    private func getFieldValue(_ lineNumber: Int) -> String {
-        guard let record = monthlyRecord else { return "" }
-        switch lineNumber {
-        case 1: return record.line1 ?? ""
-        case 2: return record.line2 ?? ""
-        case 3: return record.line3 ?? ""
-        default: return ""
+    private func MonthlyNoteField(label: String, fieldType: MonthlyNotesField) -> some View {
+        HStack(spacing: 6) {
+            Text(label)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundColor(.secondary)
+                .frame(width: 48, alignment: .leading)
+            
+            TextField("", text: Binding(
+                get: { getFieldValue(fieldType) },
+                set: { updateField(fieldType, value: $0.uppercased()) } // Force uppercase
+            ))
+            .font(.system(size: 10, weight: .medium))
+            .foregroundColor(fieldTextColor(for: fieldType))
+            .focused($focusedField, equals: fieldType)
+            .disabled(!cloudKitManager.isZoneReady)
+            .textInputAutocapitalization(.characters)
+            .autocorrectionDisabled()
+            .padding(.horizontal, 4)
+            .padding(.vertical, 2)
+            .background(fieldBackgroundColor(for: fieldType))
+            .cornerRadius(4)
+            .overlay(
+                RoundedRectangle(cornerRadius: 4)
+                    .stroke(fieldBorderColor(for: fieldType), lineWidth: 1)
+            )
+            .onSubmit {
+                moveToNextField()
+            }
         }
     }
     
-    private func updateField(_ lineNumber: Int, value: String) {
-        // TODO: Implement monthly notes editing when CloudKitManager functions are properly exposed
-        // For now, monthly notes are read-only
+    // MARK: - Field Color Coding (Matching Daily Schedule Colors)
+    private func fieldTextColor(for fieldType: MonthlyNotesField) -> Color {
+        switch fieldType {
+        case .line1: return .blue      // Note 1 - Blue (matching OS field)
+        case .line2: return .green     // Note 2 - Green (matching CL field)
+        case .line3: return .red       // Note 3 - Red (matching OFF field)
+        }
+    }
+    
+    private func fieldBackgroundColor(for fieldType: MonthlyNotesField) -> Color {
+        switch fieldType {
+        case .line1: return .blue.opacity(0.1)      // Light blue background
+        case .line2: return .green.opacity(0.1)     // Light green background
+        case .line3: return .red.opacity(0.1)       // Light red background
+        }
+    }
+    
+    private func fieldBorderColor(for fieldType: MonthlyNotesField) -> Color {
+        switch fieldType {
+        case .line1: return .blue.opacity(0.3)      // Blue border
+        case .line2: return .green.opacity(0.3)     // Green border
+        case .line3: return .red.opacity(0.3)       // Red border
+        }
+    }
+    
+    private func getFieldValue(_ fieldType: MonthlyNotesField) -> String {
+        // CRITICAL: Get data from global memory, not just CloudKit records
+        // This ensures typed data persists during screen refresh/scroll
+        let record = cloudKitManager.monthlyNotes.first { $0.month == monthComponent && $0.year == yearComponent }
+        
+        switch fieldType {
+        case .line1: return record?.line1 ?? ""
+        case .line2: return record?.line2 ?? ""
+        case .line3: return record?.line3 ?? ""
+        }
+    }
+    
+    private func updateField(_ fieldType: MonthlyNotesField, value: String) {
+        // Update local memory only - CloudKit save happens when Save button is pressed
+        // Find or create monthly record in local memory
+        if let index = cloudKitManager.monthlyNotes.firstIndex(where: { $0.month == monthComponent && $0.year == yearComponent }) {
+            // Update existing record by modifying its properties directly
+            switch fieldType {
+            case .line1:
+                cloudKitManager.monthlyNotes[index].line1 = value
+            case .line2:
+                cloudKitManager.monthlyNotes[index].line2 = value
+            case .line3:
+                cloudKitManager.monthlyNotes[index].line3 = value
+            }
+            cloudKitManager.monthlyNotes[index].isModified = true
+        } else {
+            // Create new record in local memory using the correct initializer
+            var newRecord = MonthlyNotesRecord(
+                month: monthComponent,
+                year: yearComponent,
+                zoneID: cloudKitManager.userZoneID
+            )
+            
+            // Set the specific field value
+            switch fieldType {
+            case .line1:
+                newRecord.line1 = value
+            case .line2:
+                newRecord.line2 = value
+            case .line3:
+                newRecord.line3 = value
+            }
+            newRecord.isModified = true
+            
+            cloudKitManager.monthlyNotes.append(newRecord)
+        }
+        
         onDataChanged()
+    }
+    
+    private func moveToNextField() {
+        switch focusedField {
+        case .line1:
+            focusedField = .line2
+        case .line2:
+            focusedField = .line3
+        case .line3:
+            focusedField = nil
+        case nil:
+            break
+        }
     }
 }
 
-struct MonthlyNoteField: View {
-    let lineNumber: Int
-    let text: String
-    let onTextChanged: (String) -> Void
-    
-    var body: some View {
-        TextField("Note \(lineNumber)", text: Binding(
-            get: { text },
-            set: { onTextChanged($0) }
-        ))
-        .font(.system(size: 14))
-        .padding(8)
-        .background(Color(.systemBackground))
-        .cornerRadius(6)
-        .overlay(
-            RoundedRectangle(cornerRadius: 6)
-                .stroke(Color(.systemGray4), lineWidth: 1)
-        )
-    }
-}
 
 // MARK: - DayCell
 struct DayCell: View {
@@ -1097,7 +1319,7 @@ struct DayCell: View {
             }
             
             // Schedule fields
-            VStack(spacing: 3) {
+            VStack(spacing: 8) {
                 ScheduleField(label: "OS", fieldType: .line1)
                 ScheduleField(label: "CL", fieldType: .line2)
                 ScheduleField(label: "OFF", fieldType: .line3)
@@ -1118,22 +1340,59 @@ struct DayCell: View {
     }
     
     private func ScheduleField(label: String, fieldType: FieldType) -> some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 6) {
             Text(label)
                 .font(.system(size: 10, weight: .medium))
                 .foregroundColor(.secondary)
-                .frame(width: 22, alignment: .leading)
+                .frame(width: 24, alignment: .leading)
             
             TextField("", text: Binding(
                 get: { getFieldValue(fieldType) },
-                set: { updateField(fieldType, value: $0) }
+                set: { updateField(fieldType, value: $0.uppercased()) } // Force uppercase
             ))
-            .font(.system(size: 10))
+            .font(.system(size: 10, weight: .medium))
+            .foregroundColor(fieldTextColor(for: fieldType))
             .focused($focusedField, equals: fieldType)
             .disabled(!cloudKitManager.isZoneReady)
+            .textInputAutocapitalization(.characters)
+            .autocorrectionDisabled()
+            .padding(.horizontal, 4)
+            .padding(.vertical, 2)
+            .background(fieldBackgroundColor(for: fieldType))
+            .cornerRadius(4)
+            .overlay(
+                RoundedRectangle(cornerRadius: 4)
+                    .stroke(fieldBorderColor(for: fieldType), lineWidth: 1)
+            )
             .onSubmit {
                 moveToNextField()
             }
+        }
+        .padding(.vertical, 2) // Add spacing between fields
+    }
+    
+    // MARK: - Field Color Coding
+    private func fieldTextColor(for fieldType: FieldType) -> Color {
+        switch fieldType {
+        case .line1: return .blue      // OS field - Blue
+        case .line2: return .green     // CL field - Green  
+        case .line3: return .red       // OFF field - Red
+        }
+    }
+    
+    private func fieldBackgroundColor(for fieldType: FieldType) -> Color {
+        switch fieldType {
+        case .line1: return .blue.opacity(0.1)      // Light blue background
+        case .line2: return .green.opacity(0.1)     // Light green background
+        case .line3: return .red.opacity(0.1)       // Light red background
+        }
+    }
+    
+    private func fieldBorderColor(for fieldType: FieldType) -> Color {
+        switch fieldType {
+        case .line1: return .blue.opacity(0.3)      // Blue border
+        case .line2: return .green.opacity(0.3)     // Green border
+        case .line3: return .red.opacity(0.3)       // Red border
         }
     }
     
