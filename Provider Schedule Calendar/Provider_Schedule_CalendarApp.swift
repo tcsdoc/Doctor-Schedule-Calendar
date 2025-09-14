@@ -18,8 +18,8 @@ struct Provider_Schedule_CalendarApp: App {
         #endif
         
         // Force console output even in release
-        debugLog("🚀 Provider Schedule Calendar initialized - Custom Zones: user_com.gulfcoast.ProviderCalendar")
-        debugLog("🚀 Provider Schedule Calendar initialized - Custom Zones: user_com.gulfcoast.ProviderCalendar")
+        debugLog("🚀 Provider Schedule Calendar initialized - Custom Zones: ProviderScheduleZone")
+        debugLog("🚀 Provider Schedule Calendar initialized - Custom Zones: ProviderScheduleZone")
     }
 
     var body: some Scene {

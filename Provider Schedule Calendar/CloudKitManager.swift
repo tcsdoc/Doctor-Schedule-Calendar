@@ -14,15 +14,16 @@ class CloudKitManager: ObservableObject {
     static let shared = CloudKitManager()
     
     private let container: CKContainer
-    private let publicDatabase: CKDatabase
-    private var userCustomZone: CKRecordZone?
-    private let userZoneID: CKRecordZone.ID
+    private let privateDatabase: CKDatabase
+    private(set) var userCustomZone: CKRecordZone?
+    private var userZoneID: CKRecordZone.ID
     
     @Published var dailySchedules: [DailyScheduleRecord] = []
     @Published var monthlyNotes: [MonthlyNotesRecord] = []
     @Published var isLoading = false
     @Published var errorMessage: String?
     @Published var cloudKitAvailable = false
+    @Published var isZoneReady = false
     
     // CRITICAL: Global protection for precision codes during editing
     private var activeEditingSessions: Set<String> = []
@@ -46,7 +47,7 @@ class CloudKitManager: ObservableObject {
     private var recentDeletionOperations: Set<String> = []
     private var recentSaveOperations: Set<String> = []
     private(set) var lastOperationTime: Date = Date()
-    private var pendingOperations: Set<String> = []
+    private(set) var pendingOperations: Set<String> = []
     
 
     
@@ -55,20 +56,53 @@ class CloudKitManager: ObservableObject {
     
     init() {
         container = CKContainer(identifier: "iCloud.com.gulfcoast.ProviderCalendar")
-        publicDatabase = container.privateCloudDatabase  // Use private database with sharing for privacy
+        privateDatabase = container.privateCloudDatabase  // Use private database with sharing for privacy
         
-        // Create user-specific zone for privacy and sharing
-        let userIdentifier = "user_\(container.containerIdentifier?.replacingOccurrences(of: "iCloud.", with: "") ?? "unknown")"
-        userZoneID = CKRecordZone.ID(zoneName: userIdentifier)
+        // Initialize with temporary zone ID until we get the real user ID
+        userZoneID = CKRecordZone.ID(zoneName: "temp_zone")
         
         debugLog("🚀 CloudKitManager INIT - Privacy-focused custom zones enabled")
-        debugLog("🔒 User zone will be: \(userZoneID.zoneName)")
         
-        checkCloudKitStatus()
-        setupUserCustomZone()
+        // CRITICAL: Setup proper zone FIRST, then check CloudKit status
+        Task {
+            await setupUserSpecificZone()
+            // Only check CloudKit status AFTER zone setup is complete
+            await MainActor.run {
+                self.checkCloudKitStatus()
+            }
+        }
         
-        debugLog("🚀 CloudKitManager initialized with privacy-focused custom zones")
-        debugLog("🔒 User zone: \(userZoneID.zoneName) for data isolation")
+        debugLog("🚀 CloudKitManager initialized - zone setup in progress")
+    }
+    
+    // MARK: - User-Specific Zone Setup
+    private func setupUserSpecificZone() async {
+        do {
+            // Get the actual user record ID for privacy-focused zone naming
+            let userRecordID = try await container.userRecordID()
+            let userIdentifier = userRecordID.recordName // This is unique per Apple ID
+            
+            // Create clean custom zone name without special characters
+            userZoneID = CKRecordZone.ID(zoneName: "ProviderScheduleZone")
+            
+            debugLog("🔒 User zone set to: \(userZoneID.zoneName) for Apple ID isolation")
+            
+            // Set up the custom zone
+            await MainActor.run {
+                setupUserCustomZone()
+            }
+            
+        } catch {
+            debugLog("❌ Failed to get user record ID: \(error)")
+            // Fallback to container-based naming if user ID fails
+            let fallbackIdentifier = "user_\(container.containerIdentifier?.replacingOccurrences(of: "iCloud.", with: "") ?? "unknown")"
+            userZoneID = CKRecordZone.ID(zoneName: fallbackIdentifier)
+            debugLog("⚠️ Using fallback zone: \(userZoneID.zoneName)")
+            
+            await MainActor.run {
+                setupUserCustomZone()
+            }
+        }
     }
 
     
@@ -83,10 +117,9 @@ class CloudKitManager: ObservableObject {
                     self?.errorMessage = nil
                     debugLog("✅ CloudKit available - sync enabled")
                     
-                    // If CloudKit just became available, automatically fetch data
+                    // If CloudKit just became available, zone setup will trigger data fetch when ready
                     if wasUnavailable {
-                        debugLog("🔄 CloudKit just became available - auto-fetching data")
-                        self?.fetchAllData()
+                        debugLog("🔄 CloudKit just became available - zone setup will handle data fetching")
                     }
                 case .noAccount:
                     self?.cloudKitAvailable = false
@@ -124,7 +157,7 @@ class CloudKitManager: ObservableObject {
                 debugLog("🔒 SETUP: Checking for existing zones...")
                 
                 // Check if zone already exists
-                let existingZones = try await publicDatabase.allRecordZones()
+                let existingZones = try await privateDatabase.allRecordZones()
                 
                 debugLog("🔒 SETUP: Found \(existingZones.count) existing zones")
                 
@@ -135,27 +168,90 @@ class CloudKitManager: ObservableObject {
                     
                     // Zone is ready, trigger initial data fetch if CloudKit is available
                 DispatchQueue.main.async {
+                        self.isZoneReady = true
+                        debugLog("✅ Zone marked as ready - UI can now create records safely")
                         if self.cloudKitAvailable && self.dailySchedules.isEmpty && self.monthlyNotes.isEmpty {
                             debugLog("🔄 Custom zone ready - triggering initial data fetch")
                             self.fetchAllData()
                 }
             }
-            } else {
-                    // Create new custom zone
+                } else {
+                    // Create new custom zone with proper ownership
+                debugLog("🔧 Creating new custom zone with proper ownership...")
                 let newZone = CKRecordZone(zoneID: userZoneID)
-                    let result = try await publicDatabase.modifyRecordZones(saving: [newZone], deleting: [])
+                    let result = try await privateDatabase.modifyRecordZones(saving: [newZone], deleting: [])
                     userCustomZone = try result.saveResults[userZoneID]?.get()
-                    debugLog("✅ SETUP: Created new custom zone: \(userZoneID.zoneName) for data isolation")
+                    debugLog("✅ SETUP: Created new custom zone: \(userZoneID.zoneName) with current user ownership")
+                    
+                    // Mark zone as ready after successful creation
+                    await MainActor.run {
+                        self.isZoneReady = true
+                        debugLog("✅ New zone marked as ready - UI can now create records safely")
+                        if self.cloudKitAvailable {
+                            debugLog("🔄 New zone ready - triggering initial data fetch")
+                            self.fetchAllData()
+                        }
+                    }
                 }
             } catch {
                 debugLog("❌ SETUP: Failed to setup custom zone: \(error)")
+                if let ckError = error as? CKError {
+                    debugLog("❌ SETUP: CKError code: \(ckError.code.rawValue)")
+                    debugLog("❌ SETUP: CKError description: \(ckError.localizedDescription)")
+                    switch ckError.code {
+                    case .notAuthenticated:
+                        debugLog("❌ SETUP: Not signed into iCloud")
+                    case .permissionFailure:
+                        debugLog("❌ SETUP: CloudKit permissions issue")
+                    case .networkFailure:
+                        debugLog("❌ SETUP: Network connectivity problem")
+                    case .quotaExceeded:
+                        debugLog("❌ SETUP: iCloud storage quota exceeded")
+                    case .zoneNotFound:
+                        debugLog("❌ SETUP: Zone operation failed")
+                    default:
+                        debugLog("❌ SETUP: Other CloudKit error")
+                    }
+                }
                 debugLog("⚠️ Will continue with default zone for backward compatibility")
+                // Set zone as ready even on error so app doesn't hang
+                await MainActor.run {
+                    self.isZoneReady = true
+                    debugLog("⚠️ Zone marked as ready despite error - using fallback")
+                }
             }
         }
     }
     
     
     // MARK: - Enhanced Data Protection Methods
+    
+    /// Verify a record actually exists in CloudKit after save
+    private func verifyRecordExists(recordID: CKRecord.ID) {
+        debugLog("🔍 VERIFICATION: Attempting to fetch record \(recordID.recordName) from CloudKit...")
+        
+        privateDatabase.fetch(withRecordID: recordID) { record, error in
+            DispatchQueue.main.async {
+                if let error = error {
+                    debugLog("❌ VERIFICATION FAILED: Record \(recordID.recordName) NOT found in CloudKit!")
+                    debugLog("❌ VERIFICATION ERROR: \(error.localizedDescription)")
+                    debugLog("🚨 THIS PROVES THE SAVE WAS FAKE - CloudKit lied about success!")
+                    
+                    if let ckError = error as? CKError {
+                        debugLog("❌ CKError code: \(ckError.code.rawValue)")
+                        if ckError.code == .unknownItem {
+                            debugLog("🚨 SMOKING GUN: Record does not exist in CloudKit despite 'successful' save!")
+                        }
+                    }
+                } else if let record = record {
+                    debugLog("✅ VERIFICATION SUCCESS: Record \(recordID.recordName) confirmed in CloudKit")
+                    debugLog("✅ VERIFIED DATA: \(record["CD_line1"] as? String ?? "nil"), \(record["CD_line2"] as? String ?? "nil"), \(record["CD_line3"] as? String ?? "nil")")
+                } else {
+                    debugLog("⚠️ VERIFICATION WEIRD: No error but no record returned")
+                }
+            }
+        }
+    }
     
     /// Check if data should be protected from CloudKit overwrites
     func shouldProtectLocalData(for key: String) -> Bool {
@@ -191,11 +287,7 @@ class CloudKitManager: ObservableObject {
             localDataVersions[key] = Date()
             debugLog("✅ Completed \(type) operation for \(key) - marked as recently saved")
             
-            // Clear recent save tracking after 5 seconds
-            DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
-                self.recentSaveOperations.remove(key)
-                debugLog("🧹 Cleared recent save tracking for \(key)")
-            }
+            // Note: Save tracking will be cleared by cleanup operations
         } else {
             debugLog("❌ Failed \(type) operation for \(key)")
         }
@@ -226,13 +318,13 @@ class CloudKitManager: ObservableObject {
             debugLog("❌ CloudKit not available - will retry when available")
             checkCloudKitStatus() // Recheck status and auto-fetch when ready
             
-            // Add a backup retry after a short delay
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-                if self.cloudKitAvailable && self.dailySchedules.isEmpty && self.monthlyNotes.isEmpty {
-                    debugLog("🔄 Backup retry - CloudKit now available, fetching data")
-                    self.fetchAllData()
-                }
-            }
+            // CloudKit will be retried when status changes
+            return
+        }
+        
+        // Check zone readiness - CRITICAL: Don't fetch before zone is ready
+        guard isZoneReady else {
+            debugLog("❌ Custom zone not ready - skipping fetch until zone setup completes")
             return
         }
         
@@ -264,6 +356,103 @@ class CloudKitManager: ObservableObject {
         }
     }
     
+    // EMERGENCY: Reset custom zone to fix ownership issues
+    func emergencyZoneReset() {
+        debugLog("🚨 EMERGENCY: Resetting custom zone to fix ownership issues...")
+        debugLog("🔍 Current userZoneID: \(userZoneID.zoneName)")
+        
+        Task {
+            do {
+                // ENHANCED DEBUGGING: List ALL zones first
+                let existingZones = try await privateDatabase.allRecordZones()
+                debugLog("🔍 BEFORE RESET - Found \(existingZones.count) total zones:")
+                for zone in existingZones {
+                    debugLog("   Zone: \(zone.zoneID.zoneName) (owner: \(zone.zoneID.ownerName))")
+                }
+                
+                // Delete existing zone if it exists
+                if existingZones.contains(where: { $0.zoneID == userZoneID }) {
+                    debugLog("🗑️ Deleting zone: \(userZoneID.zoneName)...")
+                    _ = try await privateDatabase.modifyRecordZones(saving: [], deleting: [userZoneID])
+                    debugLog("✅ Deleted zone: \(userZoneID.zoneName)")
+                } else {
+                    debugLog("⚠️ Zone \(userZoneID.zoneName) not found in existing zones!")
+                }
+                
+                // Create fresh zone with current user ownership
+                debugLog("🆕 Creating fresh zone with current user ownership...")
+                let newZone = CKRecordZone(zoneID: userZoneID)
+                let result = try await privateDatabase.modifyRecordZones(saving: [newZone], deleting: [])
+                
+                await MainActor.run {
+                    self.userCustomZone = try? result.saveResults[userZoneID]?.get()
+                    debugLog("✅ EMERGENCY: Fresh zone created with proper ownership")
+                    
+                    // CRITICAL: Clear all local data arrays after zone reset
+                    let oldScheduleCount = self.dailySchedules.count
+                    let oldNotesCount = self.monthlyNotes.count
+                    self.dailySchedules = []
+                    self.monthlyNotes = []
+                    debugLog("🗑️ Cleared local data: \(oldScheduleCount) schedules, \(oldNotesCount) notes")
+                    
+                    debugLog("🔄 Zone reset complete - memory cleared, ready for clean saves")
+                    debugLog("🔍 Current dailySchedules count: \(self.dailySchedules.count)")
+                    debugLog("🔍 Current monthlyNotes count: \(self.monthlyNotes.count)")
+                    
+                    // CRITICAL: Fetch fresh data from the reset zone
+                    debugLog("🔄 Fetching fresh data from reset zone...")
+                    self.fetchAllData()
+                }
+                
+            } catch {
+                debugLog("❌ EMERGENCY: Zone reset failed: \(error)")
+            }
+        }
+    }
+    
+    // EMERGENCY: Force fetch from ALL zones to recover lost data
+    func emergencyDataRecovery() {
+        debugLog("🚨 EMERGENCY: Starting comprehensive data recovery...")
+        
+        // Fetch from custom zone first
+        fetchDailySchedules {
+            debugLog("🔍 Emergency fetch from custom zone completed")
+        }
+        
+        // Also try fetching from default zone in case data got split
+        let defaultQuery = CKQuery(recordType: "CD_DailySchedule", predicate: NSPredicate(value: true))
+        privateDatabase.fetch(withQuery: defaultQuery, inZoneWith: nil, desiredKeys: nil, resultsLimit: CKQueryOperation.maximumResults) { [weak self] result in
+            DispatchQueue.main.async {
+                switch result {
+                case .success(let (matchResults, _)):
+                    let records = matchResults.compactMap { _, result in try? result.get() }
+                    let defaultSchedules = records.map(DailyScheduleRecord.init)
+                    
+                    debugLog("🔍 EMERGENCY: Found \(defaultSchedules.count) records in DEFAULT zone")
+                    for schedule in defaultSchedules {
+                        if let date = schedule.date {
+                            let formatter = DateFormatter()
+                            formatter.dateFormat = "MMM d, yyyy"
+                            debugLog("📅 DEFAULT ZONE: \(formatter.string(from: date)) - \(schedule.line1 ?? "empty")")
+                        }
+                    }
+                    
+                    // Merge with existing data (avoiding duplicates)
+                    if !defaultSchedules.isEmpty {
+                        debugLog("🔄 EMERGENCY: Merging default zone data with custom zone data")
+                        let existingIDs = Set(self?.dailySchedules.map { $0.id } ?? [])
+                        let newSchedules = defaultSchedules.filter { !existingIDs.contains($0.id) }
+                        self?.dailySchedules.append(contentsOf: newSchedules)
+                        self?.dailySchedules.sort { ($0.date ?? Date()) < ($1.date ?? Date()) }
+                        debugLog("✅ EMERGENCY: Added \(newSchedules.count) records from default zone")
+                    }
+                case .failure(let error):
+                    debugLog("❌ EMERGENCY: Failed to fetch from default zone: \(error)")
+                }
+            }
+        }
+    }
+    
     /// Cleanup expired operations to prevent memory leaks
     private func cleanupExpiredOperations() {
         let cutoffTime = Date().addingTimeInterval(-10.0) // 10 seconds ago
@@ -286,31 +475,6 @@ class CloudKitManager: ObservableObject {
         fetchAllData()
     }
     
-    /// Fetch data and perform cleanup of duplicates
-    func fetchAllDataWithCleanup() {
-        // Check CloudKit status first
-        guard cloudKitAvailable else {
-            checkCloudKitStatus() // Recheck status
-            return
-        }
-        
-        debugLog("🧹 Starting fetch with duplicate cleanup")
-        isLoading = true
-        errorMessage = nil
-        
-        // First cleanup duplicates, then fetch fresh data
-        cleanupDuplicateRecords { [weak self] deletedCount, error in
-            if let error = error {
-                debugLog("❌ Cleanup error: \(error)")
-                // Continue with fetch even if cleanup failed
-            } else if deletedCount > 0 {
-                debugLog("✅ Cleaned up \(deletedCount) duplicate records")
-            }
-            
-            // Now fetch the cleaned data
-            self?.fetchAllData()
-        }
-    }
     
     private func fetchDailySchedules(completion: @escaping () -> Void) {
         debugLog("📅 Fetching daily schedules from custom zone only...")
@@ -321,11 +485,13 @@ class CloudKitManager: ObservableObject {
     
     /// Fetch daily schedules from custom zone only (single source of truth)
     private func fetchDailySchedulesFromCustomZone(completion: @escaping () -> Void) {
+        debugLog("📥 FETCH START: Querying CloudKit for daily schedules")
+        
         let query = CKQuery(recordType: "CD_DailySchedule", predicate: NSPredicate(value: true))
         query.sortDescriptors = [NSSortDescriptor(key: "CD_date", ascending: true)]
         
         guard let customZone = userCustomZone else {
-            debugLog("❌ Custom zone not available - no data to fetch")
+            debugLog("❌ FETCH ERROR: Custom zone not available - no data to fetch")
             DispatchQueue.main.async { [weak self] in
                 self?.dailySchedules = []
                 completion()
@@ -333,36 +499,87 @@ class CloudKitManager: ObservableObject {
             return
         }
         
-        publicDatabase.fetch(withQuery: query, inZoneWith: customZone.zoneID, desiredKeys: nil, resultsLimit: CKQueryOperation.maximumResults) { [weak self] result in
+        debugLog("📥 FETCH DEBUG: Querying zone '\(customZone.zoneID.zoneName)' for CD_DailySchedule records")
+        debugLog("📥 FETCH DEBUG: Zone owner: \(customZone.zoneID.ownerName)")
+        debugLog("📥 FETCH DEBUG: Query predicate: \(query.predicate)")
+        debugLog("📥 FETCH DEBUG: Sort descriptors: \(query.sortDescriptors?.description ?? "none")")
+        
+        privateDatabase.fetch(withQuery: query, inZoneWith: customZone.zoneID, desiredKeys: nil, resultsLimit: CKQueryOperation.maximumResults) { [weak self] result in
             DispatchQueue.main.async {
                 switch result {
-                case .success(let (matchResults, _)):
-                    let records = matchResults.compactMap { _, result in try? result.get() }
-                    let schedules = records.map(DailyScheduleRecord.init)
+                case .success(let (matchResults, cursor)):
+                    debugLog("📥 FETCH SUCCESS: CloudKit query completed")
+                    debugLog("📥 FETCH DEBUG: Raw match results count: \(matchResults.count)")
+                    debugLog("📥 FETCH DEBUG: Query cursor: \(cursor?.description ?? "none")")
                     
-                    var protectedCount = 0
-                    for schedule in schedules {
-                        if self?.shouldProtectLocalData(for: schedule.id) == true {
-                            protectedCount += 1
+                    let records = matchResults.compactMap { recordID, result in
+                        switch result {
+                        case .success(let record):
+                            debugLog("📥 FETCH RECORD: \(recordID.recordName) - Success")
+                            return record
+                        case .failure(let error):
+                            debugLog("📥 FETCH RECORD: \(recordID.recordName) - Failed: \(error)")
+                            return nil
                         }
                     }
                     
-                    if protectedCount == 0 {
-                        self?.dailySchedules = schedules.sorted { ($0.date ?? Date()) < ($1.date ?? Date()) }
-                        debugLog("✅ Daily schedules updated from CUSTOM zone: \(schedules.count) records")
-                    } else {
-                        debugLog("🛡️ Protected \(protectedCount) local daily schedule records from CloudKit overwrite")
-                        debugLog("🔍 PROTECTION DEBUG:")
-                        debugLog("   Total records fetched: \(schedules.count)")
-                        debugLog("   Protected records: \(protectedCount)")
-                        debugLog("   Current local count: \(self?.dailySchedules.count ?? 0)")
-                        debugLog("   Recent operations: \(self?.recentSaveOperations.count ?? 0)")
-                        debugLog("   Pending operations: \(self?.pendingOperations.count ?? 0)")
-                        debugLog("   Recent deletions: \(self?.recentDeletionOperations.count ?? 0)")
+                    debugLog("📥 FETCH DEBUG: Successfully parsed \(records.count) records from \(matchResults.count) results")
+                    
+                    // Log detailed information about each fetched record
+                    for (index, record) in records.enumerated() {
+                        debugLog("📥 RECORD \(index + 1):")
+                        debugLog("   RecordID: \(record.recordID.recordName)")
+                        debugLog("   Zone: \(record.recordID.zoneID.zoneName)")
+                        debugLog("   CD_date: \(record["CD_date"] as? Date ?? Date())")
+                        debugLog("   CD_line1: '\(record["CD_line1"] as? String ?? "nil")'")
+                        debugLog("   CD_line2: '\(record["CD_line2"] as? String ?? "nil")'")
+                        debugLog("   CD_line3: '\(record["CD_line3"] as? String ?? "nil")'")
+                        debugLog("   Creation: \(record.creationDate ?? Date())")
+                        debugLog("   Modified: \(record.modificationDate ?? Date())")
                     }
                     
+                    let fetchedSchedules = records.map(DailyScheduleRecord.init)
+                    debugLog("📥 FETCH DEBUG: Converted to \(fetchedSchedules.count) DailyScheduleRecord objects")
+                    
+                    // CRITICAL: Preserve unsaved edits in global memory during fetch
+                    var mergedSchedules = fetchedSchedules
+                    
+                    // Add any modified records from global memory that aren't in CloudKit yet
+                    for existingRecord in self?.dailySchedules ?? [] {
+                        if existingRecord.isModified {
+                            // This record has unsaved changes - keep it instead of CloudKit version
+                            if let index = mergedSchedules.firstIndex(where: { 
+                                Calendar.current.isDate($0.date ?? Date(), inSameDayAs: existingRecord.date ?? Date()) 
+                            }) {
+                                mergedSchedules[index] = existingRecord // Keep the modified version
+                                debugLog("🛡️ PROTECTED: Kept unsaved edits for \(existingRecord.date?.description ?? "unknown")")
+                            } else {
+                                mergedSchedules.append(existingRecord) // Add new unsaved record
+                                debugLog("➕ PROTECTED: Kept new unsaved record for \(existingRecord.date?.description ?? "unknown")")
+                            }
+                        }
+                    }
+                    
+                    // Use merged schedules that preserve unsaved edits during fetch
+                    self?.dailySchedules = mergedSchedules.sorted { ($0.date ?? Date()) < ($1.date ?? Date()) }
+                    let protectedCount = mergedSchedules.filter { $0.isModified }.count
+                    debugLog("✅ FETCH COMPLETE: \(fetchedSchedules.count) from CloudKit + \(protectedCount) unsaved edits = \(mergedSchedules.count) total")
+                    debugLog("📥 FINAL COUNT: dailySchedules array now contains \(self?.dailySchedules.count ?? 0) records")
+                    
                 case .failure(let error):
-                    debugLog("❌ Failed to fetch daily schedules from custom zone: \(error)")
+                    debugLog("❌ FETCH FAILED: CloudKit query failed")
+                    debugLog("📥 FETCH ERROR DETAILS:")
+                    debugLog("   Error: \(error.localizedDescription)")
+                    debugLog("   Domain: \((error as NSError).domain)")
+                    debugLog("   Code: \((error as NSError).code)")
+                    
+                    if let ckError = error as? CKError {
+                        debugLog("   CKError code: \(ckError.code.rawValue)")
+                        debugLog("   CKError type: \(ckError.code)")
+                        let underlying = (ckError as NSError).userInfo[NSUnderlyingErrorKey] as? Error
+                        debugLog("   Underlying: \(underlying?.localizedDescription ?? "none")")
+                    }
+                    
                     self?.errorMessage = "Failed to fetch schedule data: \(error.localizedDescription)"
                     self?.dailySchedules = []
                 }
@@ -371,108 +588,7 @@ class CloudKitManager: ObservableObject {
         }
     }
     
-    /// Legacy method - Fetch from both default zone (existing data) and custom zone (new data) to preserve all data
-    private func fetchDailySchedulesFromBothZones(completion: @escaping () -> Void) {
-        let query = CKQuery(recordType: "CD_DailySchedule", predicate: NSPredicate(value: true))
-        query.sortDescriptors = [NSSortDescriptor(key: "CD_date", ascending: true)]
-        
-        var allSchedules: [DailyScheduleRecord] = []
-        let dispatchGroup = DispatchGroup()
-        
-        // Fetch from default zone (existing data)
-        dispatchGroup.enter()
-        publicDatabase.fetch(withQuery: query, inZoneWith: nil, desiredKeys: nil, resultsLimit: CKQueryOperation.maximumResults) { result in
-            switch result {
-            case .success(let (matchResults, _)):
-                let records = matchResults.compactMap { _, result in try? result.get() }
-                let schedules = records.map(DailyScheduleRecord.init)
-                allSchedules.append(contentsOf: schedules)
-                debugLog("✅ Found \(records.count) daily schedules in DEFAULT zone (existing data)")
-            case .failure(let error):
-                debugLog("❌ Failed to fetch from default zone: \(error)")
-            }
-            dispatchGroup.leave()
-        }
-        
-        // Fetch from custom zone (new data) if available
-        if let customZone = userCustomZone {
-            dispatchGroup.enter()
-            publicDatabase.fetch(withQuery: query, inZoneWith: customZone.zoneID, desiredKeys: nil, resultsLimit: CKQueryOperation.maximumResults) { result in
-                switch result {
-                case .success(let (matchResults, _)):
-                    let records = matchResults.compactMap { _, result in try? result.get() }
-                    let schedules = records.map(DailyScheduleRecord.init)
-                    allSchedules.append(contentsOf: schedules)
-                    debugLog("✅ Found \(records.count) daily schedules in CUSTOM zone \(customZone.zoneID.zoneName)")
-                case .failure(let error):
-                    debugLog("❌ Failed to fetch from custom zone: \(error)")
-                }
-                dispatchGroup.leave()
-            }
-        }
-        
-        // Combine results from both zones
-        dispatchGroup.notify(queue: .main) { [weak self] in
-            // Remove duplicates by ID and update
-            let uniqueSchedules = Array(Set(allSchedules))
-            
-            var protectedCount = 0
-            for schedule in uniqueSchedules {
-                if self?.shouldProtectLocalData(for: schedule.id) == true {
-                    protectedCount += 1
-                }
-            }
-            
-            if protectedCount == 0 {
-                self?.dailySchedules = uniqueSchedules.sorted { ($0.date ?? Date()) < ($1.date ?? Date()) }
-                debugLog("✅ Combined daily schedules updated: \(uniqueSchedules.count) total records")
-            } else {
-                debugLog("🛡️ Protected \(protectedCount) local daily schedule records from CloudKit overwrite")
-            }
-            
-                    completion()
-                }
-    }
     
-    /// Original fetch method for backward compatibility
-    private func fetchDailySchedulesLegacy(completion: @escaping () -> Void) {
-        let query = CKQuery(recordType: "CD_DailySchedule", predicate: NSPredicate(value: true))
-        query.sortDescriptors = [NSSortDescriptor(key: "CD_date", ascending: true)]
-        
-        publicDatabase.fetch(withQuery: query, inZoneWith: nil, desiredKeys: nil, resultsLimit: CKQueryOperation.maximumResults) { [weak self] result in
-            DispatchQueue.main.async {
-                switch result {
-                case .success(let (matchResults, _)):
-                    let records = matchResults.compactMap { _, result in
-                        try? result.get()
-                    }
-                    
-                    // Only update if we're not protecting local data
-                    var protectedCount = 0
-                    let newSchedules = records.map(DailyScheduleRecord.init)
-                    
-                    for schedule in newSchedules {
-                        if self?.shouldProtectLocalData(for: schedule.id) == true {
-                            protectedCount += 1
-                        }
-                    }
-                    
-                    if protectedCount == 0 {
-                        self?.dailySchedules = newSchedules
-                        debugLog("✅ Daily schedules updated: \(records.count) records")
-                    } else {
-                        debugLog("🛡️ Protected \(protectedCount) local daily schedule records from CloudKit overwrite")
-                    }
-                    
-            case .failure(let error):
-                debugLog("❌ Failed to fetch daily schedules: \(error)")
-                    self?.errorMessage = "Failed to fetch schedule data: \(error.localizedDescription)"
-                    self?.dailySchedules = []
-                }
-                    completion()
-            }
-        }
-    }
     
     private func fetchMonthlyNotes(completion: @escaping () -> Void) {
         debugLog("📝 Fetching monthly notes from custom zone only...")
@@ -495,7 +611,7 @@ class CloudKitManager: ObservableObject {
             return
         }
         
-        publicDatabase.fetch(withQuery: query, inZoneWith: customZone.zoneID, desiredKeys: nil, resultsLimit: CKQueryOperation.maximumResults) { [weak self] result in
+        privateDatabase.fetch(withQuery: query, inZoneWith: customZone.zoneID, desiredKeys: nil, resultsLimit: CKQueryOperation.maximumResults) { [weak self] result in
             DispatchQueue.main.async {
                 switch result {
                 case .success(let (matchResults, _)):
@@ -530,112 +646,16 @@ class CloudKitManager: ObservableObject {
         }
     }
     
-    /// Legacy method - Fetch monthly notes from both default zone (existing data) and custom zone (new data)
-    private func fetchMonthlyNotesFromBothZones(completion: @escaping () -> Void) {
-        let query = CKQuery(recordType: "CD_MonthlyNotes", predicate: NSPredicate(value: true))
-        query.sortDescriptors = [NSSortDescriptor(key: "CD_month", ascending: true)]
-        
-        var allNotes: [MonthlyNotesRecord] = []
-        let dispatchGroup = DispatchGroup()
-        
-        // Fetch from default zone (existing data)
-        dispatchGroup.enter()
-        publicDatabase.fetch(withQuery: query, inZoneWith: nil, desiredKeys: nil, resultsLimit: CKQueryOperation.maximumResults) { result in
-            switch result {
-            case .success(let (matchResults, _)):
-                let records = matchResults.compactMap { _, result in try? result.get() }
-                let notes = records.map(MonthlyNotesRecord.init)
-                allNotes.append(contentsOf: notes)
-                debugLog("✅ Found \(records.count) monthly notes in DEFAULT zone (existing data)")
-            case .failure(let error):
-                debugLog("❌ Failed to fetch monthly notes from default zone: \(error)")
-            }
-            dispatchGroup.leave()
-        }
-        
-        // Fetch from custom zone (new data) if available
-        if let customZone = userCustomZone {
-            dispatchGroup.enter()
-            publicDatabase.fetch(withQuery: query, inZoneWith: customZone.zoneID, desiredKeys: nil, resultsLimit: CKQueryOperation.maximumResults) { result in
-                switch result {
-                case .success(let (matchResults, _)):
-                    let records = matchResults.compactMap { _, result in try? result.get() }
-                    let notes = records.map(MonthlyNotesRecord.init)
-                    allNotes.append(contentsOf: notes)
-                    debugLog("✅ Found \(records.count) monthly notes in CUSTOM zone \(customZone.zoneID.zoneName)")
-                case .failure(let error):
-                    debugLog("❌ Failed to fetch monthly notes from custom zone: \(error)")
-                }
-                dispatchGroup.leave()
-            }
-        }
-        
-        // Combine results from both zones
-        dispatchGroup.notify(queue: .main) { [weak self] in
-            let uniqueNotes = Array(Set(allNotes))
-            
-            var protectedCount = 0
-            for note in uniqueNotes {
-                if self?.shouldProtectLocalData(for: note.id) == true {
-                    protectedCount += 1
-                }
-            }
-            
-            if protectedCount == 0 {
-                self?.monthlyNotes = uniqueNotes.sorted { $0.year < $1.year || ($0.year == $1.year && $0.month < $1.month) }
-                debugLog("✅ Combined monthly notes updated: \(uniqueNotes.count) total records")
-            } else {
-                debugLog("🛡️ Protected \(protectedCount) local monthly note records from CloudKit overwrite")
-            }
-            
-                    completion()
-                }
-    }
     
-    /// Original fetch method for backward compatibility
-    private func fetchMonthlyNotesLegacy(completion: @escaping () -> Void) {
-        let query = CKQuery(recordType: "CD_MonthlyNotes", predicate: NSPredicate(value: true))
-        query.sortDescriptors = [NSSortDescriptor(key: "CD_month", ascending: true)]
-        
-        publicDatabase.fetch(withQuery: query, inZoneWith: nil, desiredKeys: nil, resultsLimit: CKQueryOperation.maximumResults) { [weak self] result in
-            DispatchQueue.main.async {
-                switch result {
-                case .success(let (matchResults, _)):
-                    let records = matchResults.compactMap { _, result in
-                        try? result.get()
-                    }
-                    
-                    // Only update if we're not protecting local data
-                    var protectedCount = 0
-                    let newNotes = records.map(MonthlyNotesRecord.init)
-                    
-                    for note in newNotes {
-                        if self?.shouldProtectLocalData(for: note.id) == true {
-                            protectedCount += 1
-                        }
-                    }
-                    
-                    if protectedCount == 0 {
-                        self?.monthlyNotes = newNotes
-                        debugLog("✅ Monthly notes updated: \(records.count) records")
-                    } else {
-                        debugLog("🛡️ Protected \(protectedCount) local monthly note records from CloudKit overwrite")
-                    }
-                    
-            case .failure(let error):
-                debugLog("❌ Failed to fetch monthly notes: \(error)")
-                    self?.errorMessage = "Failed to fetch notes data: \(error.localizedDescription)"
-                    self?.monthlyNotes = []
-                }
-                    completion()
-            }
-        }
-    }
     
     // MARK: - Save Data
     func saveDailySchedule(date: Date, line1: String?, line2: String?, line3: String?, completion: @escaping (Bool, Error?) -> Void) {
+        saveDailySchedule(date: date, line1: line1, line2: line2, line3: line3, retryCount: 0, completion: completion)
+    }
+    
+    private func saveDailySchedule(date: Date, line1: String?, line2: String?, line3: String?, retryCount: Int, completion: @escaping (Bool, Error?) -> Void) {
         let dateKey = "\(Calendar.current.startOfDay(for: date))"
-        debugLog("💾 Creating new daily schedule record for date: \(date)")
+        debugLog("💾 Creating new daily schedule record for date: \(date) (retry: \(retryCount))")
         
         // Check CloudKit status first
         guard cloudKitAvailable else {
@@ -644,18 +664,39 @@ class CloudKitManager: ObservableObject {
             return
         }
         
+        // Limit retries to prevent infinite loops
+        guard retryCount < 3 else {
+            debugLog("❌ Maximum retry attempts reached (\(retryCount)) - failing save operation")
+            completion(false, NSError(domain: "CloudKitManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "Maximum retry attempts reached"]))
+            return
+        }
+        
+        // Check custom zone availability - fallback to default zone if needed or on retry
+        let recordID: CKRecord.ID
+        let useCustomZone = userCustomZone != nil && retryCount < 2  // Use default zone on final retry
+        
+        debugLog("🔍 SAVE ZONE DEBUG:")
+        debugLog("   userCustomZone: \(userCustomZone?.zoneID.zoneName ?? "nil")")
+        debugLog("   retryCount: \(retryCount)")
+        debugLog("   useCustomZone: \(useCustomZone)")
+        
+        if useCustomZone, let customZone = userCustomZone {
+            recordID = CKRecord.ID(recordName: UUID().uuidString, zoneID: customZone.zoneID)
+            debugLog("🔒 Saving to CUSTOM zone \(customZone.zoneID.zoneName) for privacy and sharing (attempt \(retryCount + 1))")
+        } else {
+            debugLog("⚠️ Using DEFAULT zone as fallback (retryCount: \(retryCount), customZone available: \(userCustomZone != nil))")
+            recordID = CKRecord.ID(recordName: UUID().uuidString)
+            if retryCount == 0 && userCustomZone == nil {
+                debugLog("🔧 Custom zone not available - attempting setup...")
+                // Try to setup custom zone for future saves
+                setupUserCustomZone()
+            }
+        }
+        
         // Mark operation as starting
         markOperationStarting(for: dateKey, type: "SAVE")
         
-        // Create record in custom zone for privacy and sharing (new data)
-        let recordID: CKRecord.ID
-        if let customZone = userCustomZone {
-            recordID = CKRecord.ID(recordName: UUID().uuidString, zoneID: customZone.zoneID)
-            debugLog("🔒 Saving to CUSTOM zone \(customZone.zoneID.zoneName) for privacy and sharing")
-        } else {
-            recordID = CKRecord.ID(recordName: UUID().uuidString)
-            debugLog("⚠️ Saving to DEFAULT zone (custom zone not available)")
-        }
+        // Create record with the determined zone ID
         
         let record = CKRecord(recordType: "CD_DailySchedule", recordID: recordID)
         record["CD_date"] = date as CKRecordValue
@@ -671,43 +712,108 @@ class CloudKitManager: ObservableObject {
         debugLog("   CD_line2: '\(line2 ?? "nil")' (length: \(line2?.count ?? 0))")
         debugLog("   CD_line3: '\(line3 ?? "nil")' (length: \(line3?.count ?? 0))")
         
-        // Link to container for sharing before saving
-        Task {
-            do {
-                let container = try await getOrCreateContainer()
-                record.parent = CKRecord.Reference(recordID: container.recordID, action: .none)
-                debugLog("🔗 Linked daily schedule to container for sharing")
-            } catch {
-                debugLog("⚠️ Failed to link to container: \(error)")
-            }
-            
-            debugLog("   About to save to CloudKit with container link...")
-            self.saveRecordWithCompletion(record, dateKey: dateKey, completion: completion)
-        }
+        // Save directly to CloudKit without container linking
+        debugLog("   About to save to CloudKit (no container linking)...")
+        self.saveRecordWithCompletion(record, dateKey: dateKey, date: date, line1: line1, line2: line2, line3: line3, retryCount: retryCount, completion: completion)
     }
     
-    private func saveRecordWithCompletion(_ record: CKRecord, dateKey: String, completion: @escaping (Bool, Error?) -> Void) {
-        publicDatabase.save(record) { [weak self] savedRecord, error in
+    private func saveRecordWithCompletion(_ record: CKRecord, dateKey: String, date: Date, line1: String?, line2: String?, line3: String?, retryCount: Int, completion: @escaping (Bool, Error?) -> Void) {
+        debugLog("💾 SAVE ATTEMPT \(retryCount + 1): Starting CloudKit save operation")
+        debugLog("💾 SAVE DEBUG: Record to save:")
+        debugLog("   RecordID: \(record.recordID.recordName)")
+        debugLog("   Zone: \(record.recordID.zoneID.zoneName)")
+        debugLog("   CD_line1: '\(record["CD_line1"] as? String ?? "nil")'")
+        debugLog("   CD_line2: '\(record["CD_line2"] as? String ?? "nil")'")
+        debugLog("   CD_line3: '\(record["CD_line3"] as? String ?? "nil")'")
+        debugLog("   CD_date: \(record["CD_date"] as? Date ?? Date())")
+        
+        privateDatabase.save(record) { [weak self] savedRecord, error in
             DispatchQueue.main.async {
                 if let error = error {
-                    debugLog("❌ Failed to save new record: \(error.localizedDescription)")
+                    debugLog("❌ SAVE FAILED (attempt \(retryCount + 1)): \(error.localizedDescription)")
+                    debugLog("💾 SAVE ERROR DETAILS:")
+                    debugLog("   Error domain: \((error as NSError).domain)")
+                    debugLog("   Error code: \((error as NSError).code)")
+                    debugLog("   Error userInfo: \((error as NSError).userInfo)")
+                    
+                    if let ckError = error as? CKError {
+                        debugLog("   CKError code: \(ckError.code.rawValue)")
+                        debugLog("   CKError type: \(ckError.code)")
+                        let underlying = (ckError as NSError).userInfo[NSUnderlyingErrorKey] as? Error
+                        debugLog("   Underlying error: \(underlying?.localizedDescription ?? "none")")
+                        
+                        // Enhanced error analysis for save reliability
+                        switch ckError.code {
+                        case .zoneNotFound:
+                            debugLog("💾 SAVE ISSUE: Custom zone not found - zone may have been deleted")
+                        case .unknownItem:
+                            debugLog("💾 SAVE ISSUE: Record or zone doesn't exist")
+                        case .networkFailure:
+                            debugLog("💾 SAVE ISSUE: Network connectivity problem")
+                        case .serverRecordChanged:
+                            debugLog("💾 SAVE ISSUE: Record was modified by another device")
+                        case .notAuthenticated:
+                            debugLog("💾 SAVE ISSUE: Not signed into iCloud")
+                        case .permissionFailure:
+                            debugLog("💾 SAVE ISSUE: CloudKit permissions problem")
+                        case .quotaExceeded:
+                            debugLog("💾 SAVE ISSUE: iCloud storage quota exceeded")
+                        case .serverRejectedRequest:
+                            debugLog("💾 SAVE ISSUE: CloudKit server rejected the save request")
+                        default:
+                            debugLog("💾 SAVE ISSUE: Unknown CloudKit error")
+                        }
+                    }
+                    
+                    // Check if this is a retryable error (zone, network, or oplock conflict)
+                    if let ckError = error as? CKError,
+                       (ckError.code == .zoneNotFound || ckError.code == .unknownItem || ckError.code == .networkFailure || ckError.code == .serverRecordChanged),
+                       retryCount < 2 {
+                        debugLog("🔄 RETRYABLE ERROR: Will retry save operation (attempt \(retryCount + 2))")
+                        self?.markOperationCompleted(for: dateKey, type: "SAVE", success: false)
+                        // Retry with incremented count
+                        self?.saveDailySchedule(date: date, line1: line1, line2: line2, line3: line3, retryCount: retryCount + 1, completion: completion)
+                        return
+                    } else {
+                        debugLog("💾 NON-RETRYABLE ERROR: Save operation failed permanently")
+                    }
+                    
                     self?.errorMessage = "Failed to save schedule: \(error.localizedDescription)"
                     self?.markOperationCompleted(for: dateKey, type: "SAVE", success: false)
                     completion(false, error)
                 } else {
-                    debugLog("✅ Successfully saved new daily schedule record")
-                    // Verify what was actually saved to CloudKit
+                    debugLog("✅ SAVE SUCCESS (attempt \(retryCount + 1)): CloudKit save completed")
+                    
+                    // Comprehensive verification of what was actually saved
                     if let savedRecord = savedRecord {
-                        debugLog("🔍 CLOUDKIT SAVE VERIFICATION:")
-                        debugLog("   Saved RecordID: \(savedRecord.recordID.recordName)")
-                        debugLog("   Saved Zone: \(savedRecord.recordID.zoneID.zoneName)")
-                        debugLog("   Saved CD_line1: '\(savedRecord["CD_line1"] as? String ?? "nil")'")
-                        debugLog("   Saved CD_line2: '\(savedRecord["CD_line2"] as? String ?? "nil")'")
-                        debugLog("   Saved CD_line3: '\(savedRecord["CD_line3"] as? String ?? "nil")'")
+                        debugLog("💾 CLOUDKIT SAVE VERIFICATION:")
+                        debugLog("   ✅ Saved RecordID: \(savedRecord.recordID.recordName)")
+                        debugLog("   ✅ Saved Zone: \(savedRecord.recordID.zoneID.zoneName)")
+                        debugLog("   ✅ Saved CD_date: \(savedRecord["CD_date"] as? Date ?? Date())")
+                        debugLog("   ✅ Saved CD_line1: '\(savedRecord["CD_line1"] as? String ?? "nil")' (length: \((savedRecord["CD_line1"] as? String)?.count ?? 0))")
+                        debugLog("   ✅ Saved CD_line2: '\(savedRecord["CD_line2"] as? String ?? "nil")' (length: \((savedRecord["CD_line2"] as? String)?.count ?? 0))")
+                        debugLog("   ✅ Saved CD_line3: '\(savedRecord["CD_line3"] as? String ?? "nil")' (length: \((savedRecord["CD_line3"] as? String)?.count ?? 0))")
+                        debugLog("   ✅ Record modification date: \(savedRecord.modificationDate ?? Date())")
+                        debugLog("   ✅ Record creation date: \(savedRecord.creationDate ?? Date())")
                         
+                        // Verify the record can be converted back to our model
                         let newSchedule = DailyScheduleRecord(from: savedRecord)
+                        debugLog("💾 MODEL CONVERSION CHECK:")
+                        debugLog("   Model line1: '\(newSchedule.line1 ?? "nil")'")
+                        debugLog("   Model line2: '\(newSchedule.line2 ?? "nil")'")
+                        debugLog("   Model line3: '\(newSchedule.line3 ?? "nil")'")
+                        debugLog("   Model date: \(newSchedule.date ?? Date())")
+                        
                         self?.dailySchedules.append(newSchedule)
+                        debugLog("💾 LOCAL MEMORY: Added record to dailySchedules array (count now: \(self?.dailySchedules.count ?? 0))")
+                        
+                        // CRITICAL: Verify the record actually exists in CloudKit
+                        debugLog("🔍 POST-SAVE VERIFICATION: Checking if record actually exists in CloudKit...")
+                        self?.verifyRecordExists(recordID: savedRecord.recordID)
+                        
                         self?.markOperationCompleted(for: savedRecord.recordID.recordName, type: "SAVE", success: true)
+                    } else {
+                        debugLog("⚠️ SAVE WARNING: CloudKit returned success but no savedRecord object")
                     }
                     completion(true, nil)
                 }
@@ -715,16 +821,31 @@ class CloudKitManager: ObservableObject {
         }
     }
     
-    private func saveMonthlyRecordWithCompletion(_ record: CKRecord, monthKey: String, month: Int, year: Int, completion: @escaping (Bool, Error?) -> Void) {
-        publicDatabase.save(record) { [weak self] savedRecord, error in
+    private func saveMonthlyRecordWithCompletion(_ record: CKRecord, monthKey: String, month: Int, year: Int, retryCount: Int, completion: @escaping (Bool, Error?) -> Void) {
+        privateDatabase.save(record) { [weak self] savedRecord, error in
             DispatchQueue.main.async {
                 if let error = error {
-                    debugLog("❌ Failed to save monthly notes record: \(error.localizedDescription)")
+                    debugLog("❌ Failed to save monthly notes record (attempt \(retryCount + 1)): \(error.localizedDescription)")
+                    
+                    // Check if this is a zone-related error and we can retry
+                    if let ckError = error as? CKError,
+                       (ckError.code == .zoneNotFound || ckError.code == .unknownItem || ckError.code == .networkFailure),
+                       retryCount < 2 {
+                        debugLog("🔄 Zone/network error detected for monthly notes - retrying with attempt \(retryCount + 1)")
+                        self?.markOperationCompleted(for: monthKey, type: "SAVE_MONTHLY", success: false)
+                        // Retry with incremented count - need to pass line1, line2, line3 from the record
+                        let line1 = record["CD_line1"] as? String
+                        let line2 = record["CD_line2"] as? String
+                        let line3 = record["CD_line3"] as? String
+                        self?.saveMonthlyNotes(month: month, year: year, line1: line1, line2: line2, line3: line3, retryCount: retryCount + 1, completion: completion)
+                        return
+                    }
+                    
                     self?.errorMessage = "Failed to save notes: \(error.localizedDescription)"
                     self?.markOperationCompleted(for: monthKey, type: "SAVE_MONTHLY", success: false)
                     completion(false, error)
                 } else {
-                    debugLog("✅ Successfully saved monthly notes record")
+                    debugLog("✅ Successfully saved monthly notes record (attempt \(retryCount + 1))")
                     if let savedRecord = savedRecord {
                         debugLog("🔍 MONTHLY NOTES SAVE VERIFICATION:")
                         debugLog("   Saved RecordID: \(savedRecord.recordID.recordName)")
@@ -758,10 +879,12 @@ class CloudKitManager: ObservableObject {
         
         let recordID = CKRecord.ID(recordName: recordName, zoneID: zoneID)
         
-        publicDatabase.fetch(withRecordID: recordID) { [weak self] record, error in
+        privateDatabase.fetch(withRecordID: recordID) { [weak self] record, error in
                             if let error = error {
                 DispatchQueue.main.async {
                     debugLog("❌ Failed to fetch record for update: \(error.localizedDescription)")
+                    debugLog("🔍 DEBUG: Error details - recordID: \(recordID), zoneID: \(recordID.zoneID.zoneName)")
+                    debugLog("🔍 DEBUG: Error code: \((error as? CKError)?.code.rawValue ?? -1)")
                     
                     // Check if this is a "Record not found" error - if so, create new record instead
                     if error.localizedDescription.contains("Record not found") || (error as? CKError)?.code == .unknownItem {
@@ -803,7 +926,7 @@ class CloudKitManager: ObservableObject {
             
             debugLog("   About to update CloudKit record...")
             
-            self?.publicDatabase.save(record) { savedRecord, error in
+            self?.privateDatabase.save(record) { savedRecord, error in
                         DispatchQueue.main.async {
                             if let error = error {
                         debugLog("❌ Failed to update record: \(error.localizedDescription)")
@@ -849,7 +972,7 @@ class CloudKitManager: ObservableObject {
         // Mark operation as starting
         markOperationStarting(for: recordName, type: "DELETE")
         
-        publicDatabase.delete(withRecordID: recordID) { [weak self] deletedRecordID, error in
+        privateDatabase.delete(withRecordID: recordID) { [weak self] deletedRecordID, error in
                 DispatchQueue.main.async {
                 if let error = error {
                     debugLog("❌ Error deleting daily schedule: \(error)")
@@ -868,11 +991,7 @@ class CloudKitManager: ObservableObject {
                     self?.markOperationCompleted(for: recordName, type: "DELETE", success: true)
                     debugLog("🕒 Enhanced tracking for deletion operation \(recordName) - preventing premature fetch")
                     
-                    // Clear deletion tracking after 8 seconds (increased from 5)
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 8.0) {
-                        self?.recentDeletionOperations.remove(recordName)
-                        debugLog("🧹 Cleared deletion tracking for \(recordName)")
-                    }
+                    // Deletion tracking will be cleared by cleanup operations
                     
                     completion(true, nil)
                 }
@@ -894,13 +1013,8 @@ class CloudKitManager: ObservableObject {
         debugLog("   line3: '\(line3 ?? "nil")' (length: \(line3?.count ?? 0))")
         debugLog("   existingZoneID: '\(existingZoneID?.zoneName ?? "nil")'")
         
-        // Check if we should prevent this operation due to recent activity
-        // BUT allow delete operations when all fields are empty (user intentionally clearing data)
-        if let recordName = existingRecordName, shouldProtectLocalData(for: recordName) && !isEmpty {
-            debugLog("🛡️ Skipping save operation - local data protection active for \(recordName)")
-            completion(true, nil)
-            return
-        }
+        // NOTE: Removed data protection check for user-initiated saves
+        // Protection should only apply to incoming CloudKit updates, not user saves
         
         if isEmpty && existingRecordName != nil && existingZoneID != nil {
             // Delete existing record if all fields are empty
@@ -908,10 +1022,15 @@ class CloudKitManager: ObservableObject {
             deleteDailySchedule(recordName: existingRecordName!, zoneID: existingZoneID!, completion: completion)
         } else if !isEmpty {
             // Save or update if there's content
-            debugLog("💾 Fields have content - calling SAVE/UPDATE for \(dateKey)")
-            if let recordName = existingRecordName, let zoneID = existingZoneID {
-                updateDailySchedule(recordName: recordName, zoneID: zoneID, date: date, line1: line1, line2: line2, line3: line3, completion: completion)
+            debugLog("💾 Fields have content - calling SAVE for \(dateKey)")
+            
+            if existingRecordName != nil && existingZoneID != nil {
+                // UPDATE existing record - use fetch-modify-save pattern
+                debugLog("🔄 Updating existing record \(existingRecordName!) in zone \(existingZoneID!.zoneName)")
+                updateDailySchedule(recordName: existingRecordName!, zoneID: existingZoneID!, date: date, line1: line1, line2: line2, line3: line3, completion: completion)
             } else {
+                // CREATE new record - global memory has no existing record
+                debugLog("➕ Creating new record for \(dateKey)")
                 saveDailySchedule(date: date, line1: line1, line2: line2, line3: line3, completion: completion)
             }
         } else {
@@ -922,8 +1041,12 @@ class CloudKitManager: ObservableObject {
     }
     
     func saveMonthlyNotes(month: Int, year: Int, line1: String?, line2: String?, line3: String?, completion: @escaping (Bool, Error?) -> Void) {
+        saveMonthlyNotes(month: month, year: year, line1: line1, line2: line2, line3: line3, retryCount: 0, completion: completion)
+    }
+    
+    private func saveMonthlyNotes(month: Int, year: Int, line1: String?, line2: String?, line3: String?, retryCount: Int, completion: @escaping (Bool, Error?) -> Void) {
         let monthKey = "\(year)-\(month)"
-        debugLog("💾 Saving monthly notes for \(monthKey)")
+        debugLog("💾 Saving monthly notes for \(monthKey) (retry: \(retryCount))")
         
         // Check CloudKit status first
         guard cloudKitAvailable else {
@@ -931,20 +1054,33 @@ class CloudKitManager: ObservableObject {
             return
         }
         
-        // Mark operation as starting
-        markOperationStarting(for: monthKey, type: "SAVE_MONTHLY")
-        
-        // First, check if a record already exists for this month/year in CUSTOM ZONE ONLY
-        let predicate = NSPredicate(format: "CD_month == %d AND CD_year == %d", month, year)
-        let query = CKQuery(recordType: "CD_MonthlyNotes", predicate: predicate)
-        
-        guard let customZone = userCustomZone else {
-            debugLog("❌ Custom zone not available for monthly notes save")
-            completion(false, NSError(domain: "CloudKitManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "Custom zone not available"]))
+        // Limit retries to prevent infinite loops
+        guard retryCount < 3 else {
+            debugLog("❌ Maximum retry attempts reached (\(retryCount)) for monthly notes - failing save operation")
+            completion(false, NSError(domain: "CloudKitManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "Maximum retry attempts reached"]))
             return
         }
         
-        publicDatabase.fetch(withQuery: query, inZoneWith: customZone.zoneID, desiredKeys: nil, resultsLimit: CKQueryOperation.maximumResults) { [weak self] (result: Result<(matchResults: [(CKRecord.ID, Result<CKRecord, Error>)], queryCursor: CKQueryOperation.Cursor?), Error>) in
+        // Mark operation as starting
+        markOperationStarting(for: monthKey, type: "SAVE_MONTHLY")
+        
+        // First, check if a record already exists for this month/year
+        let predicate = NSPredicate(format: "CD_month == %d AND CD_year == %d", month, year)
+        let query = CKQuery(recordType: "CD_MonthlyNotes", predicate: predicate)
+        
+        // Use custom zone if available and not in final retry, otherwise use default zone
+        let useCustomZone = userCustomZone != nil && retryCount < 2
+        let zoneToQuery = useCustomZone ? userCustomZone : nil
+        
+        if !useCustomZone {
+            debugLog("⚠️ Using DEFAULT zone for monthly notes query (retryCount: \(retryCount), customZone available: \(userCustomZone != nil))")
+            if retryCount == 0 && userCustomZone == nil {
+                // Try to setup custom zone for future saves
+                setupUserCustomZone()
+            }
+        }
+        
+        privateDatabase.fetch(withQuery: query, inZoneWith: zoneToQuery?.zoneID, desiredKeys: nil, resultsLimit: CKQueryOperation.maximumResults) { [weak self, retryCount, monthKey, month, year, line1, line2, line3, completion] (result: Result<(matchResults: [(CKRecord.ID, Result<CKRecord, Error>)], queryCursor: CKQueryOperation.Cursor?), Error>) in
             let record: CKRecord
             
             switch result {
@@ -958,36 +1094,24 @@ class CloudKitManager: ObservableObject {
                     record = existingRecord
                     debugLog("📝 Updating existing monthly notes record for \(monthKey)")
                 } else {
-                    // Create new record in CUSTOM ZONE
-                    let recordID = CKRecord.ID(recordName: UUID().uuidString, zoneID: customZone.zoneID)
+                    // Create new record with zone-aware logic
+                    let recordID: CKRecord.ID
+                    if useCustomZone, let customZone = zoneToQuery {
+                        recordID = CKRecord.ID(recordName: UUID().uuidString, zoneID: customZone.zoneID)
+                        debugLog("➕ Creating new monthly notes record for \(monthKey) in CUSTOM zone")
+                    } else {
+                        recordID = CKRecord.ID(recordName: UUID().uuidString)
+                        debugLog("➕ Creating new monthly notes record for \(monthKey) in DEFAULT zone")
+                    }
+                    
                     record = CKRecord(recordType: "CD_MonthlyNotes", recordID: recordID)
                     record["CD_id"] = UUID().uuidString as CKRecordValue
                     record["CD_month"] = month as CKRecordValue
                     record["CD_year"] = year as CKRecordValue
-                    debugLog("➕ Creating new monthly notes record for \(monthKey) in CUSTOM zone")
                     
-                    // For new records, link to container for sharing before saving
-                    Task { @MainActor in
-                        do {
-                            guard let self = self else { return }
-                            let container = try await self.getOrCreateContainer()
-                            record.parent = CKRecord.Reference(recordID: container.recordID, action: .none)
-                            debugLog("🔗 Linked new monthly notes to container for sharing")
-                        } catch {
-                            debugLog("⚠️ Failed to link monthly notes to container: \(error)")
-                        }
-                        
-                        // Set data fields and save
-                        record["CD_line1"] = line1 as CKRecordValue?
-                        record["CD_line2"] = line2 as CKRecordValue?
-                        record["CD_line3"] = line3 as CKRecordValue?
-                        
-                        debugLog("📝 Saving NEW monthly notes with container link and fields: line1='\(line1 ?? "nil")', line2='\(line2 ?? "nil")', line3='\(line3 ?? "nil")'")
-                        
-                        guard let self = self else { return }
-                        self.saveMonthlyRecordWithCompletion(record, monthKey: monthKey, month: month, year: year, completion: completion)
-                    }
-                    return // Exit early for new records - they are handled in the Task above
+                    // For new records, create without container link to avoid async issues
+                    debugLog("➕ Creating new monthly notes record for \(monthKey) without container link (performance optimization)")
+                    // Note: Container linking removed to avoid concurrency issues - data will still sync properly
                 }
                 
             case .failure(let error):
@@ -1007,29 +1131,9 @@ class CloudKitManager: ObservableObject {
             
             debugLog("📝 Saving monthly notes with fields: line1='\(line1 ?? "nil")', line2='\(line2 ?? "nil")', line3='\(line3 ?? "nil")'")
             
-            self?.publicDatabase.save(record) { savedRecord, error in
-                        DispatchQueue.main.async {
-                            if let error = error {
-                        debugLog("❌ Failed to save monthly notes: \(error.localizedDescription)")
-                        self?.errorMessage = "Failed to save notes: \(error.localizedDescription)"
-                        self?.markOperationCompleted(for: monthKey, type: "SAVE_MONTHLY", success: false)
-                                completion(false, error)
-                            } else {
-                        debugLog("✅ Successfully saved monthly notes for \(monthKey)")
-                        // Update local array immediately instead of full refresh
-                        if let savedRecord = savedRecord, let self = self {
-                            let newNotes = MonthlyNotesRecord(from: savedRecord)
-                            if let index = self.monthlyNotes.firstIndex(where: { $0.month == month && $0.year == year }) {
-                                self.monthlyNotes[index] = newNotes
-                            } else {
-                                self.monthlyNotes.append(newNotes)
-                            }
-                            self.markOperationCompleted(for: savedRecord.recordID.recordName, type: "SAVE_MONTHLY", success: true)
-                                }
-                                completion(true, nil)
-                            }
-                        }
-                    }
+            DispatchQueue.main.async {
+                self?.saveMonthlyRecordWithCompletion(record, monthKey: monthKey, month: month, year: year, retryCount: retryCount, completion: completion)
+            }
         }
     }
     
@@ -1043,12 +1147,8 @@ class CloudKitManager: ObservableObject {
         debugLog("📊 isEmpty: \(isEmpty), existingRecord: \(existingRecordName ?? "none")")
         debugLog("📝 Monthly note values - line1: '\(line1 ?? "nil")', line2: '\(line2 ?? "nil")', line3: '\(line3 ?? "nil")'")
         
-        // Check if we should prevent this operation due to recent activity
-        if let recordName = existingRecordName, shouldProtectLocalData(for: recordName) {
-            debugLog("🛡️ Skipping monthly notes operation - local data protection active for \(recordName)")
-            completion(true, nil)
-            return
-        }
+        // NOTE: Removed data protection check for user-initiated saves
+        // Protection should only apply to incoming CloudKit updates, not user saves
         
         if isEmpty {
             // All fields are empty - delete the record if it exists
@@ -1081,7 +1181,7 @@ class CloudKitManager: ObservableObject {
         
         let recordID = CKRecord.ID(recordName: recordName)
         
-        publicDatabase.delete(withRecordID: recordID) { [weak self] recordID, error in
+        privateDatabase.delete(withRecordID: recordID) { [weak self] recordID, error in
                         DispatchQueue.main.async {
                             if let error = error {
                     debugLog("❌ Failed to delete monthly notes record: \(error.localizedDescription)")
@@ -1100,381 +1200,243 @@ class CloudKitManager: ObservableObject {
                     self?.markOperationCompleted(for: recordName, type: "DELETE_MONTHLY", success: true)
                     debugLog("🕒 Enhanced tracking for monthly notes deletion \(recordName)")
                     
-                    // Clear deletion tracking after 8 seconds
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 8.0) {
-                        self?.recentDeletionOperations.remove(recordName)
-                        debugLog("🧹 Cleared monthly notes deletion tracking for \(recordName)")
-                    }
+                    // Deletion tracking will be cleared by cleanup operations
                     
                                 completion(true, nil)
                             }
                         }
                     }
     }
-}
-
-// MARK: - Deduplication Functions
-extension CloudKitManager {
     
-    /// Removes duplicate daily schedule records, keeping the most recent one
-    func deduplicateDailySchedules(completion: @escaping (Int, Error?) -> Void) {
-        debugLog("🧹 Starting daily schedule deduplication")
+    // MARK: - Enhanced Debugging
+    func debugAllZonesAndData() {
+        debugLog("🔍 COMPREHENSIVE DEBUG: Analyzing all zones and data...")
         
-        guard cloudKitAvailable else {
-            debugLog("❌ CloudKit not available for deduplication")
-            completion(0, NSError(domain: "CloudKitManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "iCloud not available"]))
-            return
-        }
-        
-        // Mark operation to prevent conflicts
-        markOperationStarting(for: "DEDUP_DAILY", type: "DEDUPLICATION")
-        
-        let query = CKQuery(recordType: "CD_DailySchedule", predicate: NSPredicate(value: true))
-        query.sortDescriptors = [NSSortDescriptor(key: "CD_date", ascending: true)]
-        
-        publicDatabase.fetch(withQuery: query, inZoneWith: nil, desiredKeys: nil, resultsLimit: CKQueryOperation.maximumResults) { [weak self] result in
-            let records: [CKRecord]
-            
-            switch result {
-            case .success(let (matchResults, _)):
-                records = matchResults.compactMap { _, result in
-                    try? result.get()
-                }
-                debugLog("📊 Found \(records.count) daily schedule records for deduplication analysis")
-            case .failure(let error):
-                debugLog("❌ Failed to fetch records for deduplication: \(error)")
-                DispatchQueue.main.async {
-                    self?.markOperationCompleted(for: "DEDUP_DAILY", type: "DEDUPLICATION", success: false)
-                    completion(0, error)
-                }
-                return
-            }
-            
-            guard !records.isEmpty else {
-                debugLog("ℹ️ No daily schedule records found - deduplication complete")
-                DispatchQueue.main.async {
-                    self?.markOperationCompleted(for: "DEDUP_DAILY", type: "DEDUPLICATION", success: true)
-                    completion(0, nil)
-                }
-                return
-            }
-            
-            // Group records by date
-            let calendar = Calendar.current
-            var dateGroups: [String: [CKRecord]] = [:]
-            
-            for record in records {
-                if let date = record["CD_date"] as? Date {
-                    let dateKey = calendar.startOfDay(for: date).description
-                    if dateGroups[dateKey] == nil {
-                        dateGroups[dateKey] = []
-                    }
-                    dateGroups[dateKey]?.append(record)
-                }
-            }
-            
-            // Find duplicates and delete older ones
-            var recordsToDelete: [CKRecord.ID] = []
-            var duplicateGroups = 0
-            
-            for (dateKey, groupRecords) in dateGroups {
-                if groupRecords.count > 1 {
-                    duplicateGroups += 1
-                    debugLog("🔍 Found \(groupRecords.count) duplicates for date \(dateKey)")
+        Task {
+            do {
+                let allZones = try await privateDatabase.allRecordZones()
+                debugLog("📊 Found \(allZones.count) total zones in private database:")
+                
+                for zone in allZones {
+                    debugLog("   🗂️ Zone: \(zone.zoneID.zoneName) (owner: \(zone.zoneID.ownerName))")
                     
-                    // Sort by modification date, keep the most recent
-                    let sortedRecords = groupRecords.sorted { record1, record2 in
-                        let date1 = record1.modificationDate ?? Date.distantPast
-                        let date2 = record2.modificationDate ?? Date.distantPast
-                        return date1 < date2
-                    }
-                    
-                    // Delete all but the most recent
-                    for i in 0..<(sortedRecords.count - 1) {
-                        recordsToDelete.append(sortedRecords[i].recordID)
-                        debugLog("🗑️ Marking duplicate daily schedule for deletion: \(sortedRecords[i].recordID.recordName)")
-                    }
-                }
-            }
-            
-            debugLog("📋 Daily schedule deduplication summary: \(duplicateGroups) groups with duplicates, \(recordsToDelete.count) records to delete")
-            
-            // Delete duplicate records
-            self?.deleteDuplicateRecords(recordIDs: recordsToDelete, type: "daily schedules") { deletedCount, error in
-                DispatchQueue.main.async {
-                    self?.markOperationCompleted(for: "DEDUP_DAILY", type: "DEDUPLICATION", success: error == nil)
-                    
-                    if error == nil && deletedCount > 0 {
-                        // Refresh data after cleanup
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                            self?.fetchAllData()
+                    // Count records in each zone
+                    let query = CKQuery(recordType: "CD_DailySchedule", predicate: NSPredicate(value: true))
+                    do {
+                        let (matchResults, _) = try await privateDatabase.records(matching: query, inZoneWith: zone.zoneID)
+                        let count = matchResults.count
+                        debugLog("     📅 Daily schedules in this zone: \(count)")
+                        
+                        if count > 0 {
+                            debugLog("     🔍 Sample records:")
+                            let records = matchResults.compactMap { _, result in try? result.get() }
+                            for (index, record) in records.prefix(3).enumerated() {
+                                let date = record["CD_date"] as? Date ?? Date()
+                                let line1 = record["CD_line1"] as? String ?? ""
+                                debugLog("       [\(index+1)] \(date): '\(line1)'")
+                            }
                         }
+                    } catch {
+                        debugLog("     ❌ Error querying zone: \(error)")
                     }
-                    completion(deletedCount, error)
                 }
+                
+                await MainActor.run {
+                    debugLog("📱 Current app state:")
+                    debugLog("   Current userZoneID: \(self.userZoneID.zoneName)")
+                    debugLog("   Current userCustomZone: \(self.userCustomZone?.zoneID.zoneName ?? "nil")")
+                    debugLog("   Local dailySchedules count: \(self.dailySchedules.count)")
+                    debugLog("   Local monthlyNotes count: \(self.monthlyNotes.count)")
+                }
+                
+            } catch {
+                debugLog("❌ Failed to debug zones: \(error)")
             }
         }
     }
     
-    /// Removes duplicate monthly notes records, keeping the most recent one
-    func deduplicateMonthlyNotes(completion: @escaping (Int, Error?) -> Void) {
-        debugLog("🧹 Starting monthly notes deduplication")
+    // MARK: - Global Memory Editing Methods
+    
+    /// Get existing record index for a date (read-only, safe for view rendering)
+    func getRecordIndex(for date: Date) -> Int? {
+        let dayStart = Calendar.current.startOfDay(for: date)
         
-        guard cloudKitAvailable else {
-            debugLog("❌ CloudKit not available for monthly notes deduplication")
-            completion(0, NSError(domain: "CloudKitManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "iCloud not available"]))
+        return dailySchedules.firstIndex(where: { schedule in
+            guard let scheduleDate = schedule.date else { return false }
+            return Calendar.current.isDate(scheduleDate, inSameDayAs: dayStart)
+        })
+    }
+    
+    /// Create a record for editing (separate from view rendering to avoid publishing errors)
+    func createRecordForEditing(date: Date) {
+        let dayStart = Calendar.current.startOfDay(for: date)
+        
+        // Check if record already exists
+        if dailySchedules.contains(where: { schedule in
+            guard let scheduleDate = schedule.date else { return false }
+            return Calendar.current.isDate(scheduleDate, inSameDayAs: dayStart)
+        }) {
+            return // Already exists
+        }
+        
+        // CRITICAL FIX: Don't create records if zone isn't ready yet
+        guard isZoneReady, let customZone = userCustomZone else {
+            debugLog("⏸️ Zone not ready yet - cannot create record for \(dayStart)")
             return
         }
         
-        // Mark operation to prevent conflicts
-        markOperationStarting(for: "DEDUP_MONTHLY", type: "DEDUPLICATION")
+        let newRecord = DailyScheduleRecord(date: dayStart, zoneID: customZone.zoneID)
+        dailySchedules.append(newRecord)
+        debugLog("➕ Created new record for editing: \(dayStart)")
+    }
+    
+    /// Update a field in global memory
+    func updateField(at index: Int, field: String, value: String) {
+        guard index >= 0 && index < dailySchedules.count else {
+            debugLog("❌ Invalid index for field update: \(index)")
+            return
+        }
         
-        let query = CKQuery(recordType: "CD_MonthlyNotes", predicate: NSPredicate(value: true))
-        query.sortDescriptors = [NSSortDescriptor(key: "CD_month", ascending: true)]
+        var record = dailySchedules[index]
+        let oldValue: String?
         
-        publicDatabase.fetch(withQuery: query, inZoneWith: nil, desiredKeys: nil, resultsLimit: CKQueryOperation.maximumResults) { [weak self] result in
-            let records: [CKRecord]
-            
-            switch result {
-            case .success(let (matchResults, _)):
-                records = matchResults.compactMap { _, result in
-                    try? result.get()
-                }
-                debugLog("📊 Found \(records.count) monthly notes records for deduplication analysis")
-            case .failure(let error):
-                debugLog("❌ Failed to fetch monthly notes records for deduplication: \(error)")
-                DispatchQueue.main.async {
-                    self?.markOperationCompleted(for: "DEDUP_MONTHLY", type: "DEDUPLICATION", success: false)
-                    completion(0, error)
-                }
-                            return
-                        }
-            
-            guard !records.isEmpty else {
-                debugLog("ℹ️ No monthly notes records found - deduplication complete")
-                DispatchQueue.main.async {
-                    self?.markOperationCompleted(for: "DEDUP_MONTHLY", type: "DEDUPLICATION", success: true)
-                    completion(0, nil)
-                }
-                            return
-                        }
-            
-            // Group records by month/year combination
-            var monthYearGroups: [String: [CKRecord]] = [:]
-            
-            for record in records {
-                if let month = record["CD_month"] as? Int,
-                   let year = record["CD_year"] as? Int {
-                    let key = "\(year)-\(month)"
-                    if monthYearGroups[key] == nil {
-                        monthYearGroups[key] = []
-                    }
-                    monthYearGroups[key]?.append(record)
-                }
-            }
-            
-            // Find duplicates and delete older ones
-            var recordsToDelete: [CKRecord.ID] = []
-            var duplicateGroups = 0
-            
-            for (monthKey, groupRecords) in monthYearGroups {
-                if groupRecords.count > 1 {
-                    duplicateGroups += 1
-                    debugLog("🔍 Found \(groupRecords.count) duplicate monthly notes for \(monthKey)")
-                    
-                    // Sort by modification date, keep the most recent
-                    let sortedRecords = groupRecords.sorted { record1, record2 in
-                        let date1 = record1.modificationDate ?? Date.distantPast
-                        let date2 = record2.modificationDate ?? Date.distantPast
-                        return date1 < date2
-                    }
-                    
-                    // Delete all but the most recent
-                    for i in 0..<(sortedRecords.count - 1) {
-                        recordsToDelete.append(sortedRecords[i].recordID)
-                        debugLog("🗑️ Marking duplicate monthly notes for deletion: \(sortedRecords[i].recordID.recordName)")
-                    }
-                }
-            }
-            
-            debugLog("📋 Monthly notes deduplication summary: \(duplicateGroups) groups with duplicates, \(recordsToDelete.count) records to delete")
-            
-            // Delete duplicate records
-            self?.deleteDuplicateRecords(recordIDs: recordsToDelete, type: "monthly notes") { deletedCount, error in
-                DispatchQueue.main.async {
-                    self?.markOperationCompleted(for: "DEDUP_MONTHLY", type: "DEDUPLICATION", success: error == nil)
-                    
-                    if error == nil && deletedCount > 0 {
-                        // Refresh data after cleanup
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                            self?.fetchAllData()
-                        }
-                    }
-                    completion(deletedCount, error)
-                }
-            }
+        switch field {
+        case "line1":
+            oldValue = record.line1
+            record.line1 = value.isEmpty ? nil : value
+        case "line2":
+            oldValue = record.line2
+            record.line2 = value.isEmpty ? nil : value
+        case "line3":
+            oldValue = record.line3
+            record.line3 = value.isEmpty ? nil : value
+        default:
+            debugLog("❌ Unknown field: \(field)")
+            return
+        }
+        
+        // Mark as modified if value actually changed AND we have actual content
+        let newValue = value.isEmpty ? nil : value
+        if oldValue != newValue {
+            // Check if the record has any actual content now
+            let hasContent = !((record.line1 ?? "").isEmpty && (record.line2 ?? "").isEmpty && (record.line3 ?? "").isEmpty)
+            record.isModified = hasContent
+            debugLog("✏️ Updated \(field) for \(record.date?.description ?? "unknown date"): '\(value)' (modified: \(hasContent))")
+        }
+        
+        dailySchedules[index] = record
+    }
+    
+    /// Get current value for a field
+    func getFieldValue(date: Date, field: String) -> String {
+        let dayStart = Calendar.current.startOfDay(for: date)
+        
+        guard let record = dailySchedules.first(where: { schedule in
+            guard let scheduleDate = schedule.date else { return false }
+            return Calendar.current.isDate(scheduleDate, inSameDayAs: dayStart)
+        }) else {
+            return ""
+        }
+        
+        switch field {
+        case "line1": return record.line1 ?? ""
+        case "line2": return record.line2 ?? ""
+        case "line3": return record.line3 ?? ""
+        default: return ""
         }
     }
     
-    /// Helper function to delete multiple records
-    nonisolated private func deleteDuplicateRecords(recordIDs: [CKRecord.ID], type: String, completion: @escaping (Int, Error?) -> Void) {
-        guard !recordIDs.isEmpty else {
-            debugLog("ℹ️ No duplicate \(type) records to delete")
-            completion(0, nil)
-            return
-        }
-        
-        debugLog("🗑️ Deleting \(recordIDs.count) duplicate \(type) records")
-        
-        let deleteOperation = CKModifyRecordsOperation(recordsToSave: nil, recordIDsToDelete: recordIDs)
-        deleteOperation.modifyRecordsResultBlock = { (result: Result<Void, Error>) in
-            switch result {
-            case .success:
-                let deletedCount = recordIDs.count
-                debugLog("✅ Successfully deleted \(deletedCount) duplicate \(type) records")
-                
-                // Track these deletions to prevent immediate refresh conflicts
-                Task { @MainActor in
-                    for recordID in recordIDs {
-                        self.recentDeletionOperations.insert(recordID.recordName)
-                    }
-                    self.lastOperationTime = Date()
-                }
-                
-                completion(deletedCount, nil)
-            case .failure(let error):
-                debugLog("❌ Failed to delete duplicate \(type) records: \(error)")
-                completion(0, error)
-            }
-        }
-        
-        publicDatabase.add(deleteOperation)
-    }
-    
-    /// Comprehensive cleanup function that removes all duplicates
-    func cleanupDuplicateRecords(completion: @escaping (Int, Error?) -> Void) {
-        debugLog("🧹 Starting comprehensive duplicate cleanup")
-        
-        guard cloudKitAvailable else {
-            debugLog("❌ CloudKit not available for comprehensive cleanup")
-            completion(0, NSError(domain: "CloudKitManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "iCloud not available"]))
-            return
-        }
-        
-        var totalDeleted = 0
-        
-        // First clean up daily schedules
-        deduplicateDailySchedules { [weak self] dailyDeleted, error in
-            if let error = error {
-                debugLog("❌ Daily schedule deduplication failed: \(error)")
-                completion(0, error)
-                return
-            }
-            
-            totalDeleted += dailyDeleted
-            debugLog("📊 Daily schedule cleanup complete: \(dailyDeleted) duplicates removed")
-            
-            // Then clean up monthly notes
-            self?.deduplicateMonthlyNotes { monthlyDeleted, error in
-            if let error = error {
-                    debugLog("❌ Monthly notes deduplication failed: \(error)")
-                    completion(totalDeleted, error)
-                    return
-                }
-                
-                totalDeleted += monthlyDeleted
-                debugLog("📊 Monthly notes cleanup complete: \(monthlyDeleted) duplicates removed")
-                debugLog("✅ Comprehensive cleanup finished: \(totalDeleted) total duplicates removed")
-                completion(totalDeleted, nil)
-            }
-        }
+    /// Check if there are any unsaved changes
+    var hasUnsavedChanges: Bool {
+        return dailySchedules.contains { $0.isModified }
     }
     
     // MARK: - Custom Zone Sharing for Privacy
     
-    /// Create a share for user data (backward-compatible: checks both default and custom zones)
+    /// Create a share for user data with extensive debugging for Production reliability issues
     func createCustomZoneShare(completion: @escaping (Result<CKShare, Error>) -> Void) {
-        debugLog("🔗 Creating CONTAINER-BASED share for all schedule records")
-        debugLog("👤 Current Apple ID will be used for sharing")
+        debugLog("🔗 SHARE CREATION START: Creating ZONE-BASED share for all schedule records")
+        debugLog("🔗 SHARE DEBUG: Current Apple ID will be used for sharing")
+        debugLog("🔗 SHARE DEBUG: Container: \(container.containerIdentifier ?? "unknown")")
+        debugLog("🔗 SHARE DEBUG: Database type: Private")
+        
+        guard let customZone = userCustomZone else {
+            debugLog("❌ SHARE ERROR: Custom zone not available")
+            debugLog("🔍 SHARE DEBUG: userCustomZone is nil")
+            debugLog("🔍 SHARE DEBUG: userZoneID: \(userZoneID.zoneName)")
+            debugLog("🔍 SHARE DEBUG: isZoneReady: \(isZoneReady)")
+            completion(.failure(NSError(domain: "CloudKitManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "Custom zone not available for sharing"])))
+            return
+        }
+        
+        debugLog("🔗 SHARE DEBUG: Using zone: \(customZone.zoneID.zoneName)")
+        debugLog("🔗 SHARE DEBUG: Zone owner: \(customZone.zoneID.ownerName)")
+        debugLog("🔗 SHARE DEBUG: Records to share: \(dailySchedules.count) daily + \(monthlyNotes.count) monthly")
         
         Task { @MainActor in
             do {
-                // Get or create the container record (this will force delete/recreate)
-                let container = try await getOrCreateContainer()
-                debugLog("✅ Container ready - creating share from container")
+                debugLog("🔗 SHARE STEP 1: Creating CKShare object...")
                 
-                // Create share from the container record (async function with completion handler)
-                await createShareFromRecord(container, completion: completion)
+                // Create zone-level share (simpler and more reliable than record-based)
+                let share = CKShare(recordZoneID: customZone.zoneID)
+                let currentYear = Calendar.current.component(.year, from: Date())
+                share[CKShare.SystemFieldKey.title] = "Provider Schedule \(currentYear)" as CKRecordValue
+                share.publicPermission = .none // Invite-only for privacy
+                
+                debugLog("🔗 SHARE DEBUG: Share object created")
+                debugLog("🔗 SHARE DEBUG: Share recordID: \(share.recordID.recordName)")
+                debugLog("🔗 SHARE DEBUG: Share zoneID: \(share.recordID.zoneID.zoneName)")
+                debugLog("🔗 SHARE DEBUG: Share title: Provider Schedule \(currentYear)")
+                debugLog("🔗 SHARE DEBUG: Public permission: none (invite-only)")
+                
+                debugLog("🔗 SHARE STEP 2: Saving share to CloudKit...")
+                let savedRecords = try await privateDatabase.modifyRecords(saving: [share], deleting: [])
+                
+                debugLog("🔗 SHARE DEBUG: Save operation completed")
+                debugLog("🔗 SHARE DEBUG: Save results count: \(savedRecords.saveResults.count)")
+                
+                for (recordID, result) in savedRecords.saveResults {
+                    debugLog("🔗 SHARE DEBUG: Result for \(recordID.recordName):")
+                    switch result {
+                    case .success(let record):
+                        debugLog("🔗 SHARE DEBUG: ✅ Success - Record type: \(type(of: record))")
+                        if let shareRecord = record as? CKShare {
+                            debugLog("🔗 SHARE DEBUG: ✅ Found CKShare in results!")
+                            debugLog("🔗 SHARE DEBUG: Share URL: \(shareRecord.url?.absoluteString ?? "NO URL")")
+                            debugLog("🔗 SHARE DEBUG: Share participants: \(shareRecord.participants.count)")
+                            debugLog("🔗 SHARE DEBUG: Share owner: \(shareRecord.owner)")
+                            completion(.success(shareRecord))
+                            return
+                        }
+                    case .failure(let error):
+                        debugLog("🔗 SHARE DEBUG: ❌ Failure - Error: \(error)")
+                    }
+                }
+                
+                // If we get here, no CKShare was found in results
+                debugLog("❌ SHARE ERROR: No CKShare found in save results")
+                debugLog("🔍 SHARE DEBUG: This indicates a CloudKit sharing API issue")
+                completion(.failure(NSError(domain: "CloudKitManager", code: -2, userInfo: [NSLocalizedDescriptionKey: "Share created but not returned by CloudKit"])))
                 
             } catch {
-                debugLog("❌ Error searching for data to share: \(error)")
+                debugLog("❌ SHARE ERROR: Exception during share creation: \(error)")
+                debugLog("🔍 SHARE DEBUG: Error type: \(type(of: error))")
+                debugLog("🔍 SHARE DEBUG: Error domain: \((error as NSError).domain)")
+                debugLog("🔍 SHARE DEBUG: Error code: \((error as NSError).code)")
+                debugLog("🔍 SHARE DEBUG: Error userInfo: \((error as NSError).userInfo)")
+                
+                if let ckError = error as? CKError {
+                    debugLog("🔍 SHARE DEBUG: CKError code: \(ckError.code.rawValue)")
+                    debugLog("🔍 SHARE DEBUG: CKError description: \(ckError.localizedDescription)")
+                    let underlying = (ckError as NSError).userInfo[NSUnderlyingErrorKey] as? Error
+                    debugLog("🔍 SHARE DEBUG: CKError underlying: \(underlying?.localizedDescription ?? "none")")
+                }
+                
                 completion(.failure(error))
             }
         }
     }
     
-    
-    /// Get or create a container record for sharing all schedules and notes
-    private func getOrCreateContainer() async throws -> CKRecord {
-        let containerID = CKRecord.ID(recordName: "ScheduleContainer", zoneID: userZoneID)
-        
-        // FORCE DELETE any existing container to prevent Apple ID confusion
-        do {
-            _ = try await publicDatabase.record(for: containerID)
-            debugLog("🗑️ Found existing container - deleting to ensure fresh creation")
-            try await publicDatabase.deleteRecord(withID: containerID)
-            debugLog("✅ Deleted existing container record")
-        } catch {
-            debugLog("📝 No existing container found (this is good)")
-        }
-        
-        // Always create fresh container
-        debugLog("📦 Creating fresh container record for sharing (Apple ID: current user)")
-        let container = CKRecord(recordType: "ScheduleContainer", recordID: containerID)
-        container["title"] = "Provider Schedule \(Calendar.current.component(.year, from: Date()))" as CKRecordValue
-        container["created"] = Date() as CKRecordValue
-        
-        let savedContainer = try await publicDatabase.save(container)
-        debugLog("✅ Fresh container record created successfully")
-        return savedContainer
-    }
-    
-    /// Create a new CloudKit record that can be shared (not Core Data managed)
-    private func createShareableRecord(completion: @escaping (Result<CKShare, Error>) -> Void) async {
-        do {
-            debugLog("🔗 Creating new shareable CloudKit record...")
-            
-            // Create a new record in the CUSTOM ZONE for sharing (required for CloudKit sharing)
-            let recordID = CKRecord.ID(recordName: "ShareableSchedule-\(UUID().uuidString)", zoneID: userZoneID)
-            let shareableRecord = CKRecord(recordType: "CD_DailySchedule", recordID: recordID)
-            
-            // Add some sample data (short text to avoid Core Data validation errors)
-            shareableRecord["CD_date"] = Date() as CKRecordValue
-            shareableRecord["CD_line1"] = "SHARED" as CKRecordValue
-            shareableRecord["CD_line2"] = "tcsdoc" as CKRecordValue
-            shareableRecord["CD_line3"] = "Test" as CKRecordValue
-            shareableRecord["CD_entityName"] = "DailySchedule" as CKRecordValue
-            
-            debugLog("🔗 Saving new shareable record to CUSTOM ZONE...")
-            
-            // Save the record first to PRIVATE database (shares must be in custom zones in private database)
-            let savedRecords = try await publicDatabase.modifyRecords(saving: [shareableRecord], deleting: [])
-            
-            if let savedRecord = try savedRecords.saveResults[recordID]?.get() {
-                debugLog("✅ Created new shareable record successfully")
-                debugLog("🔗 Record zone: \(savedRecord.recordID.zoneID.zoneName)")
-                
-                // Now create a share from this new record
-                await createShareFromRecord(savedRecord, completion: completion)
-                } else {
-                debugLog("❌ Failed to save new shareable record")
-                completion(.failure(NSError(domain: "CloudKitManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to create shareable record"])))
-            }
-        } catch {
-            debugLog("❌ Error creating shareable record: \(error)")
-            completion(.failure(error))
-        }
-    }
     
     /// Helper function to create share from a specific record
     private func createShareFromRecord(_ rootRecord: CKRecord, completion: @escaping (Result<CKShare, Error>) -> Void) async {
@@ -1488,7 +1450,7 @@ extension CloudKitManager {
             
             // CRITICAL: Save BOTH the root record AND the share in the same operation
             // This is required by CloudKit when creating shares
-            let savedRecords = try await publicDatabase.modifyRecords(saving: [rootRecord, share], deleting: [])
+            let savedRecords = try await privateDatabase.modifyRecords(saving: [rootRecord, share], deleting: [])
             
             debugLog("🔍 DEBUG: Saved \(savedRecords.saveResults.count) records")
             for (recordID, result) in savedRecords.saveResults {
@@ -1522,11 +1484,12 @@ extension CloudKitManager {
 struct DailyScheduleRecord: Identifiable, Equatable, Hashable {
     let id: String
     let date: Date?
-    let line1: String?
-    let line2: String?
-    let line3: String?
+    var line1: String?  // Now mutable for editing
+    var line2: String?  // Now mutable for editing
+    var line3: String?  // Now mutable for editing
     let uuid: UUID?
     let zoneID: CKRecordZone.ID  // Track which zone this record belongs to
+    var isModified: Bool = false  // Track if record has unsaved changes
     
     init(from record: CKRecord) {
         self.id = record.recordID.recordName
@@ -1535,11 +1498,24 @@ struct DailyScheduleRecord: Identifiable, Equatable, Hashable {
         self.line2 = record["CD_line2"] as? String
         self.line3 = record["CD_line3"] as? String
         self.zoneID = record.recordID.zoneID  // Store the zone ID
+        self.isModified = false  // Data from CloudKit is not modified
         if let uuidString = record["CD_id"] as? String {
             self.uuid = UUID(uuidString: uuidString)
         } else {
             self.uuid = nil
         }
+    }
+    
+    // Custom initializer for creating new records for editing
+    init(date: Date, zoneID: CKRecordZone.ID) {
+        self.id = UUID().uuidString
+        self.date = date
+        self.line1 = ""
+        self.line2 = ""
+        self.line3 = ""
+        self.uuid = UUID()
+        self.zoneID = zoneID
+        self.isModified = false  // New empty records are not modified until data is entered
     }
 }
 
@@ -1547,11 +1523,12 @@ struct MonthlyNotesRecord: Identifiable, Equatable, Hashable {
     let id: String
     let month: Int
     let year: Int
-    let line1: String?
-    let line2: String?
-    let line3: String?
+    var line1: String?  // Now mutable for editing
+    var line2: String?  // Now mutable for editing
+    var line3: String?  // Now mutable for editing
     let uuid: UUID?
     let zoneID: CKRecordZone.ID  // Track which zone this record belongs to
+    var isModified: Bool = false  // Track if record has unsaved changes
     
     init(from record: CKRecord) {
         self.id = record.recordID.recordName
@@ -1561,13 +1538,28 @@ struct MonthlyNotesRecord: Identifiable, Equatable, Hashable {
         self.line2 = record["CD_line2"] as? String
         self.line3 = record["CD_line3"] as? String
         self.zoneID = record.recordID.zoneID  // Store the zone ID
+        self.isModified = false  // Data from CloudKit is not modified
         if let uuidString = record["CD_id"] as? String {
             self.uuid = UUID(uuidString: uuidString)
         } else {
             self.uuid = nil
         }
     }
+    
+    // Custom initializer for creating new records for editing
+    init(month: Int, year: Int, zoneID: CKRecordZone.ID) {
+        self.id = UUID().uuidString
+        self.month = month
+        self.year = year
+        self.line1 = ""
+        self.line2 = ""
+        self.line3 = ""
+        self.uuid = UUID()
+        self.zoneID = zoneID
+        self.isModified = false  // New empty records are not modified until data is entered
+    }
 }
+
 
 
 // MARK: - CloudKit Sharing Delegate

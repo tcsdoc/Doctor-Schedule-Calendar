@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>aps-environment</key>
-	<string>production</string>
+	<string>development</string>
 	<key>com.apple.developer.icloud-container-identifiers</key>
 	<array>
 		<string>iCloud.com.gulfcoast.ProviderCalendar</string>
@@ -13,5 +13,7 @@
 		<string>CloudKit</string>
 		<string>CloudDocuments</string>
 	</array>
+	<key>com.apple.developer.icloud-container-environment</key>
+	<string>Development</string>
 </dict>
 </plist>
