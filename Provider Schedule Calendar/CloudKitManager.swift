@@ -1373,7 +1373,7 @@ class CloudKitManager: ObservableObject {
                     debugLog("✅ SHARE FETCH: Found existing zone share")
                     debugLog("🔗 SHARE URL: \(share.url?.absoluteString ?? "NO URL")")
                     debugLog("🔗 SHARE PARTICIPANTS: \(share.participants.count)")
-                    debugLog("🔗 SHARE OWNER: \(share.owner?.userIdentity.userRecordID?.recordName ?? "nil")")
+                    debugLog("🔗 SHARE OWNER: \(share.owner.userIdentity.userRecordID?.recordName ?? "nil")")
                     completion(.success(share))
                 } else {
                     debugLog("❌ SHARE FETCH: Record found but not a CKShare: \(type(of: record))")
@@ -1429,7 +1429,7 @@ class CloudKitManager: ObservableObject {
                 debugLog("🔗 SHARE DEBUG: Share zoneID: \(share.recordID.zoneID.zoneName)")
                 debugLog("🔗 SHARE DEBUG: Share title: Provider Schedule \(currentYear)")
                 debugLog("🔗 SHARE DEBUG: Public permission: readOnly")
-                debugLog("🔗 SHARE DEBUG: Share owner: \(share.owner?.userIdentity.userRecordID?.recordName ?? "nil")")
+                debugLog("🔗 SHARE DEBUG: Share owner: \(share.owner.userIdentity.userRecordID?.recordName ?? "nil")")
                 debugLog("🔗 SHARE DEBUG: Share participants count: \(share.participants.count)")
                 
                 debugLog("🔗 SHARE STEP 2: Saving share to CloudKit...")
