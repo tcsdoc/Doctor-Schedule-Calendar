@@ -117,6 +117,10 @@ struct ContentView: View {
             .onAppear {
                 cloudKitManager.fetchAllData()
             }
+            .onReceive(NotificationCenter.default.publisher(for: .saveAllActiveDays)) { _ in
+                debugLog("🔗 NOTIFICATION RECEIVED: saveAllActiveDays - triggering save for sharing")
+                saveForSharing()
+            }
             .refreshable {
                 // CRITICAL: Never refresh if any field is being edited - protects precision codes
                 let isAnyFieldActive = cloudKitManager.isAnyFieldBeingEdited
@@ -250,15 +254,106 @@ struct ContentView: View {
         return months
     }
     
+    // Save function specifically for sharing - doesn't show "No Changes" alert
+    private func saveForSharing() {
+        debugLog("🔗 SAVE FOR SHARING: Checking for data to save before sharing")
+        
+        guard cloudKitManager.cloudKitAvailable else {
+            debugLog("❌ CloudKit not available for sharing save")
+            return
+        }
+        
+        let modifiedRecords = cloudKitManager.dailySchedules.filter { $0.isModified }
+        let modifiedMonthlyNotes = cloudKitManager.monthlyNotes.filter { $0.isModified }
+        
+        if modifiedRecords.isEmpty && modifiedMonthlyNotes.isEmpty {
+            debugLog("🔗 SAVE FOR SHARING: No changes to save - data already current")
+            return // Silently return without blocking sharing
+        }
+        
+        guard cloudKitManager.userCustomZone != nil else {
+            debugLog("❌ Zone not ready for sharing save")
+            return
+        }
+        
+        debugLog("🔗 SAVE FOR SHARING: Saving \(modifiedRecords.count) daily + \(modifiedMonthlyNotes.count) monthly records")
+        
+        // Use the same save pattern as performActualSave but without UI alerts
+        let dispatchGroup = DispatchGroup()
+        var saveErrors: [String] = []
+        
+        // Save each modified daily schedule record
+        for record in modifiedRecords {
+            dispatchGroup.enter()
+            
+            cloudKitManager.saveOrDeleteDailySchedule(
+                existingRecordName: record.id,
+                existingZoneID: record.zoneID,
+                date: record.date ?? Date(),
+                line1: record.line1,
+                line2: record.line2,
+                line3: record.line3
+            ) { success, error in
+                if !success {
+                    if let error = error {
+                        saveErrors.append("Daily record save failed: \(error)")
+                    }
+                }
+                dispatchGroup.leave()
+            }
+        }
+        
+        // Save each modified monthly note record
+        for note in modifiedMonthlyNotes {
+            dispatchGroup.enter()
+            
+            cloudKitManager.saveOrDeleteMonthlyNotes(
+                existingRecordName: note.id,
+                month: note.month,
+                year: note.year,
+                line1: note.line1,
+                line2: note.line2,
+                line3: note.line3
+            ) { success, error in
+                if !success {
+                    if let error = error {
+                        saveErrors.append("Monthly note save failed: \(error)")
+                    }
+                }
+                dispatchGroup.leave()
+            }
+        }
+        
+        // Wait for all saves to complete
+        dispatchGroup.notify(queue: .main) {
+            if saveErrors.isEmpty {
+                debugLog("✅ SAVE FOR SHARING: All data saved successfully")
+            } else {
+                debugLog("❌ SAVE FOR SHARING: Some errors occurred: \(saveErrors.joined(separator: ", "))")
+            }
+        }
+    }
+    
     // MARK: - CloudKit Custom Zone Sharing (Privacy-Focused)
     private func shareSchedule() {
-        // TRIGGER 4: Share Button - Save all active daily fields before creating share
-        debugLog("🔗 SHARE BUTTON: Triggering save of all active daily field data before sharing")
-        NotificationCenter.default.post(name: .saveAllActiveDays, object: nil)
-
-        // Small delay to ensure save completes before sharing
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            self.performShare()
+        debugLog("🔗 SHARE BUTTON: Preparing to share schedule data")
+        
+        // Check if there are unsaved changes that need to be saved first
+        let hasUnsavedChanges = cloudKitManager.hasUnsavedChanges
+        
+        if hasUnsavedChanges {
+            debugLog("🔗 SHARE: Unsaved changes detected - saving before sharing")
+            // Save first, then share
+            NotificationCenter.default.post(name: .saveAllActiveDays, object: nil)
+            
+            // Wait for save completion before sharing
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                self.performShare()
+            }
+        } else {
+            debugLog("🔗 SHARE: All data already saved - proceeding with sharing")
+            // Data is already saved, proceed immediately with sharing
+            performShare()
         }
     }
     
@@ -280,6 +375,17 @@ struct ContentView: View {
                 case .success(let share):
                     debugLog("✅ SHARE SUCCESS: Share created successfully")
                     debugLog("🔗 SHARE URL: \(share.url?.absoluteString ?? "NO URL")")
+                    
+                    // MINIMAL DEBUG: Check share configuration 
+                    debugLog("🔗 SHARE CONFIG: Participants: \(share.participants.count)")
+                    debugLog("🔗 SHARE CONFIG: Public permission: \(share.publicPermission.rawValue)")
+                    debugLog("🔗 SHARE CONFIG: Owner exists: true")
+                    if share.participants.count > 0 {
+                        debugLog("🔗 SHARE CONFIG: Has \(share.participants.count) participant(s)")
+                    } else {
+                        debugLog("🔗 SHARE CONFIG: No participants (owner-only share)")
+                    }
+                    
                     self.presentCloudKitSharingController(for: share)
                     
                 case .failure(let error):

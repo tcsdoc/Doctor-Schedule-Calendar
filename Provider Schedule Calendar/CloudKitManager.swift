@@ -1355,27 +1355,36 @@ class CloudKitManager: ObservableObject {
     /// Fetch existing share for a zone using the proper CloudKit API
     private func fetchExistingZoneShare(_ zoneID: CKRecordZone.ID, completion: @escaping (Result<CKShare, Error>) -> Void) {
         debugLog("🔍 SHARE FETCH: Attempting to fetch existing zone share for: \(zoneID.zoneName)")
-        
+        debugLog("🔍 SHARE FETCH: Zone owner: \(zoneID.ownerName)")
+        debugLog("🔍 SHARE FETCH: Share record name will be: cloudkit.zoneshare")
+
         Task {
             do {
                 // Use the correct CloudKit API to fetch zone share
                 let shareRecordID = CKRecord.ID(recordName: "cloudkit.zoneshare", zoneID: zoneID)
+                debugLog("🔍 SHARE FETCH: Looking for record: \(shareRecordID.recordName) in zone: \(shareRecordID.zoneID.zoneName)")
                 let record = try await privateDatabase.record(for: shareRecordID)
-                
+
+                debugLog("🔍 SHARE FETCH: Record retrieved successfully")
+                debugLog("🔍 SHARE FETCH: Record type: \(record.recordType)")
+                debugLog("🔍 SHARE FETCH: Record ID: \(record.recordID.recordName)")
+
                 if let share = record as? CKShare {
                     debugLog("✅ SHARE FETCH: Found existing zone share")
                     debugLog("🔗 SHARE URL: \(share.url?.absoluteString ?? "NO URL")")
                     debugLog("🔗 SHARE PARTICIPANTS: \(share.participants.count)")
+                    debugLog("🔗 SHARE OWNER: \(share.owner?.userIdentity.userRecordID?.recordName ?? "nil")")
                     completion(.success(share))
                 } else {
                     debugLog("❌ SHARE FETCH: Record found but not a CKShare: \(type(of: record))")
                     completion(.failure(NSError(domain: "CloudKitManager", code: -4, userInfo: [NSLocalizedDescriptionKey: "Found record but not a CKShare"])))
                 }
-                
+
             } catch {
                 debugLog("❌ SHARE FETCH: Failed to fetch zone share - \(error)")
                 if let ckError = error as? CKError {
                     debugLog("🔍 SHARE FETCH: CKError code: \(ckError.code.rawValue)")
+                    debugLog("🔍 SHARE FETCH: CKError type: \(ckError.code)")
                     if ckError.code == .unknownItem {
                         debugLog("🔍 SHARE FETCH: No share exists for this zone")
                     }
@@ -1413,19 +1422,23 @@ class CloudKitManager: ObservableObject {
                 let share = CKShare(recordZoneID: customZone.zoneID)
                 let currentYear = Calendar.current.component(.year, from: Date())
                 share[CKShare.SystemFieldKey.title] = "Provider Schedule \(currentYear)" as CKRecordValue
-                share.publicPermission = .none // Invite-only for privacy
+                share.publicPermission = .readOnly // Allow read access for shared users
                 
                 debugLog("🔗 SHARE DEBUG: Share object created")
                 debugLog("🔗 SHARE DEBUG: Share recordID: \(share.recordID.recordName)")
                 debugLog("🔗 SHARE DEBUG: Share zoneID: \(share.recordID.zoneID.zoneName)")
                 debugLog("🔗 SHARE DEBUG: Share title: Provider Schedule \(currentYear)")
-                debugLog("🔗 SHARE DEBUG: Public permission: none (invite-only)")
+                debugLog("🔗 SHARE DEBUG: Public permission: readOnly")
+                debugLog("🔗 SHARE DEBUG: Share owner: \(share.owner?.userIdentity.userRecordID?.recordName ?? "nil")")
+                debugLog("🔗 SHARE DEBUG: Share participants count: \(share.participants.count)")
                 
                 debugLog("🔗 SHARE STEP 2: Saving share to CloudKit...")
+                debugLog("🔗 SHARE DEBUG: Saving to private database with zone: \(customZone.zoneID.zoneName)")
                 let savedRecords = try await privateDatabase.modifyRecords(saving: [share], deleting: [])
-                
+
                 debugLog("🔗 SHARE DEBUG: Save operation completed")
                 debugLog("🔗 SHARE DEBUG: Save results count: \(savedRecords.saveResults.count)")
+                debugLog("🔗 SHARE DEBUG: Delete results count: \(savedRecords.deleteResults.count)")
                 
                 for (recordID, result) in savedRecords.saveResults {
                     debugLog("🔗 SHARE DEBUG: Result for \(recordID.recordName):")
@@ -1435,8 +1448,10 @@ class CloudKitManager: ObservableObject {
                         if let shareRecord = record as? CKShare {
                             debugLog("🔗 SHARE DEBUG: ✅ Found CKShare in results!")
                             debugLog("🔗 SHARE DEBUG: Share URL: \(shareRecord.url?.absoluteString ?? "NO URL")")
+                            debugLog("🔗 SHARE DEBUG: Share URL exists: \(shareRecord.url != nil)")
                             debugLog("🔗 SHARE DEBUG: Share participants: \(shareRecord.participants.count)")
                             debugLog("🔗 SHARE DEBUG: Share owner: \(shareRecord.owner)")
+                            debugLog("🔗 SHARE DEBUG: Share zone: \(shareRecord.recordID.zoneID.zoneName)")
                             completion(.success(shareRecord))
                             return
                         }
@@ -1450,13 +1465,16 @@ class CloudKitManager: ObservableObject {
                 debugLog("🔍 SHARE DEBUG: This may be a CloudKit consistency delay")
                 
                 // Fallback: Try to fetch the existing zone share
+                debugLog("🔄 SHARE FALLBACK: Attempting to fetch existing zone share")
                 self.fetchExistingZoneShare(customZone.zoneID) { result in
                     switch result {
                     case .success(let existingShare):
                         debugLog("✅ SHARE RECOVERY: Found existing zone share")
+                        debugLog("🔗 SHARE RECOVERY: URL: \(existingShare.url?.absoluteString ?? "NO URL")")
+                        debugLog("🔗 SHARE RECOVERY: Participants: \(existingShare.participants.count)")
                         completion(.success(existingShare))
-                    case .failure(_):
-                        debugLog("❌ SHARE ERROR: Could not find share even with direct fetch")
+                    case .failure(let error):
+                        debugLog("❌ SHARE ERROR: Could not find share even with direct fetch: \(error.localizedDescription)")
                         completion(.failure(NSError(domain: "CloudKitManager", code: -2, userInfo: [NSLocalizedDescriptionKey: "Share created but not returned by CloudKit"])))
                     }
                 }
@@ -1494,7 +1512,7 @@ class CloudKitManager: ObservableObject {
             // Create share with the root record (from any zone)
             let share = CKShare(rootRecord: rootRecord)
             share[CKShare.SystemFieldKey.title] = "Provider Schedule \(Calendar.current.component(.year, from: Date()))"
-            share.publicPermission = .readOnly // Allow cross-Apple ID sharing with read-only access
+            share.publicPermission = .none // Invite-only for privacy (consistent with zone sharing)
             
             debugLog("🔗 Creating share from record in zone: \(rootRecord.recordID.zoneID.zoneName)")
             

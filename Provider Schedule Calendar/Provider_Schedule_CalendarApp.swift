@@ -14,11 +14,9 @@ struct Provider_Schedule_CalendarApp: App {
     init() {
         #if DEBUG
         debugLog("🔥 APP STARTING WITH PRIVACY-FOCUSED CLOUDKIT CUSTOM ZONES")
-        debugLog("🔥 APP STARTING WITH PRIVACY-FOCUSED CLOUDKIT CUSTOM ZONES")
         #endif
         
         // Force console output even in release
-        debugLog("🚀 Provider Schedule Calendar initialized - Custom Zones: ProviderScheduleZone")
         debugLog("🚀 Provider Schedule Calendar initialized - Custom Zones: ProviderScheduleZone")
     }
 
