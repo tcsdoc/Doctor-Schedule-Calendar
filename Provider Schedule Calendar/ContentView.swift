@@ -9,6 +9,35 @@ import SwiftUI
 import CloudKit
 import LinkPresentation
 
+// MARK: - Custom Activity Item Source for Email Formatting
+class ShareActivityItemSource: NSObject, UIActivityItemSource {
+    private let text: String
+    private let url: URL
+    private let subject: String
+    
+    init(text: String, url: URL, subject: String) {
+        self.text = text
+        self.url = url
+        self.subject = subject
+        super.init()
+    }
+    
+    func activityViewControllerPlaceholderItem(_ activityViewController: UIActivityViewController) -> Any {
+        return text
+    }
+    
+    func activityViewController(_ activityViewController: UIActivityViewController, itemForActivityType activityType: UIActivity.ActivityType?) -> Any? {
+        if activityType == .mail {
+            return "\(text)\n\n\(url.absoluteString)"
+        }
+        return url
+    }
+    
+    func activityViewController(_ activityViewController: UIActivityViewController, subjectForActivityType activityType: UIActivity.ActivityType?) -> String {
+        return subject
+    }
+}
+
 
 
 // MARK: - Next Day Navigation (Preserved from Original)
@@ -169,20 +198,6 @@ struct ContentView: View {
                         }
                     }
                     
-                    // Diagnostic button for production debugging
-                    Button(action: showDiagnostics) {
-                        HStack(spacing: 2) {
-                            Image(systemName: "wrench.and.screwdriver")
-                                .font(.caption2)
-                            Text("Diag")
-                                .font(.caption2)
-                        }
-                        .foregroundColor(.orange)
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 2)
-                        .background(Color(.secondarySystemBackground))
-                        .cornerRadius(4)
-                    }
                     
                     // Version number
                     Text("v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "Unknown").\(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "Unknown")")
@@ -240,7 +255,7 @@ struct ContentView: View {
         // TRIGGER 4: Share Button - Save all active daily fields before creating share
         debugLog("🔗 SHARE BUTTON: Triggering save of all active daily field data before sharing")
         NotificationCenter.default.post(name: .saveAllActiveDays, object: nil)
-        
+
         // Small delay to ensure save completes before sharing
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
             self.performShare()
@@ -360,16 +375,17 @@ struct ContentView: View {
         }
         
         // Present sharing options with the URL
-        let shareText = """
-        You're invited to view my Provider Schedule Calendar.
+        let shareText = "You're invited to view my Provider Schedule Calendar. Open the link below on your iOS device to access the shared calendar."
         
-        Open this link on your iOS device:
-        
-        \(shareURL.absoluteString)
-        """
+        // Create a custom activity item source for better email formatting
+        let customItem = ShareActivityItemSource(
+            text: shareText,
+            url: shareURL,
+            subject: "Provider Schedule Calendar - Shared Access"
+        )
         
         let activityViewController = UIActivityViewController(
-            activityItems: [shareText, shareURL],
+            activityItems: [customItem],
             applicationActivities: nil
         )
         
@@ -419,36 +435,8 @@ struct ContentView: View {
         saveError = false
         saveErrorMessage = ""
         
-        // PRODUCTION DEBUG: Show status in alert
-        let modifiedDailyCount = cloudKitManager.dailySchedules.filter { $0.isModified }.count
-        let modifiedMonthlyCount = cloudKitManager.monthlyNotes.filter { $0.isModified }.count
-        let totalDailyCount = cloudKitManager.dailySchedules.count
-        let totalMonthlyCount = cloudKitManager.monthlyNotes.count
-        let zoneStatus = cloudKitManager.userCustomZone?.zoneID.zoneName ?? "nil"
-        let cloudKitStatus = cloudKitManager.cloudKitAvailable ? "Available" : "Not Available"
-        
-        let debugInfo = """
-        SAVE DEBUG INFO:
-        
-        CloudKit: \(cloudKitStatus)
-        Zone: \(zoneStatus)
-        Daily Schedules: \(totalDailyCount) total, \(modifiedDailyCount) modified
-        Monthly Notes: \(totalMonthlyCount) total, \(modifiedMonthlyCount) modified
-        
-        Will attempt to save \(modifiedDailyCount + modifiedMonthlyCount) records.
-        """
-        
-        // Show debug info in alert
-        let alert = UIAlertController(title: "Save Status", message: debugInfo, preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: "Continue Save", style: .default) { _ in
-            self.performActualSave()
-        })
-        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-        
-        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-           let rootViewController = windowScene.windows.first?.rootViewController {
-            rootViewController.present(alert, animated: true)
-        }
+        // Directly proceed to save without debug confirmation
+        performActualSave()
     }
     
     private func performActualSave() {
@@ -541,7 +529,9 @@ struct ContentView: View {
                 }
                 
                 // Show success alert
-                let alert = UIAlertController(title: "Save Complete", message: "Successfully saved \(modifiedRecords.count) daily schedules and \(modifiedMonthlyNotes.count) monthly notes to CloudKit", preferredStyle: .alert)
+                let totalSaved = modifiedRecords.count + modifiedMonthlyNotes.count
+                let message = totalSaved == 1 ? "Changes saved successfully." : "\(totalSaved) changes saved successfully."
+                let alert = UIAlertController(title: "Saved", message: message, preferredStyle: .alert)
                 alert.addAction(UIAlertAction(title: "OK", style: .default))
                 if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
                    let rootViewController = windowScene.windows.first?.rootViewController {
@@ -574,62 +564,6 @@ struct ContentView: View {
         }
     }
     
-    // MARK: - Data Sync Debug
-    private func showDataSyncDebug() {
-        // Get Sept 1 data from global memory
-        let sept1Date = Calendar.current.date(from: DateComponents(year: 2025, month: 9, day: 1)) ?? Date()
-        let scheduleForSept1 = cloudKitManager.dailySchedules.first { schedule in
-            guard let scheduleDate = schedule.date else { return false }
-            return Calendar.current.isDate(scheduleDate, inSameDayAs: sept1Date)
-        }
-        
-        let globalMemoryData = """
-        SEPT 1 - GLOBAL MEMORY:
-        line1: '\(scheduleForSept1?.line1 ?? "nil")'
-        line2: '\(scheduleForSept1?.line2 ?? "nil")'
-        line3: '\(scheduleForSept1?.line3 ?? "nil")'
-        isModified: \(scheduleForSept1?.isModified ?? false)
-        
-        TOTAL RECORDS IN MEMORY: \(cloudKitManager.dailySchedules.count)
-        MODIFIED RECORDS: \(cloudKitManager.dailySchedules.filter { $0.isModified }.count)
-        """
-        
-        let alert = UIAlertController(title: "Data Sync Debug", message: globalMemoryData, preferredStyle: .alert)
-        
-        alert.addAction(UIAlertAction(title: "Refresh from CloudKit", style: .default) { _ in
-            self.cloudKitManager.fetchAllData()
-            
-            // Show updated data after fetch
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-                let updatedSchedule = self.cloudKitManager.dailySchedules.first { schedule in
-                    guard let scheduleDate = schedule.date else { return false }
-                    return Calendar.current.isDate(scheduleDate, inSameDayAs: sept1Date)
-                }
-                let updatedData = """
-                AFTER CLOUDKIT FETCH:
-                line1: '\(updatedSchedule?.line1 ?? "nil")'
-                line2: '\(updatedSchedule?.line2 ?? "nil")'
-                line3: '\(updatedSchedule?.line3 ?? "nil")'
-                
-                TOTAL RECORDS: \(self.cloudKitManager.dailySchedules.count)
-                """
-                
-                let resultAlert = UIAlertController(title: "After Fetch", message: updatedData, preferredStyle: .alert)
-                resultAlert.addAction(UIAlertAction(title: "OK", style: .default))
-                if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-                   let rootViewController = windowScene.windows.first?.rootViewController {
-                    rootViewController.present(resultAlert, animated: true)
-                }
-            }
-        })
-        
-        alert.addAction(UIAlertAction(title: "OK", style: .default))
-        
-        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-           let rootViewController = windowScene.windows.first?.rootViewController {
-            rootViewController.present(alert, animated: true)
-        }
-    }
     
     // MARK: - Print Function
     private func printSchedule() {
@@ -946,90 +880,6 @@ struct ContentView: View {
         debugLog("🔄 Data changed - global memory system tracking changes automatically")
     }
     
-    // MARK: - Production Diagnostics
-    private func showDiagnostics() {
-        let customZone = cloudKitManager.userCustomZone?.zoneID.zoneName ?? "None"
-        let scheduleCount = cloudKitManager.dailySchedules.count
-        let notesCount = cloudKitManager.monthlyNotes.count
-        let cloudKitStatus = cloudKitManager.cloudKitAvailable ? "Available" : "Unavailable"
-        let activeEditSessions = cloudKitManager.isAnyFieldBeingEdited ? "Yes" : "No"
-        
-        // Sample a few recent schedules to show what's actually saved
-        let recentSchedules = cloudKitManager.dailySchedules.suffix(3).map { schedule in
-            let dateStr = DateFormatter.localizedString(from: schedule.date ?? Date(), dateStyle: .short, timeStyle: .none)
-            return "\(dateStr): '\(schedule.line1 ?? "")'/'\(schedule.line2 ?? "")'/'\(schedule.line3 ?? "")'"
-        }.joined(separator: "\n")
-        
-        let diagnosticInfo = """
-        CloudKit Status: \(cloudKitStatus)
-        Custom Zone: \(customZone)
-        Daily Schedules: \(scheduleCount)
-        Monthly Notes: \(notesCount)
-        Active Editing: \(activeEditSessions)
-        Error: \(cloudKitManager.errorMessage ?? "None")
-        
-        Recent Data in CloudKit:
-        \(recentSchedules.isEmpty ? "No recent data" : recentSchedules)
-        """
-        
-        let alert = UIAlertController(
-            title: "Production Diagnostics",
-            message: diagnosticInfo,
-            preferredStyle: .alert
-        )
-        
-        // Always add zone reset button for manual troubleshooting
-        alert.addAction(UIAlertAction(title: "🚨 Reset Zone", style: .destructive) { _ in
-            self.showResetZoneConfirmation()
-        })
-        
-        // Add data recovery button
-        alert.addAction(UIAlertAction(title: "🔍 Data Recovery", style: .default) { _ in
-            self.cloudKitManager.emergencyDataRecovery()
-        })
-        
-        // Add comprehensive debug button
-        alert.addAction(UIAlertAction(title: "🔍 Debug All Zones", style: .default) { _ in
-            self.cloudKitManager.debugAllZonesAndData()
-        })
-        
-        // Add data sync debug button
-        alert.addAction(UIAlertAction(title: "🔄 Debug Data Sync", style: .default) { _ in
-            self.showDataSyncDebug()
-        })
-        
-        alert.addAction(UIAlertAction(title: "OK", style: .default))
-        
-        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-           let rootViewController = windowScene.windows.first?.rootViewController {
-            rootViewController.present(alert, animated: true)
-        }
-    }
-    
-    // MARK: - Reset Zone Confirmation
-    private func showResetZoneConfirmation() {
-        let confirmAlert = UIAlertController(
-            title: "⚠️ DANGER: Reset Zone",
-            message: "This will PERMANENTLY DELETE ALL your calendar data!\n\n• All daily schedules will be lost\n• All monthly notes will be lost\n• This action CANNOT be undone\n\nAre you absolutely sure you want to continue?",
-            preferredStyle: .alert
-        )
-        
-        // Destructive action to actually reset
-        confirmAlert.addAction(UIAlertAction(title: "YES - Delete All Data", style: .destructive) { _ in
-            debugLog("🚨 User confirmed zone reset - proceeding with data deletion")
-            self.cloudKitManager.emergencyZoneReset()
-        })
-        
-        // Safe cancel option (default)
-        confirmAlert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in
-            debugLog("✅ User cancelled zone reset - data preserved")
-        })
-        
-        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-           let rootViewController = windowScene.windows.first?.rootViewController {
-            rootViewController.present(confirmAlert, animated: true)
-        }
-    }
 }
 
 // MARK: - MonthView
@@ -1232,9 +1082,9 @@ struct MonthlyNotesView: View {
         let record = cloudKitManager.monthlyNotes.first { $0.month == monthComponent && $0.year == yearComponent }
         
         switch fieldType {
-        case .line1: return record?.line1 ?? ""
-        case .line2: return record?.line2 ?? ""
-        case .line3: return record?.line3 ?? ""
+        case .line1: return (record?.line1 ?? "").uppercased()
+        case .line2: return (record?.line2 ?? "").uppercased()
+        case .line3: return (record?.line3 ?? "").uppercased()
         }
     }
     
@@ -1411,9 +1261,9 @@ struct DayCell: View {
         let record = cloudKitManager.dailySchedules[index]
         
         switch fieldType {
-        case .line1: return record.line1 ?? ""
-        case .line2: return record.line2 ?? ""
-        case .line3: return record.line3 ?? ""
+        case .line1: return (record.line1 ?? "").uppercased()
+        case .line2: return (record.line2 ?? "").uppercased()
+        case .line3: return (record.line3 ?? "").uppercased()
         }
     }
     

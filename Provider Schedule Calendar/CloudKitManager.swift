@@ -1352,6 +1352,39 @@ class CloudKitManager: ObservableObject {
     
     // MARK: - Custom Zone Sharing for Privacy
     
+    /// Fetch existing share for a zone using the proper CloudKit API
+    private func fetchExistingZoneShare(_ zoneID: CKRecordZone.ID, completion: @escaping (Result<CKShare, Error>) -> Void) {
+        debugLog("🔍 SHARE FETCH: Attempting to fetch existing zone share for: \(zoneID.zoneName)")
+        
+        Task {
+            do {
+                // Use the correct CloudKit API to fetch zone share
+                let shareRecordID = CKRecord.ID(recordName: "cloudkit.zoneshare", zoneID: zoneID)
+                let record = try await privateDatabase.record(for: shareRecordID)
+                
+                if let share = record as? CKShare {
+                    debugLog("✅ SHARE FETCH: Found existing zone share")
+                    debugLog("🔗 SHARE URL: \(share.url?.absoluteString ?? "NO URL")")
+                    debugLog("🔗 SHARE PARTICIPANTS: \(share.participants.count)")
+                    completion(.success(share))
+                } else {
+                    debugLog("❌ SHARE FETCH: Record found but not a CKShare: \(type(of: record))")
+                    completion(.failure(NSError(domain: "CloudKitManager", code: -4, userInfo: [NSLocalizedDescriptionKey: "Found record but not a CKShare"])))
+                }
+                
+            } catch {
+                debugLog("❌ SHARE FETCH: Failed to fetch zone share - \(error)")
+                if let ckError = error as? CKError {
+                    debugLog("🔍 SHARE FETCH: CKError code: \(ckError.code.rawValue)")
+                    if ckError.code == .unknownItem {
+                        debugLog("🔍 SHARE FETCH: No share exists for this zone")
+                    }
+                }
+                completion(.failure(error))
+            }
+        }
+    }
+    
     /// Create a share for user data with extensive debugging for Production reliability issues
     func createCustomZoneShare(completion: @escaping (Result<CKShare, Error>) -> Void) {
         debugLog("🔗 SHARE CREATION START: Creating ZONE-BASED share for all schedule records")
@@ -1412,10 +1445,21 @@ class CloudKitManager: ObservableObject {
                     }
                 }
                 
-                // If we get here, no CKShare was found in results
-                debugLog("❌ SHARE ERROR: No CKShare found in save results")
-                debugLog("🔍 SHARE DEBUG: This indicates a CloudKit sharing API issue")
-                completion(.failure(NSError(domain: "CloudKitManager", code: -2, userInfo: [NSLocalizedDescriptionKey: "Share created but not returned by CloudKit"])))
+                // If we get here, no CKShare was found in results - try to fetch it directly
+                debugLog("⚠️ SHARE WARNING: No CKShare found in save results - attempting direct fetch")
+                debugLog("🔍 SHARE DEBUG: This may be a CloudKit consistency delay")
+                
+                // Fallback: Try to fetch the existing zone share
+                self.fetchExistingZoneShare(customZone.zoneID) { result in
+                    switch result {
+                    case .success(let existingShare):
+                        debugLog("✅ SHARE RECOVERY: Found existing zone share")
+                        completion(.success(existingShare))
+                    case .failure(_):
+                        debugLog("❌ SHARE ERROR: Could not find share even with direct fetch")
+                        completion(.failure(NSError(domain: "CloudKitManager", code: -2, userInfo: [NSLocalizedDescriptionKey: "Share created but not returned by CloudKit"])))
+                    }
+                }
                 
             } catch {
                 debugLog("❌ SHARE ERROR: Exception during share creation: \(error)")
@@ -1429,6 +1473,13 @@ class CloudKitManager: ObservableObject {
                     debugLog("🔍 SHARE DEBUG: CKError description: \(ckError.localizedDescription)")
                     let underlying = (ckError as NSError).userInfo[NSUnderlyingErrorKey] as? Error
                     debugLog("🔍 SHARE DEBUG: CKError underlying: \(underlying?.localizedDescription ?? "none")")
+                    
+                    // Handle the case where share already exists
+                    if ckError.code == .serverRecordChanged {
+                        debugLog("🔄 SHARE EXISTS: Share already exists for zone - fetching existing share")
+                        self.fetchExistingZoneShare(customZone.zoneID, completion: completion)
+                        return
+                    }
                 }
                 
                 completion(.failure(error))
