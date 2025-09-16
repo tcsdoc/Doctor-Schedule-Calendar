@@ -1324,13 +1324,24 @@ class CloudKitManager: ObservableObject {
             return
         }
         
-        // Mark as modified if value actually changed AND we have actual content
+        // Mark as modified if value actually changed
         let newValue = value.isEmpty ? nil : value
         if oldValue != newValue {
             // Check if the record has any actual content now
             let hasContent = !((record.line1 ?? "").isEmpty && (record.line2 ?? "").isEmpty && (record.line3 ?? "").isEmpty)
-            record.isModified = hasContent
-            debugLog("✏️ Updated \(field) for \(record.date?.description ?? "unknown date"): '\(value)' (modified: \(hasContent))")
+            
+            // CRITICAL FIX: Empty fields with existing CloudKit record = deletion needed = modified!
+            // This means we need to check if this record came from CloudKit (has existing data to delete)
+            let isExistingRecord = record.id.count > 0 && !record.id.hasPrefix("temp") // Simple check for existing vs new record
+            let needsDeletion = !hasContent && isExistingRecord
+            
+            record.isModified = hasContent || needsDeletion
+            
+            if needsDeletion {
+                debugLog("✏️ Updated \(field) for \(record.date?.description ?? "unknown date"): '\(value)' (DELETION NEEDED - modified: true)")
+            } else {
+                debugLog("✏️ Updated \(field) for \(record.date?.description ?? "unknown date"): '\(value)' (modified: \(hasContent))")
+            }
         }
         
         dailySchedules[index] = record
