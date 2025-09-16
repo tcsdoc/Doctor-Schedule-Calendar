@@ -1379,27 +1379,43 @@ struct DayCell: View {
             return
         }
         
+        // CRITICAL FIX: Don't create records or trigger modifications for meaningless empty changes
+        // Check if this is actually a meaningful change
+        let currentValue = getFieldValue(fieldType)
+        let newValue = value.uppercased()
+        
+        // If values are the same (including both being empty), don't do anything
+        if currentValue == newValue {
+            return
+        }
+        
         // Use Task to avoid "Publishing changes from within view updates" errors
         Task { @MainActor in
-            // Create record if it doesn't exist (separate from view rendering)
-            self.cloudKitManager.createRecordForEditing(date: self.date)
+            // Only create record if we have actual content OR if we're clearing an existing record
+            let hasContent = !newValue.isEmpty
+            let isClearing = currentValue != newValue && newValue.isEmpty && !currentValue.isEmpty
             
-            // Now get the index
-            guard let index = self.cloudKitManager.getRecordIndex(for: self.date),
-                  index < self.cloudKitManager.dailySchedules.count else {
-                return
+            if hasContent || isClearing {
+                // Create record if it doesn't exist (separate from view rendering)
+                self.cloudKitManager.createRecordForEditing(date: self.date)
+                
+                // Now get the index
+                guard let index = self.cloudKitManager.getRecordIndex(for: self.date),
+                      index < self.cloudKitManager.dailySchedules.count else {
+                    return
+                }
+                
+                switch fieldType {
+                case .line1:
+                    self.cloudKitManager.updateField(at: index, field: "line1", value: newValue)
+                case .line2:
+                    self.cloudKitManager.updateField(at: index, field: "line2", value: newValue)
+                case .line3:
+                    self.cloudKitManager.updateField(at: index, field: "line3", value: newValue)
+                }
+                
+                self.onDataChanged()
             }
-            
-            switch fieldType {
-            case .line1:
-                self.cloudKitManager.updateField(at: index, field: "line1", value: value)
-            case .line2:
-                self.cloudKitManager.updateField(at: index, field: "line2", value: value)
-            case .line3:
-                self.cloudKitManager.updateField(at: index, field: "line3", value: value)
-            }
-            
-            self.onDataChanged()
         }
     }
     
