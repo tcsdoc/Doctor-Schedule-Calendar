@@ -545,6 +545,12 @@ class CloudKitManager: ObservableObject {
                     // Add any modified records from global memory that aren't in CloudKit yet
                     for existingRecord in self?.dailySchedules ?? [] {
                         if existingRecord.isModified {
+                            // CRITICAL FIX: Don't restore records that are in the recent deletion list
+                            if self?.recentDeletionOperations.contains(existingRecord.id) == true {
+                                debugLog("🚫 BLOCKED: Preventing restoration of recently deleted record \(existingRecord.id)")
+                                continue
+                            }
+                            
                             // This record has unsaved changes - keep it instead of CloudKit version
                             if let index = mergedSchedules.firstIndex(where: { 
                                 Calendar.current.isDate($0.date ?? Date(), inSameDayAs: existingRecord.date ?? Date()) 
@@ -979,9 +985,28 @@ class CloudKitManager: ObservableObject {
                     completion(false, error)
                 } else {
                     debugLog("✅ Successfully deleted daily schedule from CloudKit: \(recordName)")
+                    
+                    // CRITICAL FIX: Find the deleted record's date BEFORE removing it
+                    // This prevents stale data from being restored during fetch operations
+                    let deletedRecord = self?.dailySchedules.first(where: { $0.id == recordName })
+                    let deletedDate = deletedRecord?.date
+                    
                     // Remove from local array immediately instead of full refresh
                     self?.dailySchedules.removeAll { $0.id == recordName }
                     debugLog("📱 Removed from local array. Local count now: \(self?.dailySchedules.count ?? 0)")
+                    
+                    // Also remove any other records for the same DATE from memory
+                    if let deletedDate = deletedDate {
+                        let beforeCount = self?.dailySchedules.count ?? 0
+                        self?.dailySchedules.removeAll { record in
+                            guard let recordDate = record.date else { return false }
+                            return Calendar.current.isDate(recordDate, inSameDayAs: deletedDate)
+                        }
+                        let afterCount = self?.dailySchedules.count ?? 0
+                        if beforeCount != afterCount {
+                            debugLog("🧹 MEMORY CLEANUP: Removed \(beforeCount - afterCount) additional records for date \(deletedDate) from local memory")
+                        }
+                    }
                     
                     // Enhanced tracking for deletion operations
                     self?.recentDeletionOperations.insert(recordName)
