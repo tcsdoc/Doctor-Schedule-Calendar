@@ -4,9 +4,8 @@ import SwiftUI
 
 // MARK: - Debug Logging Helper
 func debugLog(_ message: String) {
-    #if DEBUG
-    print(message)
-    #endif
+    // Temporarily enabled for Production debugging of deletion issue
+    print("PSC DEBUG: \(message)")
 }
 
 @MainActor
@@ -1018,6 +1017,17 @@ class CloudKitManager: ObservableObject {
         if isEmpty && existingRecordName != nil && existingZoneID != nil {
             // Delete existing record if all fields are empty
             debugLog("🗑️ All fields empty + existing record - calling DELETE for \(existingRecordName!) in zone \(existingZoneID!.zoneName)")
+            
+            // Show visible alert for deletion in Production
+            DispatchQueue.main.async {
+                if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                   let rootViewController = windowScene.windows.first?.rootViewController {
+                    let alert = UIAlertController(title: "DEBUG: Deleting Record", message: "Deleting empty record for \(dateKey)", preferredStyle: .alert)
+                    alert.addAction(UIAlertAction(title: "OK", style: .default))
+                    rootViewController.present(alert, animated: true)
+                }
+            }
+            
             deleteDailySchedule(recordName: existingRecordName!, zoneID: existingZoneID!, completion: completion)
         } else if !isEmpty {
             // Save or update if there's content
