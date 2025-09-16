@@ -309,6 +309,7 @@ struct ContentView: View {
             
             cloudKitManager.saveOrDeleteMonthlyNotes(
                 existingRecordName: note.id,
+                existingZoneID: note.zoneID,
                 month: note.month,
                 year: note.year,
                 line1: note.line1,
@@ -609,6 +610,7 @@ struct ContentView: View {
             
             cloudKitManager.saveOrDeleteMonthlyNotes(
                 existingRecordName: monthlyNote.id,
+                existingZoneID: monthlyNote.zoneID,
                 month: monthlyNote.month,
                 year: monthlyNote.year,
                 line1: monthlyNote.line1,

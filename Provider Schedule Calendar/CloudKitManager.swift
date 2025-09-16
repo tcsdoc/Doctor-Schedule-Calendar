@@ -4,8 +4,9 @@ import SwiftUI
 
 // MARK: - Debug Logging Helper
 func debugLog(_ message: String) {
-    // Temporarily enabled for Production debugging of deletion issue
+    #if DEBUG
     print("PSC DEBUG: \(message)")
+    #endif
 }
 
 @MainActor
@@ -1043,15 +1044,6 @@ class CloudKitManager: ObservableObject {
             // Delete existing record if all fields are empty
             debugLog("🗑️ All fields empty + existing record - calling DELETE for \(existingRecordName!) in zone \(existingZoneID!.zoneName)")
             
-            // Show visible alert for deletion in Production
-            DispatchQueue.main.async {
-                if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-                   let rootViewController = windowScene.windows.first?.rootViewController {
-                    let alert = UIAlertController(title: "DEBUG: Deleting Record", message: "Deleting empty record for \(dateKey)", preferredStyle: .alert)
-                    alert.addAction(UIAlertAction(title: "OK", style: .default))
-                    rootViewController.present(alert, animated: true)
-                }
-            }
             
             deleteDailySchedule(recordName: existingRecordName!, zoneID: existingZoneID!, completion: completion)
         } else if !isEmpty {
@@ -1172,7 +1164,7 @@ class CloudKitManager: ObservableObject {
     }
     
     // MARK: - Smart Save/Delete for Monthly Notes
-    func saveOrDeleteMonthlyNotes(existingRecordName: String? = nil, month: Int, year: Int, line1: String?, line2: String?, line3: String?, completion: @escaping (Bool, Error?) -> Void) {
+    func saveOrDeleteMonthlyNotes(existingRecordName: String? = nil, existingZoneID: CKRecordZone.ID? = nil, month: Int, year: Int, line1: String?, line2: String?, line3: String?, completion: @escaping (Bool, Error?) -> Void) {
         // Check if all fields are empty
         let isEmpty = (line1?.isEmpty ?? true) && (line2?.isEmpty ?? true) && (line3?.isEmpty ?? true)
         let monthKey = "\(year)-\(month)"
@@ -1180,29 +1172,31 @@ class CloudKitManager: ObservableObject {
         debugLog("🤔 Smart monthly notes save called for \(monthKey)")
         debugLog("📊 isEmpty: \(isEmpty), existingRecord: \(existingRecordName ?? "none")")
         debugLog("📝 Monthly note values - line1: '\(line1 ?? "nil")', line2: '\(line2 ?? "nil")', line3: '\(line3 ?? "nil")'")
+        debugLog("🔍 Monthly notes zone: '\(existingZoneID?.zoneName ?? "nil")'")
         
         // NOTE: Removed data protection check for user-initiated saves
         // Protection should only apply to incoming CloudKit updates, not user saves
         
-        if isEmpty {
-            // All fields are empty - delete the record if it exists
-            if let recordName = existingRecordName {
-                debugLog("🗑️ All monthly note fields empty - calling DELETE for \(recordName)")
-                deleteMonthlyNotes(recordName: recordName, month: month, year: year, completion: completion)
-            } else {
-                debugLog("🤷‍♂️ No existing monthly notes record to delete for \(monthKey)")
-                completion(true, nil)
-            }
-        } else {
+        if isEmpty && existingRecordName != nil && existingZoneID != nil {
+            // Delete existing record if all fields are empty - MATCH DAILY SCHEDULE PATTERN
+            debugLog("🗑️ All monthly note fields empty + existing record - calling DELETE for \(existingRecordName!) in zone \(existingZoneID!.zoneName)")
+            
+            
+            deleteMonthlyNotes(recordName: existingRecordName!, zoneID: existingZoneID!, month: month, year: year, completion: completion)
+        } else if !isEmpty {
             // Fields have content - save/update the record
             debugLog("💾 Monthly note fields have content - calling SAVE/UPDATE for \(monthKey)")
             saveMonthlyNotes(month: month, year: year, line1: line1, line2: line2, line3: line3, completion: completion)
+        } else {
+            // No existing record and no content - do nothing (matching daily schedule pattern)
+            debugLog("⏸️ No existing monthly notes record and no content - doing nothing for \(monthKey)")
+            completion(true, nil)
         }
     }
     
-    func deleteMonthlyNotes(recordName: String, month: Int, year: Int, completion: @escaping (Bool, Error?) -> Void) {
+    func deleteMonthlyNotes(recordName: String, zoneID: CKRecordZone.ID, month: Int, year: Int, completion: @escaping (Bool, Error?) -> Void) {
         let monthKey = "\(year)-\(month)"
-        debugLog("🗑️ Attempting to delete monthly notes record: \(recordName) for \(monthKey)")
+        debugLog("🗑️ Attempting to delete monthly notes record: \(recordName) for \(monthKey) in zone: \(zoneID.zoneName)")
         
         // Check CloudKit status first
         guard cloudKitAvailable else {
@@ -1213,7 +1207,8 @@ class CloudKitManager: ObservableObject {
         // Mark operation as starting
         markOperationStarting(for: recordName, type: "DELETE_MONTHLY")
         
-        let recordID = CKRecord.ID(recordName: recordName)
+        // CRITICAL FIX: Use the correct zone ID for deletion (matching daily schedule pattern)
+        let recordID = CKRecord.ID(recordName: recordName, zoneID: zoneID)
         
         privateDatabase.delete(withRecordID: recordID) { [weak self] recordID, error in
                         DispatchQueue.main.async {
@@ -1224,9 +1219,17 @@ class CloudKitManager: ObservableObject {
                                 completion(false, error)
                             } else {
                     debugLog("✅ Successfully deleted monthly notes from CloudKit: \(recordName)")
+                    
+                    // CRITICAL FIX: Enhanced memory cleanup matching daily schedule pattern
                     // Remove from local array immediately instead of full refresh
+                    let beforeCount = self?.monthlyNotes.count ?? 0
                     self?.monthlyNotes.removeAll { $0.month == month && $0.year == year }
-                    debugLog("📱 Removed from local monthly notes array. Local count now: \(self?.monthlyNotes.count ?? 0)")
+                    let afterCount = self?.monthlyNotes.count ?? 0
+                    debugLog("📱 Removed from local monthly notes array. Local count: \(beforeCount) → \(afterCount)")
+                    
+                    // Also remove any records with the same recordName (prevents stale data restoration)
+                    self?.monthlyNotes.removeAll { $0.id == recordName }
+                    debugLog("🧹 MEMORY CLEANUP: Ensured complete removal of monthly notes record \(recordName)")
                     
                     // Enhanced tracking for deletion operations
                     self?.recentDeletionOperations.insert(recordName)
@@ -1617,6 +1620,7 @@ class CloudKitManager: ObservableObject {
         await withCheckedContinuation { continuation in
             self.saveOrDeleteMonthlyNotes(
                 existingRecordName: existingRecord?.id,
+                existingZoneID: existingRecord?.zoneID,
                 month: month,
                 year: year,
                 line1: line1.isEmpty ? nil : line1,

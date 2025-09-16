@@ -12,11 +12,6 @@ struct Provider_Schedule_CalendarApp: App {
     let cloudKitManager = CloudKitManager.shared
 
     init() {
-        #if DEBUG
-        debugLog("🔥 APP STARTING WITH PRIVACY-FOCUSED CLOUDKIT CUSTOM ZONES")
-        #endif
-        
-        // Force console output even in release
         debugLog("🚀 Provider Schedule Calendar initialized - Custom Zones: ProviderScheduleZone")
     }
 
