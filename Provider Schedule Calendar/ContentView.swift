@@ -292,7 +292,8 @@ struct ContentView: View {
                 date: record.date ?? Date(),
                 line1: record.line1,
                 line2: record.line2,
-                line3: record.line3
+                line3: record.line3,
+                line4: record.line4
             ) { success, error in
                 if !success {
                     if let error = error {
@@ -593,7 +594,8 @@ struct ContentView: View {
                 date: record.date ?? Date(),
                 line1: record.line1,
                 line2: record.line2,
-                line3: record.line3
+                line3: record.line3,
+                line4: record.line4
             ) { success, error in
                 if !success {
                     let dateStr = DateFormatter.localizedString(from: record.date ?? Date(), dateStyle: .short, timeStyle: .none)
@@ -860,6 +862,9 @@ struct ContentView: View {
                             }
                             if let line3 = schedule.line3, !line3.isEmpty {
                                 html += "<div class='schedule-line'>OFF: \(line3)</div>"
+                            }
+                            if let line4 = schedule.line4, !line4.isEmpty {
+                                html += "<div class='schedule-line'>CALL: \(line4)</div>"
                             }
                         }
                         
@@ -1140,7 +1145,7 @@ struct MonthlyNotesView: View {
                 set: { updateField(fieldType, value: $0.uppercased()) } // Force uppercase
             ))
             .font(.system(size: 10, weight: .medium))
-            .foregroundColor(fieldTextColor(for: fieldType))
+            .foregroundColor(.primary)
             .focused($focusedField, equals: fieldType)
             .disabled(!cloudKitManager.isZoneReady)
             .textInputAutocapitalization(.characters)
@@ -1261,7 +1266,7 @@ struct DayCell: View {
     @FocusState private var focusedField: FieldType?
     
     enum FieldType: CaseIterable {
-        case line1, line2, line3
+        case line1, line2, line3, line4
     }
     
     private let calendar = Calendar.current
@@ -1277,10 +1282,11 @@ struct DayCell: View {
             }
             
             // Schedule fields
-            VStack(spacing: 8) {
+            VStack(spacing: 6) {
                 ScheduleField(label: "OS", fieldType: .line1)
                 ScheduleField(label: "CL", fieldType: .line2)
                 ScheduleField(label: "OFF", fieldType: .line3)
+                ScheduleField(label: "CALL", fieldType: .line4)
             }
         }
         .padding(4)
@@ -1300,7 +1306,7 @@ struct DayCell: View {
     private func ScheduleField(label: String, fieldType: FieldType) -> some View {
         HStack(spacing: 6) {
             Text(label)
-                .font(.system(size: 10, weight: .medium))
+                .font(.system(size: label == "CALL" ? 8 : 10, weight: .medium))
                 .foregroundColor(.secondary)
                 .frame(width: 24, alignment: .leading)
             
@@ -1309,7 +1315,7 @@ struct DayCell: View {
                 set: { updateField(fieldType, value: $0.uppercased()) } // Force uppercase
             ))
             .font(.system(size: 10, weight: .medium))
-            .foregroundColor(fieldTextColor(for: fieldType))
+            .foregroundColor(.primary)
             .focused($focusedField, equals: fieldType)
             .disabled(!cloudKitManager.isZoneReady)
             .textInputAutocapitalization(.characters)
@@ -1335,6 +1341,7 @@ struct DayCell: View {
         case .line1: return .blue      // OS field - Blue
         case .line2: return .green     // CL field - Green  
         case .line3: return .red       // OFF field - Red
+        case .line4: return .yellow    // CALL field - Yellow
         }
     }
     
@@ -1343,6 +1350,7 @@ struct DayCell: View {
         case .line1: return .blue.opacity(0.1)      // Light blue background
         case .line2: return .green.opacity(0.1)     // Light green background
         case .line3: return .red.opacity(0.1)       // Light red background
+        case .line4: return .yellow.opacity(0.1)    // Light yellow background
         }
     }
     
@@ -1351,6 +1359,7 @@ struct DayCell: View {
         case .line1: return .blue.opacity(0.3)      // Blue border
         case .line2: return .green.opacity(0.3)     // Green border
         case .line3: return .red.opacity(0.3)       // Red border
+        case .line4: return .yellow.opacity(0.3)    // Yellow border
         }
     }
     
@@ -1372,6 +1381,7 @@ struct DayCell: View {
         case .line1: return (record.line1 ?? "").uppercased()
         case .line2: return (record.line2 ?? "").uppercased()
         case .line3: return (record.line3 ?? "").uppercased()
+        case .line4: return (record.line4 ?? "").uppercased()
         }
     }
     
@@ -1414,6 +1424,8 @@ struct DayCell: View {
                     self.cloudKitManager.updateField(at: index, field: "line2", value: newValue)
                 case .line3:
                     self.cloudKitManager.updateField(at: index, field: "line3", value: newValue)
+                case .line4:
+                    self.cloudKitManager.updateField(at: index, field: "line4", value: newValue)
                 }
                 
                 self.onDataChanged()
@@ -1428,6 +1440,8 @@ struct DayCell: View {
         case .line2:
             focusedField = .line3
         case .line3:
+            focusedField = .line4
+        case .line4:
             focusedField = nil
         case .none:
             break

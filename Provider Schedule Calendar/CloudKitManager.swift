@@ -654,11 +654,11 @@ class CloudKitManager: ObservableObject {
     
     
     // MARK: - Save Data
-    func saveDailySchedule(date: Date, line1: String?, line2: String?, line3: String?, completion: @escaping (Bool, Error?) -> Void) {
-        saveDailySchedule(date: date, line1: line1, line2: line2, line3: line3, retryCount: 0, completion: completion)
+    func saveDailySchedule(date: Date, line1: String?, line2: String?, line3: String?, line4: String?, completion: @escaping (Bool, Error?) -> Void) {
+        saveDailySchedule(date: date, line1: line1, line2: line2, line3: line3, line4: line4, retryCount: 0, completion: completion)
     }
     
-    private func saveDailySchedule(date: Date, line1: String?, line2: String?, line3: String?, retryCount: Int, completion: @escaping (Bool, Error?) -> Void) {
+    private func saveDailySchedule(date: Date, line1: String?, line2: String?, line3: String?, line4: String?, retryCount: Int, completion: @escaping (Bool, Error?) -> Void) {
         let dateKey = "\(Calendar.current.startOfDay(for: date))"
         debugLog("💾 Creating new daily schedule record for date: \(date) (retry: \(retryCount))")
         
@@ -709,6 +709,7 @@ class CloudKitManager: ObservableObject {
         record["CD_line1"] = line1 as CKRecordValue?
         record["CD_line2"] = line2 as CKRecordValue?
         record["CD_line3"] = line3 as CKRecordValue?
+        record["CD_line4"] = line4 as CKRecordValue?
         
         debugLog("💾 CREATING CLOUDKIT RECORD:")
         debugLog("   RecordID: \(recordID.recordName)")
@@ -716,13 +717,14 @@ class CloudKitManager: ObservableObject {
         debugLog("   CD_line1: '\(line1 ?? "nil")' (length: \(line1?.count ?? 0))")
         debugLog("   CD_line2: '\(line2 ?? "nil")' (length: \(line2?.count ?? 0))")
         debugLog("   CD_line3: '\(line3 ?? "nil")' (length: \(line3?.count ?? 0))")
+        debugLog("   CD_line4: '\(line4 ?? "nil")' (length: \(line4?.count ?? 0))")
         
         // Save directly to CloudKit without container linking
         debugLog("   About to save to CloudKit (no container linking)...")
-        self.saveRecordWithCompletion(record, dateKey: dateKey, date: date, line1: line1, line2: line2, line3: line3, retryCount: retryCount, completion: completion)
+        self.saveRecordWithCompletion(record, dateKey: dateKey, date: date, line1: line1, line2: line2, line3: line3, line4: line4, retryCount: retryCount, completion: completion)
     }
     
-    private func saveRecordWithCompletion(_ record: CKRecord, dateKey: String, date: Date, line1: String?, line2: String?, line3: String?, retryCount: Int, completion: @escaping (Bool, Error?) -> Void) {
+    private func saveRecordWithCompletion(_ record: CKRecord, dateKey: String, date: Date, line1: String?, line2: String?, line3: String?, line4: String?, retryCount: Int, completion: @escaping (Bool, Error?) -> Void) {
         debugLog("💾 SAVE ATTEMPT \(retryCount + 1): Starting CloudKit save operation")
         debugLog("💾 SAVE DEBUG: Record to save:")
         debugLog("   RecordID: \(record.recordID.recordName)")
@@ -777,7 +779,7 @@ class CloudKitManager: ObservableObject {
                         debugLog("🔄 RETRYABLE ERROR: Will retry save operation (attempt \(retryCount + 2))")
                         self?.markOperationCompleted(for: dateKey, type: "SAVE", success: false)
                         // Retry with incremented count
-                        self?.saveDailySchedule(date: date, line1: line1, line2: line2, line3: line3, retryCount: retryCount + 1, completion: completion)
+                        self?.saveDailySchedule(date: date, line1: line1, line2: line2, line3: line3, line4: line4, retryCount: retryCount + 1, completion: completion)
                         return
                     } else {
                         debugLog("💾 NON-RETRYABLE ERROR: Save operation failed permanently")
@@ -870,7 +872,7 @@ class CloudKitManager: ObservableObject {
         }
     }
     
-    func updateDailySchedule(recordName: String, zoneID: CKRecordZone.ID, date: Date, line1: String?, line2: String?, line3: String?, completion: @escaping (Bool, Error?) -> Void) {
+    func updateDailySchedule(recordName: String, zoneID: CKRecordZone.ID, date: Date, line1: String?, line2: String?, line3: String?, line4: String?, completion: @escaping (Bool, Error?) -> Void) {
         debugLog("🔄 Attempting to update record: \(recordName) in zone: \(zoneID.zoneName)")
         
         // Check CloudKit status first
@@ -895,7 +897,7 @@ class CloudKitManager: ObservableObject {
                     if error.localizedDescription.contains("Record not found") || (error as? CKError)?.code == .unknownItem {
                         debugLog("🔄 Record not found in CloudKit - creating new record instead")
                         self?.markOperationCompleted(for: recordName, type: "UPDATE", success: false)
-                        self?.saveDailySchedule(date: date, line1: line1, line2: line2, line3: line3, completion: completion)
+                        self?.saveDailySchedule(date: date, line1: line1, line2: line2, line3: line3, line4: line4, completion: completion)
                             } else {
                         self?.errorMessage = "Failed to fetch record: \(error.localizedDescription)"
                         self?.markOperationCompleted(for: recordName, type: "UPDATE", success: false)
@@ -910,7 +912,7 @@ class CloudKitManager: ObservableObject {
                     debugLog("❌ Record not found, creating new one instead")
                     // If record doesn't exist, create it instead
                     self?.markOperationCompleted(for: recordName, type: "UPDATE", success: false)
-                    self?.saveDailySchedule(date: date, line1: line1, line2: line2, line3: line3, completion: completion)
+                    self?.saveDailySchedule(date: date, line1: line1, line2: line2, line3: line3, line4: line4, completion: completion)
                 }
                 return
             }
@@ -922,12 +924,14 @@ class CloudKitManager: ObservableObject {
             debugLog("   NEW line1: '\(line1 ?? "nil")' (length: \(line1?.count ?? 0))")
             debugLog("   NEW line2: '\(line2 ?? "nil")' (length: \(line2?.count ?? 0))")
             debugLog("   NEW line3: '\(line3 ?? "nil")' (length: \(line3?.count ?? 0))")
+            debugLog("   NEW line4: '\(line4 ?? "nil")' (length: \(line4?.count ?? 0))")
             
             // Update the record with new values
             record["CD_date"] = date as CKRecordValue
             record["CD_line1"] = line1 as CKRecordValue?
             record["CD_line2"] = line2 as CKRecordValue?
             record["CD_line3"] = line3 as CKRecordValue?
+            record["CD_line4"] = line4 as CKRecordValue?
             
             debugLog("   About to update CloudKit record...")
             
@@ -1024,9 +1028,9 @@ class CloudKitManager: ObservableObject {
     }
     
     /// Smart save that handles deletion when all fields are empty
-    func saveOrDeleteDailySchedule(existingRecordName: String?, existingZoneID: CKRecordZone.ID?, date: Date, line1: String?, line2: String?, line3: String?, completion: @escaping (Bool, Error?) -> Void) {
+    func saveOrDeleteDailySchedule(existingRecordName: String?, existingZoneID: CKRecordZone.ID?, date: Date, line1: String?, line2: String?, line3: String?, line4: String?, completion: @escaping (Bool, Error?) -> Void) {
         // Check if all fields are empty
-        let isEmpty = (line1?.isEmpty ?? true) && (line2?.isEmpty ?? true) && (line3?.isEmpty ?? true)
+        let isEmpty = (line1?.isEmpty ?? true) && (line2?.isEmpty ?? true) && (line3?.isEmpty ?? true) && (line4?.isEmpty ?? true)
         let dateKey = "\(Calendar.current.startOfDay(for: date))"
         
         debugLog("🤔 Smart save called for \(dateKey)")
@@ -1035,6 +1039,7 @@ class CloudKitManager: ObservableObject {
         debugLog("   line1: '\(line1 ?? "nil")' (length: \(line1?.count ?? 0))")
         debugLog("   line2: '\(line2 ?? "nil")' (length: \(line2?.count ?? 0))")
         debugLog("   line3: '\(line3 ?? "nil")' (length: \(line3?.count ?? 0))")
+        debugLog("   line4: '\(line4 ?? "nil")' (length: \(line4?.count ?? 0))")
         debugLog("   existingZoneID: '\(existingZoneID?.zoneName ?? "nil")'")
         
         // NOTE: Removed data protection check for user-initiated saves
@@ -1053,11 +1058,11 @@ class CloudKitManager: ObservableObject {
             if existingRecordName != nil && existingZoneID != nil {
                 // UPDATE existing record - use fetch-modify-save pattern
                 debugLog("🔄 Updating existing record \(existingRecordName!) in zone \(existingZoneID!.zoneName)")
-                updateDailySchedule(recordName: existingRecordName!, zoneID: existingZoneID!, date: date, line1: line1, line2: line2, line3: line3, completion: completion)
+                updateDailySchedule(recordName: existingRecordName!, zoneID: existingZoneID!, date: date, line1: line1, line2: line2, line3: line3, line4: line4, completion: completion)
             } else {
                 // CREATE new record - global memory has no existing record
                 debugLog("➕ Creating new record for \(dateKey)")
-                saveDailySchedule(date: date, line1: line1, line2: line2, line3: line3, completion: completion)
+                saveDailySchedule(date: date, line1: line1, line2: line2, line3: line3, line4: line4, completion: completion)
             }
         } else {
             // No existing record and no content - do nothing
@@ -1347,6 +1352,9 @@ class CloudKitManager: ObservableObject {
         case "line3":
             oldValue = record.line3
             record.line3 = value.isEmpty ? nil : value
+        case "line4":
+            oldValue = record.line4
+            record.line4 = value.isEmpty ? nil : value
         default:
             debugLog("❌ Unknown field: \(field)")
             return
@@ -1356,7 +1364,7 @@ class CloudKitManager: ObservableObject {
         let newValue = value.isEmpty ? nil : value
         if oldValue != newValue {
             // Check if the record has any actual content now
-            let hasContent = !((record.line1 ?? "").isEmpty && (record.line2 ?? "").isEmpty && (record.line3 ?? "").isEmpty)
+            let hasContent = !((record.line1 ?? "").isEmpty && (record.line2 ?? "").isEmpty && (record.line3 ?? "").isEmpty && (record.line4 ?? "").isEmpty)
             
             // CRITICAL FIX: Empty fields with existing CloudKit record = deletion needed = modified!
             // This means we need to check if this record came from CloudKit (has existing data to delete)
@@ -1390,6 +1398,7 @@ class CloudKitManager: ObservableObject {
         case "line1": return record.line1 ?? ""
         case "line2": return record.line2 ?? ""
         case "line3": return record.line3 ?? ""
+        case "line4": return record.line4 ?? ""
         default: return ""
         }
     }
@@ -1640,6 +1649,7 @@ struct DailyScheduleRecord: Identifiable, Equatable, Hashable {
     var line1: String?  // Now mutable for editing
     var line2: String?  // Now mutable for editing
     var line3: String?  // Now mutable for editing
+    var line4: String?  // Now mutable for editing - CALL field
     let uuid: UUID?
     let zoneID: CKRecordZone.ID  // Track which zone this record belongs to
     var isModified: Bool = false  // Track if record has unsaved changes
@@ -1650,6 +1660,7 @@ struct DailyScheduleRecord: Identifiable, Equatable, Hashable {
         self.line1 = record["CD_line1"] as? String
         self.line2 = record["CD_line2"] as? String
         self.line3 = record["CD_line3"] as? String
+        self.line4 = record["CD_line4"] as? String
         self.zoneID = record.recordID.zoneID  // Store the zone ID
         self.isModified = false  // Data from CloudKit is not modified
         if let uuidString = record["CD_id"] as? String {
@@ -1666,6 +1677,7 @@ struct DailyScheduleRecord: Identifiable, Equatable, Hashable {
         self.line1 = ""
         self.line2 = ""
         self.line3 = ""
+        self.line4 = ""
         self.uuid = UUID()
         self.zoneID = zoneID
         self.isModified = false  // New empty records are not modified until data is entered
