@@ -508,15 +508,19 @@ class CloudKitManager: ObservableObject {
                     let fetchedSchedules = records.map(DailyScheduleRecord.init)
                     debugLog("📥 FETCH DEBUG: Converted to \(fetchedSchedules.count) DailyScheduleRecord objects")
                     
+                    // DEDUPLICATION: Remove duplicate records by date, keeping the most complete one
+                    let deduplicatedSchedules = self?.removeDuplicatesByDate(fetchedSchedules) ?? fetchedSchedules
+                    debugLog("🧹 DEDUPLICATION: Reduced from \(fetchedSchedules.count) to \(deduplicatedSchedules.count) records")
+                    
                     // Debug: Log what we fetched from CloudKit
-                    for schedule in fetchedSchedules {
+                    for schedule in deduplicatedSchedules {
                         if let date = schedule.date, Calendar.current.isDate(date, inSameDayAs: Date(timeIntervalSince1970: 1757101946)) { // Sept 5, 2025
                             debugLog("🔍 FETCHED Sept 5: line1='\(schedule.line1 ?? "nil")', line2='\(schedule.line2 ?? "nil")', line3='\(schedule.line3 ?? "nil")', line4='\(schedule.line4 ?? "nil")'")
                         }
                     }
                     
                     // CRITICAL: Preserve unsaved edits in global memory during fetch
-                    var mergedSchedules = fetchedSchedules
+                    var mergedSchedules = deduplicatedSchedules
                     
                     // Debug: Check current local memory state
                     debugLog("🧠 LOCAL MEMORY: \(self?.dailySchedules.count ?? 0) records, \(self?.dailySchedules.filter { $0.isModified }.count ?? 0) modified")
@@ -1647,10 +1651,11 @@ struct DailyScheduleRecord: Identifiable, Equatable, Hashable {
             }
         }
         
-        self.line1 = record["CD_line1"] as? String
-        self.line2 = record["CD_line2"] as? String
-        self.line3 = record["CD_line3"] as? String
-        self.line4 = record["CD_line4"] as? String
+        // Fix: Convert empty CKRecordValues to nil instead of empty strings
+        self.line1 = Self.extractStringValue(from: record["CD_line1"])
+        self.line2 = Self.extractStringValue(from: record["CD_line2"])
+        self.line3 = Self.extractStringValue(from: record["CD_line3"])
+        self.line4 = Self.extractStringValue(from: record["CD_line4"])
         self.zoneID = record.recordID.zoneID  // Store the zone ID
         self.isModified = false  // Data from CloudKit is not modified
         
@@ -1672,6 +1677,68 @@ struct DailyScheduleRecord: Identifiable, Equatable, Hashable {
         } else {
             self.uuid = nil
         }
+    }
+    
+    /// Helper function to properly extract string values from CKRecordValue
+    /// Converts empty CKRecordValues to nil instead of empty strings
+    private static func extractStringValue(from recordValue: CKRecordValue?) -> String? {
+        guard let recordValue = recordValue else { return nil }
+        
+        // Cast to string and check if it's meaningful
+        if let stringValue = recordValue as? String {
+            return stringValue.isEmpty ? nil : stringValue
+        }
+        
+        return nil
+    }
+    
+    /// Remove duplicate records by date, keeping the most complete record
+    private func removeDuplicatesByDate(_ records: [DailyScheduleRecord]) -> [DailyScheduleRecord] {
+        var bestRecords: [String: DailyScheduleRecord] = [:]
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+        
+        for record in records {
+            guard let date = record.date else { continue }
+            let dateKey = dateFormatter.string(from: date)
+            
+            if let existing = bestRecords[dateKey] {
+                // Choose the better record (more complete data)
+                bestRecords[dateKey] = chooseBetterRecord(existing, record)
+                debugLog("🔄 DUPLICATE FOUND for \(dateKey): Kept better record")
+            } else {
+                bestRecords[dateKey] = record
+            }
+        }
+        
+        return Array(bestRecords.values).sorted { ($0.date ?? Date()) < ($1.date ?? Date()) }
+    }
+    
+    /// Choose which record is "better" (has more complete data)
+    private func chooseBetterRecord(_ record1: DailyScheduleRecord, _ record2: DailyScheduleRecord) -> DailyScheduleRecord {
+        let score1 = calculateRecordCompleteness(record1)
+        let score2 = calculateRecordCompleteness(record2)
+        
+        // If scores are equal, prefer the more recently modified record
+        if score1 == score2 {
+            // Compare modification dates if available (would need to track this)
+            return record1 // Default to first record if equal
+        }
+        
+        return score1 > score2 ? record1 : record2
+    }
+    
+    /// Calculate how "complete" a record is (higher score = more data)
+    private func calculateRecordCompleteness(_ record: DailyScheduleRecord) -> Int {
+        var score = 0
+        
+        // Add points for non-nil, non-empty fields
+        if let line1 = record.line1, !line1.isEmpty { score += 1 }
+        if let line2 = record.line2, !line2.isEmpty { score += 1 }
+        if let line3 = record.line3, !line3.isEmpty { score += 1 }
+        if let line4 = record.line4, !line4.isEmpty { score += 1 }
+        
+        return score
     }
     
     // Custom initializer for creating new records for editing
