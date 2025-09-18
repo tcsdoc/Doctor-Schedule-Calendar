@@ -510,7 +510,7 @@ class CloudKitManager: ObservableObject {
                     
                     // Debug: Log what we fetched from CloudKit
                     for schedule in fetchedSchedules {
-                        if let date = schedule.date, Calendar.current.isDate(date, inSameDayAs: Date(timeIntervalSince1970: 1725494400)) { // Sept 5, 2025
+                        if let date = schedule.date, Calendar.current.isDate(date, inSameDayAs: Date(timeIntervalSince1970: 1757101946)) { // Sept 5, 2025
                             debugLog("🔍 FETCHED Sept 5: line1='\(schedule.line1 ?? "nil")', line2='\(schedule.line2 ?? "nil")', line3='\(schedule.line3 ?? "nil")', line4='\(schedule.line4 ?? "nil")'")
                         }
                     }
@@ -525,7 +525,7 @@ class CloudKitManager: ObservableObject {
                     for existingRecord in self?.dailySchedules ?? [] {
                         if existingRecord.isModified {
                             // Debug: Log what local record we're trying to protect
-                            if let date = existingRecord.date, Calendar.current.isDate(date, inSameDayAs: Date(timeIntervalSince1970: 1725494400)) { // Sept 5, 2025
+                            if let date = existingRecord.date, Calendar.current.isDate(date, inSameDayAs: Date(timeIntervalSince1970: 1757101946)) { // Sept 5, 2025
                                 debugLog("🛡️ LOCAL Sept 5 (modified): line1='\(existingRecord.line1 ?? "nil")', line2='\(existingRecord.line2 ?? "nil")', line3='\(existingRecord.line3 ?? "nil")', line4='\(existingRecord.line4 ?? "nil")'")
                             }
                             // CRITICAL FIX: Don't restore records that are in the recent deletion list
@@ -555,7 +555,7 @@ class CloudKitManager: ObservableObject {
                     
                     // Debug: Log final merged result for Sept 5
                     for schedule in mergedSchedules {
-                        if let date = schedule.date, Calendar.current.isDate(date, inSameDayAs: Date(timeIntervalSince1970: 1725494400)) { // Sept 5, 2025
+                        if let date = schedule.date, Calendar.current.isDate(date, inSameDayAs: Date(timeIntervalSince1970: 1757101946)) { // Sept 5, 2025
                             debugLog("📱 FINAL Sept 5: line1='\(schedule.line1 ?? "nil")', line2='\(schedule.line2 ?? "nil")', line3='\(schedule.line3 ?? "nil")', line4='\(schedule.line4 ?? "nil")' (modified: \(schedule.isModified))")
                         }
                     }
