@@ -470,26 +470,46 @@ class CloudKitManager: ObservableObject {
         debugLog("📥 FETCH DEBUG: Query predicate: \(query.predicate)")
         debugLog("📥 FETCH DEBUG: Sort descriptors: \(query.sortDescriptors?.description ?? "none")")
         
-        privateDatabase.fetch(withQuery: query, inZoneWith: customZone.zoneID, desiredKeys: nil, resultsLimit: CKQueryOperation.maximumResults) { [weak self] (result: Result<(matchResults: [(CKRecord.ID, Result<CKRecord, Error>)], queryCursor: CKQueryOperation.Cursor?), Error>) in
+        let operation = CKQueryOperation(query: query)
+        operation.zoneID = customZone.zoneID
+        operation.resultsLimit = CKQueryOperation.maximumResults
+        
+        var allRecords: [CKRecord] = []
+        
+        operation.recordFetchedBlock = { record in
+            allRecords.append(record)
+            debugLog("📥 FETCH RECORD: \(record.recordID.recordName) - Success")
+        }
+        
+        operation.queryCompletionBlock = { [weak self] cursor, error in
             DispatchQueue.main.async {
-                switch result {
-                case .success(let (matchResults, cursor)):
-                    debugLog("📥 FETCH SUCCESS: CloudKit query completed")
-                    debugLog("📥 FETCH DEBUG: Raw match results count: \(matchResults.count)")
-                    debugLog("📥 FETCH DEBUG: Query cursor: \(cursor?.description ?? "none")")
+                if let error = error {
+                    debugLog("❌ FETCH FAILED: CloudKit query failed")
+                    debugLog("📥 FETCH ERROR DETAILS:")
+                    debugLog("   Error: \(error.localizedDescription)")
+                    debugLog("   Domain: \((error as NSError).domain)")
+                    debugLog("   Code: \((error as NSError).code)")
                     
-                    let records = matchResults.compactMap { recordID, result in
-                        switch result {
-                        case .success(let record):
-                            debugLog("📥 FETCH RECORD: \(recordID.recordName) - Success")
-                            return record
-                        case .failure(let error):
-                            debugLog("📥 FETCH RECORD: \(recordID.recordName) - Failed: \(error)")
-                            return nil
-                        }
+                    if let ckError = error as? CKError {
+                        debugLog("   CKError code: \(ckError.code.rawValue)")
+                        debugLog("   CKError type: \(ckError.code)")
+                        let underlying = (ckError as NSError).userInfo[NSUnderlyingErrorKey] as? Error
+                        debugLog("   Underlying: \(underlying?.localizedDescription ?? "none")")
                     }
                     
-                    debugLog("📥 FETCH DEBUG: Successfully parsed \(records.count) records from \(matchResults.count) results")
+                    self?.errorMessage = "Failed to fetch schedule data: \(error.localizedDescription)"
+                    self?.dailySchedules = []
+                    completion()
+                    return
+                }
+                
+                debugLog("📥 FETCH SUCCESS: CloudKit query completed")
+                debugLog("📥 FETCH DEBUG: Raw match results count: \(allRecords.count)")
+                debugLog("📥 FETCH DEBUG: Query cursor: \(cursor?.description ?? "none")")
+                
+                let records = allRecords
+                
+                debugLog("📥 FETCH DEBUG: Successfully parsed \(records.count) records from \(allRecords.count) results")
                     
                     // Log detailed information about each fetched record
                     for (index, record) in records.enumerated() {
@@ -505,22 +525,18 @@ class CloudKitManager: ObservableObject {
                         debugLog("   Modified: \(record.modificationDate ?? Date())")
                     }
                     
-                    let fetchedSchedules = records.map(DailyScheduleRecord.init)
-                    debugLog("📥 FETCH DEBUG: Converted to \(fetchedSchedules.count) DailyScheduleRecord objects")
+                let fetchedSchedules = records.map(DailyScheduleRecord.init)
+                debugLog("📥 FETCH DEBUG: Converted to \(fetchedSchedules.count) DailyScheduleRecord objects")
                     
-                    // DEDUPLICATION: Remove duplicate records by date, keeping the most complete one
-                    let deduplicatedSchedules: [DailyScheduleRecord] = self?.removeDuplicatesByDate(fetchedSchedules) ?? fetchedSchedules
-                    debugLog("🧹 DEDUPLICATION: Reduced from \(fetchedSchedules.count) to \(deduplicatedSchedules.count) records")
-                    
-                    // Debug: Log what we fetched from CloudKit
-                    for schedule in deduplicatedSchedules {
+                // Debug: Log what we fetched from CloudKit
+                for schedule in fetchedSchedules {
                         if let date = schedule.date, Calendar.current.isDate(date, inSameDayAs: Date(timeIntervalSince1970: 1757101946)) { // Sept 5, 2025
                             debugLog("🔍 FETCHED Sept 5: line1='\(schedule.line1 ?? "nil")', line2='\(schedule.line2 ?? "nil")', line3='\(schedule.line3 ?? "nil")', line4='\(schedule.line4 ?? "nil")'")
                         }
                     }
                     
-                    // CRITICAL: Preserve unsaved edits in global memory during fetch
-                    var mergedSchedules = deduplicatedSchedules
+                // CRITICAL: Preserve unsaved edits in global memory during fetch
+                var mergedSchedules = fetchedSchedules
                     
                     // Debug: Check current local memory state
                     debugLog("🧠 LOCAL MEMORY: \(self?.dailySchedules.count ?? 0) records, \(self?.dailySchedules.filter { $0.isModified }.count ?? 0) modified")
@@ -564,26 +580,11 @@ class CloudKitManager: ObservableObject {
                         }
                     }
                     
-                case .failure(let error):
-                    debugLog("❌ FETCH FAILED: CloudKit query failed")
-                    debugLog("📥 FETCH ERROR DETAILS:")
-                    debugLog("   Error: \(error.localizedDescription)")
-                    debugLog("   Domain: \((error as NSError).domain)")
-                    debugLog("   Code: \((error as NSError).code)")
-                    
-                    if let ckError = error as? CKError {
-                        debugLog("   CKError code: \(ckError.code.rawValue)")
-                        debugLog("   CKError type: \(ckError.code)")
-                        let underlying = (ckError as NSError).userInfo[NSUnderlyingErrorKey] as? Error
-                        debugLog("   Underlying: \(underlying?.localizedDescription ?? "none")")
-                    }
-                    
-                    self?.errorMessage = "Failed to fetch schedule data: \(error.localizedDescription)"
-                    self?.dailySchedules = []
-                }
                 completion()
             }
         }
+        
+        privateDatabase.add(operation)
     }
     
     
@@ -1681,7 +1682,7 @@ struct DailyScheduleRecord: Identifiable, Equatable, Hashable {
     
     /// Helper function to properly extract string values from CKRecordValue
     /// Converts empty CKRecordValues to nil instead of empty strings
-    private static func extractStringValue(from recordValue: CKRecordValue?) -> String? {
+    static func extractStringValue(from recordValue: CKRecordValue?) -> String? {
         guard let recordValue = recordValue else { return nil }
         
         // Cast to string and check if it's meaningful
@@ -1770,11 +1771,10 @@ struct MonthlyNotesRecord: Identifiable, Equatable, Hashable {
         self.id = record.recordID.recordName
         self.month = (record["CD_month"] as? Int) ?? 0
         self.year = (record["CD_year"] as? Int) ?? 0
-        // Fix: Convert empty CKRecordValues to nil instead of empty strings
+        // Fix: Convert empty CKRecordValues to nil instead of empty strings  
         self.line1 = DailyScheduleRecord.extractStringValue(from: record["CD_line1"])
         self.line2 = DailyScheduleRecord.extractStringValue(from: record["CD_line2"])
         self.line3 = DailyScheduleRecord.extractStringValue(from: record["CD_line3"])
-        self.line4 = DailyScheduleRecord.extractStringValue(from: record["CD_line4"])
         self.zoneID = record.recordID.zoneID  // Store the zone ID
         self.isModified = false  // Data from CloudKit is not modified
         if let uuidString = record["CD_id"] as? String {
