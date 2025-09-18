@@ -212,11 +212,12 @@ class CloudKitManager: ObservableObject {
                         debugLog("❌ SETUP: Other CloudKit error")
                     }
                 }
-                debugLog("⚠️ Will continue with default zone for backward compatibility")
-                // Set zone as ready even on error so app doesn't hang
+                debugLog("❌ CRITICAL: Custom zone setup failed - PSC requires custom zones for sharing")
+                // Don't mark zone as ready if setup fails - app should not operate without custom zone
                 await MainActor.run {
-                    self.isZoneReady = true
-                    debugLog("⚠️ Zone marked as ready despite error - using fallback")
+                    self.isZoneReady = false
+                    self.errorMessage = "Custom zone setup failed. PSC requires custom zones for sharing functionality."
+                    debugLog("❌ Zone marked as NOT ready - custom zone required")
                 }
             }
         }
@@ -409,47 +410,13 @@ class CloudKitManager: ObservableObject {
         }
     }
     
-    // EMERGENCY: Force fetch from ALL zones to recover lost data
+    // EMERGENCY: Force refresh from custom zone only
     func emergencyDataRecovery() {
-        debugLog("🚨 EMERGENCY: Starting comprehensive data recovery...")
+        debugLog("🚨 EMERGENCY: Starting custom zone data recovery...")
+        debugLog("🔒 CUSTOM ZONE ONLY: PSC never uses default zones - custom zones required for sharing")
         
-        // Fetch from custom zone first
-        fetchDailySchedules {
-            debugLog("🔍 Emergency fetch from custom zone completed")
-        }
-        
-        // Also try fetching from default zone in case data got split
-        let defaultQuery = CKQuery(recordType: "CD_DailySchedule", predicate: NSPredicate(value: true))
-        privateDatabase.fetch(withQuery: defaultQuery, inZoneWith: nil, desiredKeys: nil, resultsLimit: CKQueryOperation.maximumResults) { [weak self] result in
-            DispatchQueue.main.async {
-                switch result {
-                case .success(let (matchResults, _)):
-                    let records = matchResults.compactMap { _, result in try? result.get() }
-                    let defaultSchedules = records.map(DailyScheduleRecord.init)
-                    
-                    debugLog("🔍 EMERGENCY: Found \(defaultSchedules.count) records in DEFAULT zone")
-                    for schedule in defaultSchedules {
-                        if let date = schedule.date {
-                            let formatter = DateFormatter()
-                            formatter.dateFormat = "MMM d, yyyy"
-                            debugLog("📅 DEFAULT ZONE: \(formatter.string(from: date)) - \(schedule.line1 ?? "empty")")
-                        }
-                    }
-                    
-                    // Merge with existing data (avoiding duplicates)
-                    if !defaultSchedules.isEmpty {
-                        debugLog("🔄 EMERGENCY: Merging default zone data with custom zone data")
-                        let existingIDs = Set(self?.dailySchedules.map { $0.id } ?? [])
-                        let newSchedules = defaultSchedules.filter { !existingIDs.contains($0.id) }
-                        self?.dailySchedules.append(contentsOf: newSchedules)
-                        self?.dailySchedules.sort { ($0.date ?? Date()) < ($1.date ?? Date()) }
-                        debugLog("✅ EMERGENCY: Added \(newSchedules.count) records from default zone")
-                    }
-                case .failure(let error):
-                    debugLog("❌ EMERGENCY: Failed to fetch from default zone: \(error)")
-                }
-            }
-        }
+        // Force refresh from custom zone only
+        forceRefreshAllData()
     }
     
     /// Cleanup expired operations to prevent memory leaks
@@ -533,6 +500,7 @@ class CloudKitManager: ObservableObject {
                         debugLog("   CD_line1: '\(record["CD_line1"] as? String ?? "nil")'")
                         debugLog("   CD_line2: '\(record["CD_line2"] as? String ?? "nil")'")
                         debugLog("   CD_line3: '\(record["CD_line3"] as? String ?? "nil")'")
+                        debugLog("   CD_line4: '\(record["CD_line4"] as? String ?? "nil")'")
                         debugLog("   Creation: \(record.creationDate ?? Date())")
                         debugLog("   Modified: \(record.modificationDate ?? Date())")
                     }
@@ -676,27 +644,15 @@ class CloudKitManager: ObservableObject {
             return
         }
         
-        // Check custom zone availability - fallback to default zone if needed or on retry
-        let recordID: CKRecord.ID
-        let useCustomZone = userCustomZone != nil && retryCount < 2  // Use default zone on final retry
-        
-        debugLog("🔍 SAVE ZONE DEBUG:")
-        debugLog("   userCustomZone: \(userCustomZone?.zoneID.zoneName ?? "nil")")
-        debugLog("   retryCount: \(retryCount)")
-        debugLog("   useCustomZone: \(useCustomZone)")
-        
-        if useCustomZone, let customZone = userCustomZone {
-            recordID = CKRecord.ID(recordName: UUID().uuidString, zoneID: customZone.zoneID)
-            debugLog("🔒 Saving to CUSTOM zone \(customZone.zoneID.zoneName) for privacy and sharing (attempt \(retryCount + 1))")
-        } else {
-            debugLog("⚠️ Using DEFAULT zone as fallback (retryCount: \(retryCount), customZone available: \(userCustomZone != nil))")
-            recordID = CKRecord.ID(recordName: UUID().uuidString)
-            if retryCount == 0 && userCustomZone == nil {
-                debugLog("🔧 Custom zone not available - attempting setup...")
-                // Try to setup custom zone for future saves
-                setupUserCustomZone()
-            }
+        // CUSTOM ZONE ONLY - Never use default zone
+        guard let customZone = userCustomZone else {
+            debugLog("❌ SAVE FAILED: Custom zone required - PSC never uses default zones")
+            completion(false, NSError(domain: "CloudKitManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "Custom zone required for sharing functionality"]))
+            return
         }
+        
+        let recordID = CKRecord.ID(recordName: UUID().uuidString, zoneID: customZone.zoneID)
+        debugLog("🔒 Saving to CUSTOM zone \(customZone.zoneID.zoneName) for sharing (attempt \(retryCount + 1))")
         
         // Mark operation as starting
         markOperationStarting(for: dateKey, type: "SAVE")
@@ -1099,19 +1055,17 @@ class CloudKitManager: ObservableObject {
         let predicate = NSPredicate(format: "CD_month == %d AND CD_year == %d", month, year)
         let query = CKQuery(recordType: "CD_MonthlyNotes", predicate: predicate)
         
-        // Use custom zone if available and not in final retry, otherwise use default zone
-        let useCustomZone = userCustomZone != nil && retryCount < 2
-        let zoneToQuery = useCustomZone ? userCustomZone : nil
-        
-        if !useCustomZone {
-            debugLog("⚠️ Using DEFAULT zone for monthly notes query (retryCount: \(retryCount), customZone available: \(userCustomZone != nil))")
-            if retryCount == 0 && userCustomZone == nil {
-                // Try to setup custom zone for future saves
-                setupUserCustomZone()
+        // CUSTOM ZONE ONLY - Never use default zone
+        guard let customZone = userCustomZone else {
+            debugLog("❌ MONTHLY NOTES SAVE FAILED: Custom zone required - PSC never uses default zones")
+            DispatchQueue.main.async {
+                self.markOperationCompleted(for: monthKey, type: "SAVE_MONTHLY", success: false)
+                completion(false, NSError(domain: "CloudKitManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "Custom zone required for sharing functionality"]))
             }
+            return
         }
         
-        privateDatabase.fetch(withQuery: query, inZoneWith: zoneToQuery?.zoneID, desiredKeys: nil, resultsLimit: CKQueryOperation.maximumResults) { [weak self, retryCount, monthKey, month, year, line1, line2, line3, completion] (result: Result<(matchResults: [(CKRecord.ID, Result<CKRecord, Error>)], queryCursor: CKQueryOperation.Cursor?), Error>) in
+        privateDatabase.fetch(withQuery: query, inZoneWith: customZone.zoneID, desiredKeys: nil, resultsLimit: CKQueryOperation.maximumResults) { [weak self, retryCount, monthKey, month, year, line1, line2, line3, completion] (result: Result<(matchResults: [(CKRecord.ID, Result<CKRecord, Error>)], queryCursor: CKQueryOperation.Cursor?), Error>) in
             let record: CKRecord
             
             switch result {
@@ -1125,15 +1079,9 @@ class CloudKitManager: ObservableObject {
                     record = existingRecord
                     debugLog("📝 Updating existing monthly notes record for \(monthKey)")
                 } else {
-                    // Create new record with zone-aware logic
-                    let recordID: CKRecord.ID
-                    if useCustomZone, let customZone = zoneToQuery {
-                        recordID = CKRecord.ID(recordName: UUID().uuidString, zoneID: customZone.zoneID)
-                        debugLog("➕ Creating new monthly notes record for \(monthKey) in CUSTOM zone")
-                    } else {
-                        recordID = CKRecord.ID(recordName: UUID().uuidString)
-                        debugLog("➕ Creating new monthly notes record for \(monthKey) in DEFAULT zone")
-                    }
+                    // Create new record in custom zone only
+                    let recordID = CKRecord.ID(recordName: UUID().uuidString, zoneID: customZone.zoneID)
+                    debugLog("➕ Creating new monthly notes record for \(monthKey) in CUSTOM zone")
                     
                     record = CKRecord(recordType: "CD_MonthlyNotes", recordID: recordID)
                     record["CD_id"] = UUID().uuidString as CKRecordValue
