@@ -1640,10 +1640,10 @@ struct DailyScheduleRecord: Identifiable, Equatable, Hashable {
             let dateString = formatter.string(from: date)
             if dateString == "2025-09-04" || dateString == "2025-09-05" {
                 debugLog("🔄 CONVERTING \(dateString):")
-                debugLog("   Raw CD_line1: \(rawLine1 ?? "nil") (type: \(type(of: rawLine1)))")
-                debugLog("   Raw CD_line2: \(rawLine2 ?? "nil") (type: \(type(of: rawLine2)))")
-                debugLog("   Raw CD_line3: \(rawLine3 ?? "nil") (type: \(type(of: rawLine3)))")
-                debugLog("   Raw CD_line4: \(rawLine4 ?? "nil") (type: \(type(of: rawLine4)))")
+                debugLog("   Raw CD_line1: \(String(describing: rawLine1)) (type: \(type(of: rawLine1)))")
+                debugLog("   Raw CD_line2: \(String(describing: rawLine2)) (type: \(type(of: rawLine2)))")
+                debugLog("   Raw CD_line3: \(String(describing: rawLine3)) (type: \(type(of: rawLine3)))")
+                debugLog("   Raw CD_line4: \(String(describing: rawLine4)) (type: \(type(of: rawLine4)))")
             }
         }
         
