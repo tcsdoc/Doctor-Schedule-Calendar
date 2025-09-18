@@ -470,7 +470,7 @@ class CloudKitManager: ObservableObject {
         debugLog("📥 FETCH DEBUG: Query predicate: \(query.predicate)")
         debugLog("📥 FETCH DEBUG: Sort descriptors: \(query.sortDescriptors?.description ?? "none")")
         
-        privateDatabase.fetch(withQuery: query, inZoneWith: customZone.zoneID, desiredKeys: nil, resultsLimit: CKQueryOperation.maximumResults) { [weak self] result in
+        privateDatabase.fetch(withQuery: query, inZoneWith: customZone.zoneID, desiredKeys: nil, resultsLimit: CKQueryOperation.maximumResults) { [weak self] (result: Result<(matchResults: [(CKRecord.ID, Result<CKRecord, Error>)], queryCursor: CKQueryOperation.Cursor?), Error>) in
             DispatchQueue.main.async {
                 switch result {
                 case .success(let (matchResults, cursor)):
