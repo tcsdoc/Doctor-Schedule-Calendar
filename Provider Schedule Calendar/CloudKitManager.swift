@@ -509,7 +509,7 @@ class CloudKitManager: ObservableObject {
                     debugLog("📥 FETCH DEBUG: Converted to \(fetchedSchedules.count) DailyScheduleRecord objects")
                     
                     // DEDUPLICATION: Remove duplicate records by date, keeping the most complete one
-                    let deduplicatedSchedules = self?.removeDuplicatesByDate(fetchedSchedules) ?? fetchedSchedules
+                    let deduplicatedSchedules: [DailyScheduleRecord] = self?.removeDuplicatesByDate(fetchedSchedules) ?? fetchedSchedules
                     debugLog("🧹 DEDUPLICATION: Reduced from \(fetchedSchedules.count) to \(deduplicatedSchedules.count) records")
                     
                     // Debug: Log what we fetched from CloudKit
