@@ -1626,12 +1626,47 @@ struct DailyScheduleRecord: Identifiable, Equatable, Hashable {
     init(from record: CKRecord) {
         self.id = record.recordID.recordName
         self.date = record["CD_date"] as? Date
+        
+        // Debug: Log raw CloudKit field values during conversion
+        let rawLine1 = record["CD_line1"]
+        let rawLine2 = record["CD_line2"] 
+        let rawLine3 = record["CD_line3"]
+        let rawLine4 = record["CD_line4"]
+        
+        // Debug: Check if we're converting Sept 4 or 5 data
+        if let date = record["CD_date"] as? Date {
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyy-MM-dd"
+            let dateString = formatter.string(from: date)
+            if dateString == "2025-09-04" || dateString == "2025-09-05" {
+                debugLog("🔄 CONVERTING \(dateString):")
+                debugLog("   Raw CD_line1: \(rawLine1 ?? "nil") (type: \(type(of: rawLine1)))")
+                debugLog("   Raw CD_line2: \(rawLine2 ?? "nil") (type: \(type(of: rawLine2)))")
+                debugLog("   Raw CD_line3: \(rawLine3 ?? "nil") (type: \(type(of: rawLine3)))")
+                debugLog("   Raw CD_line4: \(rawLine4 ?? "nil") (type: \(type(of: rawLine4)))")
+            }
+        }
+        
         self.line1 = record["CD_line1"] as? String
         self.line2 = record["CD_line2"] as? String
         self.line3 = record["CD_line3"] as? String
         self.line4 = record["CD_line4"] as? String
         self.zoneID = record.recordID.zoneID  // Store the zone ID
         self.isModified = false  // Data from CloudKit is not modified
+        
+        // Debug: Log converted values
+        if let date = record["CD_date"] as? Date {
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyy-MM-dd"
+            let dateString = formatter.string(from: date)
+            if dateString == "2025-09-04" || dateString == "2025-09-05" {
+                debugLog("   Converted line1: '\(self.line1 ?? "nil")'")
+                debugLog("   Converted line2: '\(self.line2 ?? "nil")'")
+                debugLog("   Converted line3: '\(self.line3 ?? "nil")'")
+                debugLog("   Converted line4: '\(self.line4 ?? "nil")'")
+            }
+        }
+        
         if let uuidString = record["CD_id"] as? String {
             self.uuid = UUID(uuidString: uuidString)
         } else {
