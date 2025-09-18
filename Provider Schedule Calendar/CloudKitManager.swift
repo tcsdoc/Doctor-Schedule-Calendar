@@ -527,16 +527,20 @@ class CloudKitManager: ObservableObject {
                     
                 let fetchedSchedules = records.map(DailyScheduleRecord.init)
                 debugLog("📥 FETCH DEBUG: Converted to \(fetchedSchedules.count) DailyScheduleRecord objects")
+                
+                // DEDUPLICATION: Remove duplicate records by date, keeping the most recent one
+                let deduplicatedSchedules = deduplicateSchedulesByDate(fetchedSchedules)
+                debugLog("🧹 DEDUPLICATION: Reduced from \(fetchedSchedules.count) to \(deduplicatedSchedules.count) records")
                     
                 // Debug: Log what we fetched from CloudKit
-                for schedule in fetchedSchedules {
+                for schedule in deduplicatedSchedules {
                         if let date = schedule.date, Calendar.current.isDate(date, inSameDayAs: Date(timeIntervalSince1970: 1757101946)) { // Sept 5, 2025
                             debugLog("🔍 FETCHED Sept 5: line1='\(schedule.line1 ?? "nil")', line2='\(schedule.line2 ?? "nil")', line3='\(schedule.line3 ?? "nil")', line4='\(schedule.line4 ?? "nil")'")
                         }
                     }
                     
                 // CRITICAL: Preserve unsaved edits in global memory during fetch
-                var mergedSchedules = fetchedSchedules
+                var mergedSchedules = deduplicatedSchedules
                     
                     // Debug: Check current local memory state
                     debugLog("🧠 LOCAL MEMORY: \(self?.dailySchedules.count ?? 0) records, \(self?.dailySchedules.filter { $0.isModified }.count ?? 0) modified")
@@ -654,7 +658,7 @@ class CloudKitManager: ObservableObject {
     
     private func saveDailySchedule(date: Date, line1: String?, line2: String?, line3: String?, line4: String?, retryCount: Int, completion: @escaping (Bool, Error?) -> Void) {
         let dateKey = "\(Calendar.current.startOfDay(for: date))"
-        debugLog("💾 Creating new daily schedule record for date: \(date) (retry: \(retryCount))")
+        debugLog("💾 FIND-OR-CREATE: Checking for existing record for date: \(date) (retry: \(retryCount))")
         
         // Check CloudKit status first
         guard cloudKitAvailable else {
@@ -677,14 +681,69 @@ class CloudKitManager: ObservableObject {
             return
         }
         
+        // CRITICAL FIX: Query for existing record by date BEFORE creating new one
+        let startOfDay = Calendar.current.startOfDay(for: date)
+        let endOfDay = Calendar.current.date(byAdding: .day, value: 1, to: startOfDay)!
+        let datePredicate = NSPredicate(format: "CD_date >= %@ AND CD_date < %@", startOfDay as NSDate, endOfDay as NSDate)
+        let query = CKQuery(recordType: "CD_DailySchedule", predicate: datePredicate)
+        
+        debugLog("🔍 QUERYING for existing records on \(dateKey)...")
+        
+        let operation = CKQueryOperation(query: query)
+        operation.zoneID = customZone.zoneID
+        operation.resultsLimit = 10  // Should only be 1, but handle duplicates
+        
+        var foundRecords: [CKRecord] = []
+        
+        operation.recordFetchedBlock = { record in
+            foundRecords.append(record)
+            debugLog("🔍 FOUND existing record: \(record.recordID.recordName)")
+        }
+        
+        operation.queryCompletionBlock = { [weak self] cursor, error in
+            DispatchQueue.main.async {
+                if let error = error {
+                    debugLog("❌ QUERY FAILED: \(error.localizedDescription) - creating new record")
+                    self?.createNewDailyScheduleRecord(customZone: customZone, dateKey: dateKey, date: date, line1: line1, line2: line2, line3: line3, line4: line4, retryCount: retryCount, completion: completion)
+                    return
+                }
+                
+                if foundRecords.isEmpty {
+                    debugLog("✅ No existing record found - creating new one")
+                    self?.createNewDailyScheduleRecord(customZone: customZone, dateKey: dateKey, date: date, line1: line1, line2: line2, line3: line3, line4: line4, retryCount: retryCount, completion: completion)
+                } else {
+                    debugLog("⚠️ FOUND \(foundRecords.count) existing records - updating the first one")
+                    let recordToUpdate = foundRecords[0]
+                    self?.updateExistingRecord(recordToUpdate, line1: line1, line2: line2, line3: line3, line4: line4, dateKey: dateKey, retryCount: retryCount, completion: completion)
+                    
+                    // Clean up duplicates if found
+                    if foundRecords.count > 1 {
+                        debugLog("🧹 CLEANING UP \(foundRecords.count - 1) duplicate records...")
+                        for i in 1..<foundRecords.count {
+                            self?.privateDatabase.delete(withRecordID: foundRecords[i].recordID) { _, error in
+                                if let error = error {
+                                    debugLog("⚠️ Failed to delete duplicate: \(error.localizedDescription)")
+                                } else {
+                                    debugLog("🗑️ Deleted duplicate record: \(foundRecords[i].recordID.recordName)")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        privateDatabase.add(operation)
+    }
+    
+    private func createNewDailyScheduleRecord(customZone: CKRecordZone, dateKey: String, date: Date, line1: String?, line2: String?, line3: String?, line4: String?, retryCount: Int, completion: @escaping (Bool, Error?) -> Void) {
         let recordID = CKRecord.ID(recordName: UUID().uuidString, zoneID: customZone.zoneID)
-        debugLog("🔒 Saving to CUSTOM zone \(customZone.zoneID.zoneName) for sharing (attempt \(retryCount + 1))")
+        debugLog("➕ CREATING NEW RECORD in CUSTOM zone \(customZone.zoneID.zoneName) (attempt \(retryCount + 1))")
         
         // Mark operation as starting
         markOperationStarting(for: dateKey, type: "SAVE")
         
         // Create record with the determined zone ID
-        
         let record = CKRecord(recordType: "CD_DailySchedule", recordID: recordID)
         record["CD_date"] = date as CKRecordValue
         record["CD_id"] = UUID().uuidString as CKRecordValue
@@ -693,7 +752,7 @@ class CloudKitManager: ObservableObject {
         record["CD_line3"] = line3 as CKRecordValue?
         record["CD_line4"] = line4 as CKRecordValue?
         
-        debugLog("💾 CREATING CLOUDKIT RECORD:")
+        debugLog("💾 CREATING NEW CLOUDKIT RECORD:")
         debugLog("   RecordID: \(recordID.recordName)")
         debugLog("   Zone: \(recordID.zoneID.zoneName)")
         debugLog("   CD_line1: '\(line1 ?? "nil")' (length: \(line1?.count ?? 0))")
@@ -701,9 +760,31 @@ class CloudKitManager: ObservableObject {
         debugLog("   CD_line3: '\(line3 ?? "nil")' (length: \(line3?.count ?? 0))")
         debugLog("   CD_line4: '\(line4 ?? "nil")' (length: \(line4?.count ?? 0))")
         
-        // Save directly to CloudKit without container linking
-        debugLog("   About to save to CloudKit (no container linking)...")
-        self.saveRecordWithCompletion(record, dateKey: dateKey, date: date, line1: line1, line2: line2, line3: line3, line4: line4, retryCount: retryCount, completion: completion)
+        // Save directly to CloudKit
+        debugLog("   About to save NEW record to CloudKit...")
+        saveRecordWithCompletion(record, dateKey: dateKey, date: date, line1: line1, line2: line2, line3: line3, line4: line4, retryCount: retryCount, completion: completion)
+    }
+    
+    private func updateExistingRecord(_ record: CKRecord, line1: String?, line2: String?, line3: String?, line4: String?, dateKey: String, retryCount: Int, completion: @escaping (Bool, Error?) -> Void) {
+        debugLog("🔄 UPDATING EXISTING RECORD:")
+        debugLog("   RecordID: \(record.recordID.recordName)")
+        debugLog("   Zone: \(record.recordID.zoneID.zoneName)")
+        debugLog("   NEW line1: '\(line1 ?? "nil")' (length: \(line1?.count ?? 0))")
+        debugLog("   NEW line2: '\(line2 ?? "nil")' (length: \(line2?.count ?? 0))")
+        debugLog("   NEW line3: '\(line3 ?? "nil")' (length: \(line3?.count ?? 0))")
+        debugLog("   NEW line4: '\(line4 ?? "nil")' (length: \(line4?.count ?? 0))")
+        
+        // Update record fields
+        record["CD_line1"] = line1 as CKRecordValue?
+        record["CD_line2"] = line2 as CKRecordValue?
+        record["CD_line3"] = line3 as CKRecordValue?
+        record["CD_line4"] = line4 as CKRecordValue?
+        
+        // Mark operation as starting
+        markOperationStarting(for: dateKey, type: "UPDATE")
+        
+        debugLog("   About to save UPDATED record to CloudKit...")
+        saveRecordWithCompletion(record, dateKey: dateKey, date: record["CD_date"] as? Date ?? Date(), line1: line1, line2: line2, line3: line3, line4: line4, retryCount: retryCount, completion: completion)
     }
     
     private func saveRecordWithCompletion(_ record: CKRecord, dateKey: String, date: Date, line1: String?, line2: String?, line3: String?, line4: String?, retryCount: Int, completion: @escaping (Bool, Error?) -> Void) {
@@ -1754,6 +1835,53 @@ struct DailyScheduleRecord: Identifiable, Equatable, Hashable {
         self.zoneID = zoneID
         self.isModified = false  // New empty records are not modified until data is entered
     }
+}
+
+// MARK: - Deduplication Helper
+private func deduplicateSchedulesByDate(_ schedules: [DailyScheduleRecord]) -> [DailyScheduleRecord] {
+    var uniqueSchedules: [String: DailyScheduleRecord] = [:]
+    
+    for schedule in schedules {
+        guard let date = schedule.date else { continue }
+        
+        let dateKey = Calendar.current.startOfDay(for: date).timeIntervalSince1970.description
+        
+        if let existing = uniqueSchedules[dateKey] {
+            // Keep the record with more data or the most recent one
+            let newCompleteness = calculateCompleteness(schedule)
+            let existingCompleteness = calculateCompleteness(existing)
+            
+            if newCompleteness > existingCompleteness {
+                debugLog("🔄 Replacing record for \(dateKey): new has \(newCompleteness) fields vs \(existingCompleteness)")
+                uniqueSchedules[dateKey] = schedule
+            } else if newCompleteness == existingCompleteness {
+                // Same completeness - keep the one with more recent modification
+                let newTime = schedule.isModified ? Date().timeIntervalSince1970 : 0
+                let existingTime = existing.isModified ? Date().timeIntervalSince1970 : 0
+                
+                if newTime > existingTime {
+                    debugLog("🔄 Replacing record for \(dateKey): newer modification time")
+                    uniqueSchedules[dateKey] = schedule
+                }
+            }
+        } else {
+            uniqueSchedules[dateKey] = schedule
+        }
+    }
+    
+    return Array(uniqueSchedules.values).sorted { schedule1, schedule2 in
+        guard let date1 = schedule1.date, let date2 = schedule2.date else { return false }
+        return date1 < date2
+    }
+}
+
+private func calculateCompleteness(_ schedule: DailyScheduleRecord) -> Int {
+    var count = 0
+    if !(schedule.line1?.isEmpty ?? true) { count += 1 }
+    if !(schedule.line2?.isEmpty ?? true) { count += 1 }
+    if !(schedule.line3?.isEmpty ?? true) { count += 1 }
+    if !(schedule.line4?.isEmpty ?? true) { count += 1 }
+    return count
 }
 
 struct MonthlyNotesRecord: Identifiable, Equatable, Hashable {
