@@ -1770,9 +1770,11 @@ struct MonthlyNotesRecord: Identifiable, Equatable, Hashable {
         self.id = record.recordID.recordName
         self.month = (record["CD_month"] as? Int) ?? 0
         self.year = (record["CD_year"] as? Int) ?? 0
-        self.line1 = record["CD_line1"] as? String
-        self.line2 = record["CD_line2"] as? String
-        self.line3 = record["CD_line3"] as? String
+        // Fix: Convert empty CKRecordValues to nil instead of empty strings
+        self.line1 = DailyScheduleRecord.extractStringValue(from: record["CD_line1"])
+        self.line2 = DailyScheduleRecord.extractStringValue(from: record["CD_line2"])
+        self.line3 = DailyScheduleRecord.extractStringValue(from: record["CD_line3"])
+        self.line4 = DailyScheduleRecord.extractStringValue(from: record["CD_line4"])
         self.zoneID = record.recordID.zoneID  // Store the zone ID
         self.isModified = false  // Data from CloudKit is not modified
         if let uuidString = record["CD_id"] as? String {
@@ -1780,6 +1782,19 @@ struct MonthlyNotesRecord: Identifiable, Equatable, Hashable {
         } else {
             self.uuid = nil
         }
+    }
+    
+    /// Helper function to properly extract string values from CKRecordValue
+    /// Converts empty CKRecordValues to nil instead of empty strings
+    static func extractStringValue(from recordValue: CKRecordValue?) -> String? {
+        guard let recordValue = recordValue else { return nil }
+        
+        // Cast to string and check if it's meaningful
+        if let stringValue = recordValue as? String {
+            return stringValue.isEmpty ? nil : stringValue
+        }
+        
+        return nil
     }
     
     // Custom initializer for creating new records for editing
