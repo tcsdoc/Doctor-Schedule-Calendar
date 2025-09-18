@@ -508,12 +508,26 @@ class CloudKitManager: ObservableObject {
                     let fetchedSchedules = records.map(DailyScheduleRecord.init)
                     debugLog("📥 FETCH DEBUG: Converted to \(fetchedSchedules.count) DailyScheduleRecord objects")
                     
+                    // Debug: Log what we fetched from CloudKit
+                    for schedule in fetchedSchedules {
+                        if let date = schedule.date, Calendar.current.isDate(date, inSameDayAs: Date(timeIntervalSince1970: 1725494400)) { // Sept 5, 2025
+                            debugLog("🔍 FETCHED Sept 5: line1='\(schedule.line1 ?? "nil")', line2='\(schedule.line2 ?? "nil")', line3='\(schedule.line3 ?? "nil")', line4='\(schedule.line4 ?? "nil")'")
+                        }
+                    }
+                    
                     // CRITICAL: Preserve unsaved edits in global memory during fetch
                     var mergedSchedules = fetchedSchedules
+                    
+                    // Debug: Check current local memory state
+                    debugLog("🧠 LOCAL MEMORY: \(self?.dailySchedules.count ?? 0) records, \(self?.dailySchedules.filter { $0.isModified }.count ?? 0) modified")
                     
                     // Add any modified records from global memory that aren't in CloudKit yet
                     for existingRecord in self?.dailySchedules ?? [] {
                         if existingRecord.isModified {
+                            // Debug: Log what local record we're trying to protect
+                            if let date = existingRecord.date, Calendar.current.isDate(date, inSameDayAs: Date(timeIntervalSince1970: 1725494400)) { // Sept 5, 2025
+                                debugLog("🛡️ LOCAL Sept 5 (modified): line1='\(existingRecord.line1 ?? "nil")', line2='\(existingRecord.line2 ?? "nil")', line3='\(existingRecord.line3 ?? "nil")', line4='\(existingRecord.line4 ?? "nil")'")
+                            }
                             // CRITICAL FIX: Don't restore records that are in the recent deletion list
                             if self?.recentDeletionOperations.contains(existingRecord.id) == true {
                                 debugLog("🚫 BLOCKED: Preventing restoration of recently deleted record \(existingRecord.id)")
@@ -538,6 +552,13 @@ class CloudKitManager: ObservableObject {
                     let protectedCount = mergedSchedules.filter { $0.isModified }.count
                     debugLog("✅ FETCH COMPLETE: \(fetchedSchedules.count) from CloudKit + \(protectedCount) unsaved edits = \(mergedSchedules.count) total")
                     debugLog("📥 FINAL COUNT: dailySchedules array now contains \(self?.dailySchedules.count ?? 0) records")
+                    
+                    // Debug: Log final merged result for Sept 5
+                    for schedule in mergedSchedules {
+                        if let date = schedule.date, Calendar.current.isDate(date, inSameDayAs: Date(timeIntervalSince1970: 1725494400)) { // Sept 5, 2025
+                            debugLog("📱 FINAL Sept 5: line1='\(schedule.line1 ?? "nil")', line2='\(schedule.line2 ?? "nil")', line3='\(schedule.line3 ?? "nil")', line4='\(schedule.line4 ?? "nil")' (modified: \(schedule.isModified))")
+                        }
+                    }
                     
                 case .failure(let error):
                     debugLog("❌ FETCH FAILED: CloudKit query failed")
