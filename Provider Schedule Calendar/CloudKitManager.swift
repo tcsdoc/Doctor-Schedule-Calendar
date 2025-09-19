@@ -525,22 +525,88 @@ class CloudKitManager: ObservableObject {
                         debugLog("   Modified: \(record.modificationDate ?? Date())")
                     }
                     
-                let fetchedSchedules = records.map(DailyScheduleRecord.init)
+                debugLog("🔄 CONVERSION DEBUG: About to convert \(records.count) CKRecords")
+                
+                // CRITICAL: Convert records with enhanced debugging to catch data swapping
+                var fetchedSchedules: [DailyScheduleRecord] = []
+                for (index, record) in records.enumerated() {
+                    let schedule = DailyScheduleRecord(from: record)
+                    fetchedSchedules.append(schedule)
+                    
+                    // Debug Sept 4th and 5th conversions specifically
+                    if let date = record["CD_date"] as? Date {
+                        let formatter = DateFormatter()
+                        formatter.dateFormat = "yyyy-MM-dd"
+                        formatter.timeZone = TimeZone(identifier: "UTC")  // FIX: Use UTC to match CloudKit
+                        let dateString = formatter.string(from: date)
+                        if dateString == "2025-09-04" || dateString == "2025-09-05" {
+                            debugLog("🔄 INDEX \(index): CKRecord \(record.recordID.recordName) (\(dateString) UTC) → DailyScheduleRecord \(schedule.id)")
+                            debugLog("   CK line1: '\(record["CD_line1"] as? String ?? "nil")' → Model line1: '\(schedule.line1 ?? "nil")'")
+                            debugLog("   CK line4: '\(record["CD_line4"] as? String ?? "nil")' → Model line4: '\(schedule.line4 ?? "nil")'")
+                        }
+                    }
+                }
+                
                 debugLog("📥 FETCH DEBUG: Converted to \(fetchedSchedules.count) DailyScheduleRecord objects")
                 
                 // DEDUPLICATION: Remove duplicate records by date, keeping the most recent one
                 let deduplicatedSchedules = deduplicateSchedulesByDate(fetchedSchedules)
                 debugLog("🧹 DEDUPLICATION: Reduced from \(fetchedSchedules.count) to \(deduplicatedSchedules.count) records")
+                
+                // Debug: Log all Sept 4th and 5th records after deduplication
+                for schedule in deduplicatedSchedules {
+                    if let date = schedule.date {
+                        let formatter = DateFormatter()
+                        formatter.dateFormat = "yyyy-MM-dd"
+                        formatter.timeZone = TimeZone(identifier: "UTC")
+                        let dateString = formatter.string(from: date)
+                        if dateString == "2025-09-04" || dateString == "2025-09-05" {
+                            debugLog("🧹 DEDUP RESULT \(dateString): ID=\(schedule.id), line1='\(schedule.line1 ?? "nil")', line4='\(schedule.line4 ?? "nil")'")
+                        }
+                    }
+                }
+                
+                // Debug: Check if Sept 5th data survived deduplication
+                for schedule in deduplicatedSchedules {
+                    if let date = schedule.date {
+                        let formatter = DateFormatter()
+                        formatter.dateFormat = "yyyy-MM-dd"
+                        formatter.timeZone = TimeZone(identifier: "UTC")
+                        let dateString = formatter.string(from: date)
+                        if dateString == "2025-09-05" {
+                            debugLog("🧹 POST-DEDUP Sept 5: line1='\(schedule.line1 ?? "nil")', line2='\(schedule.line2 ?? "nil")', line3='\(schedule.line3 ?? "nil")', line4='\(schedule.line4 ?? "nil")', ID=\(schedule.id)")
+                        }
+                    }
+                }
                     
                 // Debug: Log what we fetched from CloudKit
                 for schedule in deduplicatedSchedules {
-                        if let date = schedule.date, Calendar.current.isDate(date, inSameDayAs: Date(timeIntervalSince1970: 1757101946)) { // Sept 5, 2025
+                    if let date = schedule.date {
+                        let formatter = DateFormatter()
+                        formatter.dateFormat = "yyyy-MM-dd"
+                        formatter.timeZone = TimeZone(identifier: "UTC")
+                        let dateString = formatter.string(from: date)
+                        if dateString == "2025-09-05" {
                             debugLog("🔍 FETCHED Sept 5: line1='\(schedule.line1 ?? "nil")', line2='\(schedule.line2 ?? "nil")', line3='\(schedule.line3 ?? "nil")', line4='\(schedule.line4 ?? "nil")'")
                         }
                     }
+                }
                     
                 // CRITICAL: Preserve unsaved edits in global memory during fetch
                 var mergedSchedules = deduplicatedSchedules
+                
+                // Debug: Check Sept 5th data before merge  
+                for schedule in mergedSchedules {
+                    if let date = schedule.date {
+                        let formatter = DateFormatter()
+                        formatter.dateFormat = "yyyy-MM-dd"
+                        formatter.timeZone = TimeZone(identifier: "UTC")
+                        let dateString = formatter.string(from: date)
+                        if dateString == "2025-09-05" {
+                            debugLog("🔄 PRE-MERGE Sept 5: line1='\(schedule.line1 ?? "nil")', line2='\(schedule.line2 ?? "nil")', line3='\(schedule.line3 ?? "nil")', line4='\(schedule.line4 ?? "nil")', ID=\(schedule.id)")
+                        }
+                    }
+                }
                     
                     // Debug: Check current local memory state
                     debugLog("🧠 LOCAL MEMORY: \(self?.dailySchedules.count ?? 0) records, \(self?.dailySchedules.filter { $0.isModified }.count ?? 0) modified")
@@ -549,8 +615,14 @@ class CloudKitManager: ObservableObject {
                     for existingRecord in self?.dailySchedules ?? [] {
                         if existingRecord.isModified {
                             // Debug: Log what local record we're trying to protect
-                            if let date = existingRecord.date, Calendar.current.isDate(date, inSameDayAs: Date(timeIntervalSince1970: 1757101946)) { // Sept 5, 2025
-                                debugLog("🛡️ LOCAL Sept 5 (modified): line1='\(existingRecord.line1 ?? "nil")', line2='\(existingRecord.line2 ?? "nil")', line3='\(existingRecord.line3 ?? "nil")', line4='\(existingRecord.line4 ?? "nil")'")
+                            if let date = existingRecord.date {
+                                let formatter = DateFormatter()
+                                formatter.dateFormat = "yyyy-MM-dd"
+                                formatter.timeZone = TimeZone(identifier: "UTC")
+                                let dateString = formatter.string(from: date)
+                                if dateString == "2025-09-05" {
+                                    debugLog("🛡️ LOCAL Sept 5 (modified): line1='\(existingRecord.line1 ?? "nil")', line2='\(existingRecord.line2 ?? "nil")', line3='\(existingRecord.line3 ?? "nil")', line4='\(existingRecord.line4 ?? "nil")'")
+                                }
                             }
                             // CRITICAL FIX: Don't restore records that are in the recent deletion list
                             if self?.recentDeletionOperations.contains(existingRecord.id) == true {
@@ -579,8 +651,14 @@ class CloudKitManager: ObservableObject {
                     
                     // Debug: Log final merged result for Sept 5
                     for schedule in mergedSchedules {
-                        if let date = schedule.date, Calendar.current.isDate(date, inSameDayAs: Date(timeIntervalSince1970: 1757101946)) { // Sept 5, 2025
-                            debugLog("📱 FINAL Sept 5: line1='\(schedule.line1 ?? "nil")', line2='\(schedule.line2 ?? "nil")', line3='\(schedule.line3 ?? "nil")', line4='\(schedule.line4 ?? "nil")' (modified: \(schedule.isModified))")
+                        if let date = schedule.date {
+                            let formatter = DateFormatter()
+                            formatter.dateFormat = "yyyy-MM-dd"
+                            formatter.timeZone = TimeZone(identifier: "UTC")
+                            let dateString = formatter.string(from: date)
+                            if dateString == "2025-09-05" {
+                                debugLog("📱 FINAL Sept 5: line1='\(schedule.line1 ?? "nil")', line2='\(schedule.line2 ?? "nil")', line3='\(schedule.line3 ?? "nil")', line4='\(schedule.line4 ?? "nil")' (modified: \(schedule.isModified))")
+                            }
                         }
                     }
                     
@@ -1356,22 +1434,28 @@ class CloudKitManager: ObservableObject {
     
     /// Get existing record index for a date (read-only, safe for view rendering)
     func getRecordIndex(for date: Date) -> Int? {
-        let dayStart = Calendar.current.startOfDay(for: date)
+        // FIX: Use UTC calendar to match CloudKit data timestamps
+        var utcCalendar = Calendar.current
+        utcCalendar.timeZone = TimeZone(identifier: "UTC")!
+        let dayStart = utcCalendar.startOfDay(for: date)
         
         return dailySchedules.firstIndex(where: { schedule in
             guard let scheduleDate = schedule.date else { return false }
-            return Calendar.current.isDate(scheduleDate, inSameDayAs: dayStart)
+            return utcCalendar.isDate(scheduleDate, inSameDayAs: dayStart)
         })
     }
     
     /// Create a record for editing (separate from view rendering to avoid publishing errors)
     func createRecordForEditing(date: Date) {
-        let dayStart = Calendar.current.startOfDay(for: date)
+        // FIX: Use UTC calendar to match CloudKit data timestamps
+        var utcCalendar = Calendar.current
+        utcCalendar.timeZone = TimeZone(identifier: "UTC")!
+        let dayStart = utcCalendar.startOfDay(for: date)
         
         // Check if record already exists
         if dailySchedules.contains(where: { schedule in
             guard let scheduleDate = schedule.date else { return false }
-            return Calendar.current.isDate(scheduleDate, inSameDayAs: dayStart)
+            return utcCalendar.isDate(scheduleDate, inSameDayAs: dayStart)
         }) {
             return // Already exists
         }
@@ -1440,11 +1524,14 @@ class CloudKitManager: ObservableObject {
     
     /// Get current value for a field
     func getFieldValue(date: Date, field: String) -> String {
-        let dayStart = Calendar.current.startOfDay(for: date)
+        // FIX: Use UTC calendar to match CloudKit data timestamps
+        var utcCalendar = Calendar.current
+        utcCalendar.timeZone = TimeZone(identifier: "UTC")!
+        let dayStart = utcCalendar.startOfDay(for: date)
         
         guard let record = dailySchedules.first(where: { schedule in
             guard let scheduleDate = schedule.date else { return false }
-            return Calendar.current.isDate(scheduleDate, inSameDayAs: dayStart)
+            return utcCalendar.isDate(scheduleDate, inSameDayAs: dayStart)
         }) else {
             return ""
         }
@@ -1723,9 +1810,11 @@ struct DailyScheduleRecord: Identifiable, Equatable, Hashable {
         if let date = record["CD_date"] as? Date {
             let formatter = DateFormatter()
             formatter.dateFormat = "yyyy-MM-dd"
+            formatter.timeZone = TimeZone(identifier: "UTC")  // FIX: Use UTC to match CloudKit
             let dateString = formatter.string(from: date)
             if dateString == "2025-09-04" || dateString == "2025-09-05" {
-                debugLog("🔄 CONVERTING \(dateString):")
+                debugLog("🔄 CONVERTING \(dateString) UTC (RecordID: \(record.recordID.recordName)):")
+                debugLog("   CloudKit CD_date: \(date)")
                 debugLog("   Raw CD_line1: \(String(describing: rawLine1)) (type: \(type(of: rawLine1)))")
                 debugLog("   Raw CD_line2: \(String(describing: rawLine2)) (type: \(type(of: rawLine2)))")
                 debugLog("   Raw CD_line3: \(String(describing: rawLine3)) (type: \(type(of: rawLine3)))")
@@ -1745,12 +1834,14 @@ struct DailyScheduleRecord: Identifiable, Equatable, Hashable {
         if let date = record["CD_date"] as? Date {
             let formatter = DateFormatter()
             formatter.dateFormat = "yyyy-MM-dd"
+            formatter.timeZone = TimeZone(identifier: "UTC")  // FIX: Use UTC to match CloudKit
             let dateString = formatter.string(from: date)
             if dateString == "2025-09-04" || dateString == "2025-09-05" {
-                debugLog("   Converted line1: '\(self.line1 ?? "nil")'")
-                debugLog("   Converted line2: '\(self.line2 ?? "nil")'")
-                debugLog("   Converted line3: '\(self.line3 ?? "nil")'")
-                debugLog("   Converted line4: '\(self.line4 ?? "nil")'")
+                debugLog("   Converted \(dateString) UTC (RecordID: \(record.recordID.recordName)):")
+                debugLog("     line1: '\(self.line1 ?? "nil")'")
+                debugLog("     line2: '\(self.line2 ?? "nil")'")
+                debugLog("     line3: '\(self.line3 ?? "nil")'")
+                debugLog("     line4: '\(self.line4 ?? "nil")'")
             }
         }
         
@@ -1844,7 +1935,19 @@ private func deduplicateSchedulesByDate(_ schedules: [DailyScheduleRecord]) -> [
     for schedule in schedules {
         guard let date = schedule.date else { continue }
         
-        let dateKey = Calendar.current.startOfDay(for: date).timeIntervalSince1970.description
+        // FIX: Use UTC calendar to match CloudKit dates instead of device timezone
+        var utcCalendar = Calendar.current
+        utcCalendar.timeZone = TimeZone(identifier: "UTC")!
+        let dateKey = utcCalendar.startOfDay(for: date).timeIntervalSince1970.description
+        
+        // Debug: Log date key generation for Sept 4th and 5th
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.timeZone = TimeZone(identifier: "UTC")
+        let dateString = formatter.string(from: date)
+        if dateString == "2025-09-04" || dateString == "2025-09-05" {
+            debugLog("🔑 DEDUP KEY for \(dateString): Record \(schedule.id) → dateKey \(dateKey)")
+        }
         
         if let existing = uniqueSchedules[dateKey] {
             // Keep the record with more data or the most recent one

@@ -204,7 +204,7 @@ struct ContentView: View {
                     
                     
                     // Version number
-                    Text("v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "Unknown").\(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "Unknown")")
+                    Text("v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "Unknown")")
                         .font(.caption2)
                         .foregroundColor(.secondary)
                 }
