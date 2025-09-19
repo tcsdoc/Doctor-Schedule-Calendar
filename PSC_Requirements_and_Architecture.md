@@ -43,7 +43,7 @@
 ## Current App Status (September 18, 2025)
 
 ### Version Information
-- **Current Version**: 3.7.1
+- **Current Version**: 3.7.5
 - **Status**: Apple App Store approved, Production mode
 - **Architecture**: Custom zones only, sharing enabled
 
@@ -166,7 +166,7 @@ Provider Schedule Calendar/
 - Removed auto-save triggers
 - Implemented manual-save-only system
 
-### v3.7.1 (Current Production)
+### v3.7.5 (Current Production)
 - Apple App Store approved
 - Production CloudKit environment
 - 4-field daily schedule (added CALL field)
