@@ -13,6 +13,14 @@ If you suspect data loss, **STOP** and follow these steps immediately:
 
 ## Data Display Issues
 
+### 🚨 CRITICAL: Timezone Bug (FIXED v3.7.5)
+**Problem**: Calendar dates showing wrong data or shifted by 1 day  
+**Affected Users**: CST (-6), MST (-7), PST (-8) timezones  
+**Root Cause**: Calendar.current vs UTC timezone mismatch with CloudKit  
+**Status**: ✅ **RESOLVED in v3.7.5** (September 19, 2025)  
+**Reference**: See `CRITICAL_TIMEZONE_BUG_FIX.md` for complete technical details  
+**Functions Fixed**: `deduplicateSchedulesByDate`, `getFieldValue`, `getRecordIndex`, `createRecordForEditing`
+
 ### Partial Data Showing on Device
 **Symptoms**: Some fields missing (e.g., OS and CL empty, but CALL has data)
 

@@ -25,6 +25,7 @@
 - Manual save only
 - Work on feature branches
 - Test on multiple devices
+- Use UTC calendar for ALL CloudKit date operations
 
 ❌ NEVER:
 - Use default CloudKit zones
@@ -32,6 +33,7 @@
 - Make CloudKit the master data source
 - Work directly on main branch
 - Make changes without user approval
+- Use Calendar.current with CloudKit dates (causes timezone bugs)
 ```
 
 ## Common Past Mistakes (AVOID THESE)
@@ -42,11 +44,16 @@
 3. **Misunderstood data flow** - made CloudKit master instead of backup
 4. **Ignored provider code precision** - caused medical scheduling errors
 5. **Made unauthorized changes** - user explicitly said "do not make changes"
+6. **🚨 CRITICAL: Timezone mismatch bug (Sept 2025)** - Used Calendar.current instead of UTC with CloudKit dates, causing systematic date shifts for CST/MST/PST users. See `CRITICAL_TIMEZONE_BUG_FIX.md`
 
 ### Code Patterns That Are Wrong
 ```swift
 // ❌ WRONG - Creates default zone fallback
 recordID = CKRecord.ID(recordName: UUID().uuidString) // No zoneID!
+
+// ❌ WRONG - Uses local timezone with CloudKit UTC dates
+let dayStart = Calendar.current.startOfDay(for: date)
+Calendar.current.isDate(cloudKitDate, inSameDayAs: dayStart)
 
 // ❌ WRONG - Auto-save on focus lost
 .onFocusLost { saveData() }
@@ -62,6 +69,12 @@ if cloudKitData != localData {
 // ✅ CORRECT - Custom zone only
 guard let customZone = userCustomZone else { return }
 recordID = CKRecord.ID(recordName: UUID().uuidString, zoneID: customZone.zoneID)
+
+// ✅ CORRECT - UTC calendar for CloudKit dates
+var utcCalendar = Calendar.current
+utcCalendar.timeZone = TimeZone(identifier: "UTC")!
+let dayStart = utcCalendar.startOfDay(for: date)
+return utcCalendar.isDate(cloudKitDate, inSameDayAs: dayStart)
 
 // ✅ CORRECT - Manual save only
 Button("Save") { saveToCloudKit() } // User-initiated
