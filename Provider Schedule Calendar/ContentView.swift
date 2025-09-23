@@ -64,7 +64,6 @@ struct SaveErrorInfo {
 
 struct ContentView: View {
     @EnvironmentObject private var cloudKitManager: CloudKitManager
-    @State private var currentDate = Date()
     @State private var saveError = false
     @State private var saveErrorMessage = ""
     private let calendar = Calendar.current
@@ -245,8 +244,12 @@ struct ContentView: View {
     private var monthsToShow: [Date] {
         var months: [Date] = []
         
+        // FIXED: Always calculate from current date, not static date
+        let today = Date()
+        let startOfCurrentMonth = calendar.dateInterval(of: .month, for: today)!.start
+        
         for i in 0..<12 {
-            if let month = calendar.date(byAdding: .month, value: i, to: currentDate) {
+            if let month = calendar.date(byAdding: .month, value: i, to: startOfCurrentMonth) {
                 months.append(month)
             }
         }
@@ -818,7 +821,9 @@ struct ContentView: View {
         formatter.dateFormat = "MMMM yyyy"
         
         for monthOffset in 0..<12 {
-            guard let monthDate = calendar.date(byAdding: .month, value: monthOffset, to: currentDate) else { continue }
+            let today = Date()
+            let startOfCurrentMonth = calendar.dateInterval(of: .month, for: today)!.start
+            guard let monthDate = calendar.date(byAdding: .month, value: monthOffset, to: startOfCurrentMonth) else { continue }
             
             html += """
             <div class="month-page">
