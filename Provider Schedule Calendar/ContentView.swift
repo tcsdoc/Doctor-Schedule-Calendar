@@ -111,7 +111,6 @@ struct ContentView: View {
                         .background(saveButtonColor)
                         .cornerRadius(6)
                     }
-                    .disabled(!viewModel.hasChanges)
                     
                     Button(action: shareCalendar) {
                         HStack(spacing: 3) {
@@ -224,21 +223,139 @@ struct ContentView: View {
     
     private func saveData() {
         Task {
-            let success = await viewModel.saveChanges()
-            await MainActor.run {
-                saveMessage = success ? "✅ Changes saved successfully!" : "❌ Save failed. Please try again."
-                showingSaveAlert = true
+            if viewModel.hasChanges {
+                let success = await viewModel.saveChanges()
+                await MainActor.run {
+                    saveMessage = success ? "✅ Changes saved successfully!" : "❌ Save failed. Please try again."
+                    showingSaveAlert = true
+                }
+            } else {
+                await MainActor.run {
+                    saveMessage = "✅ No changes to save"
+                    showingSaveAlert = true
+                }
             }
         }
     }
     
     private func shareCalendar() {
-        // TODO: Implement CloudKit sharing
+        saveMessage = "🔗 Share feature will be implemented in next update"
+        showingSaveAlert = true
     }
     
     private func printCalendar() {
-        // TODO: Implement simplified print function
-        print("Print function to be implemented")
+        guard let currentMonth = viewModel.availableMonths.safeGet(index: currentMonthIndex) else { return }
+        
+        let printInfo = UIPrintInfo.printInfo()
+        printInfo.outputType = .general
+        printInfo.jobName = "Provider Schedule - \(currentMonthName)"
+        
+        let printController = UIPrintInteractionController.shared
+        printController.printInfo = printInfo
+        
+        // Create simple print content
+        let htmlContent = generatePrintHTML(for: currentMonth)
+        let printFormatter = UIMarkupTextPrintFormatter(markupText: htmlContent)
+        printFormatter.perPageContentInsets = UIEdgeInsets(top: 72, left: 72, bottom: 72, right: 72)
+        
+        printController.printFormatter = printFormatter
+        
+        printController.present(animated: true) { (controller, completed, error) in
+            if let error = error {
+                DispatchQueue.main.async {
+                    self.saveMessage = "❌ Print failed: \(error.localizedDescription)"
+                    self.showingSaveAlert = true
+                }
+            } else if completed {
+                DispatchQueue.main.async {
+                    self.saveMessage = "🖨️ Schedule printed successfully!"
+                    self.showingSaveAlert = true
+                }
+            }
+        }
+    }
+    
+    private func generatePrintHTML(for month: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMMM yyyy"
+        let monthName = formatter.string(from: month)
+        
+        var html = """
+        <html>
+        <head>
+            <title>Provider Schedule - \(monthName)</title>
+            <style>
+                body { font-family: Arial, sans-serif; margin: 20px; }
+                h1 { text-align: center; color: #333; }
+                table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+                th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+                th { background-color: #f2f2f2; font-weight: bold; }
+                .weekend { background-color: #f9f9f9; }
+                .os { color: blue; }
+                .cl { color: red; }
+                .off { color: green; }
+                .call { color: orange; }
+            </style>
+        </head>
+        <body>
+            <h1>Provider Schedule Calendar</h1>
+            <h2>\(monthName)</h2>
+            <table>
+                <tr>
+                    <th>Date</th>
+                    <th>Day</th>
+                    <th>OS</th>
+                    <th>CL</th>
+                    <th>OFF</th>
+                    <th>CALL</th>
+                </tr>
+        """
+        
+        let calendar = Calendar.current
+        let range = calendar.range(of: .day, in: .month, for: month)!
+        let dayFormatter = DateFormatter()
+        dayFormatter.dateFormat = "EEEE"
+        
+        for day in 1...range.count {
+            let date = calendar.date(byAdding: .day, value: day - 1, to: calendar.startOfDay(for: month))!
+            let dayName = dayFormatter.string(from: date)
+            let isWeekend = calendar.isDateInWeekend(date)
+            let weekendClass = isWeekend ? " class=\"weekend\"" : ""
+            
+            let schedule = viewModel.schedules[dateKey(for: date)]
+            
+            html += """
+                <tr\(weekendClass)>
+                    <td>\(day)</td>
+                    <td>\(dayName)</td>
+                    <td class="os">\(schedule?.os ?? "")</td>
+                    <td class="cl">\(schedule?.cl ?? "")</td>
+                    <td class="off">\(schedule?.off ?? "")</td>
+                    <td class="call">\(schedule?.call ?? "")</td>
+                </tr>
+            """
+        }
+        
+        // Add monthly notes if they exist
+        if let monthlyNote = viewModel.monthlyNotes[monthKey(for: month)] {
+            html += """
+                <tr>
+                    <td colspan="6" style="background-color: #e8f4fd; font-weight: bold;">
+                        Monthly Notes:<br>
+                        Line 1: \(monthlyNote.line1 ?? "")<br>
+                        Line 2: \(monthlyNote.line2 ?? "")
+                    </td>
+                </tr>
+            """
+        }
+        
+        html += """
+            </table>
+        </body>
+        </html>
+        """
+        
+        return html
     }
     
     // MARK: - Helper Functions
