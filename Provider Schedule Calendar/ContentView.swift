@@ -22,7 +22,7 @@ struct ContentView: View {
                 if let currentMonth = viewModel.availableMonths.safeGet(index: currentMonthIndex) {
                     let monthKey = monthKey(for: currentMonth)
                     let note = viewModel.monthlyNotes[monthKey]
-                    redesignLog("🔍 UI: Looking for monthly note with key '\(monthKey)', found: \(note?.description ?? "nil")")
+                    redesignLog("🔍 UI: Looking for monthly note with key '\(monthKey)', found: \(String(describing: note))")
                     RedesignedMonthlyNotesView(
                         month: currentMonth,
                         line1: note?.line1 ?? "",
