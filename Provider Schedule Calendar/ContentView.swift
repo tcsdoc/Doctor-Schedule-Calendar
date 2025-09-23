@@ -421,7 +421,7 @@ struct ScheduleTextField: View {
                     if text != uppercased {
                         text = uppercased
                     }
-                    onCommit(uppercased)
+                    // Only call onCommit on user submit, not on programmatic changes
                 }
         }
         .padding(.horizontal, 8)
