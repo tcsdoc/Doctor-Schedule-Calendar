@@ -416,7 +416,7 @@ struct ScheduleTextField: View {
                 .onSubmit {
                     onCommit(text.uppercased())
                 }
-                .onChange(of: text) { newValue in
+                .onChange(of: text) { _, newValue in
                     text = newValue.uppercased()
                     onCommit(text)
                 }
@@ -520,13 +520,13 @@ struct RedesignedMonthlyNotesView: View {
                 initialized = true
             }
         }
-        .onChange(of: line1) { newValue in
+        .onChange(of: line1) { _, newValue in
             // Only update display if we've been initialized (prevents false changes during data load)
             if initialized && newValue != line1Text {
                 line1Text = newValue
             }
         }
-        .onChange(of: line2) { newValue in
+        .onChange(of: line2) { _, newValue in
             // Only update display if we've been initialized (prevents false changes during data load)  
             if initialized && newValue != line2Text {
                 line2Text = newValue
