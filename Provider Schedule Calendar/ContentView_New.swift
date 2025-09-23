@@ -32,7 +32,7 @@ struct ContentView_New: View {
                         }
                     )
                     .padding(.horizontal, 20)
-                    .padding(.top, 10)
+                    .padding(.top, 4)
                 }
                 
                 // Calendar content - FULL WIDTH
@@ -66,90 +66,88 @@ struct ContentView_New: View {
         }
     }
     
-    // MARK: - Compact iPad Header (with room for monthly notes)
+    // MARK: - Ultra-Compact iPad Header (minimal height for 6-week months)
     private var modernHeader: some View {
-        VStack(spacing: 12) {
-            // COMPACT: Single row with all essentials
-            HStack(spacing: 20) {
-                // Left: App name + Version
-                HStack(spacing: 8) {
-                    Text("📅 Provider Schedule Calendar v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "4.0")")
-                        .font(.title2)
-                        .fontWeight(.bold)
-                }
+        VStack(spacing: 6) {
+            // ULTRA-COMPACT: Single row with essentials only
+            HStack(spacing: 16) {
+                // Left: App name only
+                Text("📅 PSC v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "4.0")")
+                    .font(.headline)
+                    .fontWeight(.bold)
                 
                 Spacer()
                 
-                // Center: Status
+                // Center: Status (compact)
                 if viewModel.isLoading {
-                    HStack(spacing: 6) {
-                        ProgressView().scaleEffect(0.8)
-                        Text("Loading")
+                    HStack(spacing: 4) {
+                        ProgressView().scaleEffect(0.7)
+                        Text("Loading").font(.caption)
                     }
                     .foregroundColor(.blue)
                 } else if !viewModel.isCloudKitAvailable {
-                    Text("⚠️ CloudKit Issue")
+                    Text("⚠️ CloudKit Issue").font(.caption)
                         .foregroundColor(.red)
                 } else if viewModel.hasChanges {
-                    Text("📝 Unsaved")
+                    Text("📝 Unsaved").font(.caption)
                         .foregroundColor(.orange)
                 } else {
-                    Text("✅ Ready")
+                    Text("✅ Ready").font(.caption)
                         .foregroundColor(.green)
                 }
                 
                 Spacer()
                 
-                // Right: Action buttons
-                HStack(spacing: 12) {
+                // Right: Compact action buttons
+                HStack(spacing: 8) {
                     Button(action: saveData) {
-                        HStack(spacing: 4) {
+                        HStack(spacing: 3) {
                             Image(systemName: "square.and.arrow.down")
                             Text(saveButtonText)
                         }
-                        .font(.title3)
+                        .font(.caption)
                         .foregroundColor(.white)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
                         .background(saveButtonColor)
-                        .cornerRadius(8)
+                        .cornerRadius(6)
                     }
                     .disabled(!viewModel.hasChanges)
                     
                     Button(action: shareCalendar) {
-                        HStack(spacing: 4) {
+                        HStack(spacing: 3) {
                             Image(systemName: "person.badge.plus")
                             Text("Share")
                         }
-                        .font(.title3)
+                        .font(.caption)
                         .foregroundColor(.green)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
                         .background(Color.green.opacity(0.1))
-                        .cornerRadius(8)
+                        .cornerRadius(6)
                     }
                     
                     Button(action: printCalendar) {
-                        HStack(spacing: 4) {
+                        HStack(spacing: 3) {
                             Image(systemName: "printer")
                             Text("Print")
                         }
-                        .font(.title3)
+                        .font(.caption)
                         .foregroundColor(.blue)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
                         .background(Color.blue.opacity(0.1))
-                        .cornerRadius(8)
+                        .cornerRadius(6)
                     }
                 }
             }
             
-            // COMPACT: Month navigation
+            // ULTRA-COMPACT: Month navigation inline
             if !viewModel.availableMonths.isEmpty {
-                HStack(spacing: 20) {
+                HStack(spacing: 16) {
                     Button(action: previousMonth) {
                         Image(systemName: "chevron.left.circle.fill")
-                            .font(.title)
+                            .font(.title2)
                             .foregroundColor(.blue)
                     }
                     .disabled(currentMonthIndex <= 0)
@@ -157,14 +155,14 @@ struct ContentView_New: View {
                     Spacer()
                     
                     Text(currentMonthName)
-                        .font(.system(size: 28, weight: .bold))
+                        .font(.system(size: 22, weight: .bold))
                         .foregroundColor(.primary)
                     
                     Spacer()
                     
                     Button(action: nextMonth) {
                         Image(systemName: "chevron.right.circle.fill")
-                            .font(.title)
+                            .font(.title2)
                             .foregroundColor(.blue)
                     }
                     .disabled(currentMonthIndex >= viewModel.availableMonths.count - 1)
@@ -172,7 +170,7 @@ struct ContentView_New: View {
             }
         }
         .padding(.horizontal, 20)
-        .padding(.vertical, 12)
+        .padding(.vertical, 8)
         .background(Color.gray.opacity(0.05))
         .cornerRadius(0)
     }
@@ -449,20 +447,20 @@ struct RedesignedMonthlyNotesView: View {
     }
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Text("📝 Monthly Notes for \(monthName)")
-                    .font(.headline)
+                Text("📝 \(monthName) Notes")
+                    .font(.subheadline)
                     .foregroundColor(.black)
                 
                 Spacer()
                 
                 Text("Blue: OS | Red: CL | Green: OFF | Orange: CALL")
-                    .font(.caption)
+                    .font(.caption2)
                     .foregroundColor(.black)
             }
             
-            VStack(spacing: 6) {
+            VStack(spacing: 4) {
                 // Blue field (Line 1)
                 HStack(spacing: 8) {
                     Text("Line 1:")
@@ -471,14 +469,14 @@ struct RedesignedMonthlyNotesView: View {
                         .frame(width: 60, alignment: .leading)
                     
                     TextField("", text: $line1Text)
-                        .font(.system(size: 16))
+                        .font(.system(size: 14))
                         .foregroundColor(.black)
                         .textFieldStyle(PlainTextFieldStyle())
-                        .padding(8)
+                        .padding(6)
                         .background(Color.blue.opacity(0.1))
-                        .cornerRadius(6)
+                        .cornerRadius(4)
                         .overlay(
-                            RoundedRectangle(cornerRadius: 6)
+                            RoundedRectangle(cornerRadius: 4)
                                 .stroke(Color.blue.opacity(0.3), lineWidth: 1)
                         )
                         .onChange(of: line1Text) { newValue in
@@ -494,14 +492,14 @@ struct RedesignedMonthlyNotesView: View {
                         .frame(width: 60, alignment: .leading)
                     
                     TextField("", text: $line2Text)
-                        .font(.system(size: 16))
+                        .font(.system(size: 14))
                         .foregroundColor(.black)
                         .textFieldStyle(PlainTextFieldStyle())
-                        .padding(8)
+                        .padding(6)
                         .background(Color.red.opacity(0.1))
-                        .cornerRadius(6)
+                        .cornerRadius(4)
                         .overlay(
-                            RoundedRectangle(cornerRadius: 6)
+                            RoundedRectangle(cornerRadius: 4)
                                 .stroke(Color.red.opacity(0.3), lineWidth: 1)
                         )
                         .onChange(of: line2Text) { newValue in
@@ -510,11 +508,11 @@ struct RedesignedMonthlyNotesView: View {
                 }
             }
         }
-        .padding(.vertical, 8)
-        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .padding(.horizontal, 10)
         .background(Color(.systemBackground))
-        .cornerRadius(12)
-        .shadow(color: Color.black.opacity(0.05), radius: 2, x: 0, y: 1)
+        .cornerRadius(8)
+        .shadow(color: Color.black.opacity(0.05), radius: 1, x: 0, y: 1)
         .onAppear {
             line1Text = line1
             line2Text = line2
