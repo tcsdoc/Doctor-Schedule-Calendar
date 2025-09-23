@@ -20,22 +20,11 @@ struct ContentView: View {
             
                 // Monthly Notes Section
                 if let currentMonth = viewModel.availableMonths.safeGet(index: currentMonthIndex) {
-                    let monthKey = monthKey(for: currentMonth)
-                    let note = viewModel.monthlyNotes[monthKey]
-                    redesignLog("🔍 UI: Looking for monthly note with key '\(monthKey)', found: \(String(describing: note))")
-                    RedesignedMonthlyNotesView(
-                        month: currentMonth,
-                        line1: note?.line1 ?? "",
-                        line2: note?.line2 ?? "",
-                        onLine1Change: { newLine1 in
-                            viewModel.updateMonthlyNotesLine1(for: currentMonth, line1: newLine1)
-                        },
-                        onLine2Change: { newLine2 in
-                            viewModel.updateMonthlyNotesLine2(for: currentMonth, line2: newLine2)
-                        }
+                    MonthlyNotesContainer(
+                        currentMonth: currentMonth,
+                        viewModel: viewModel,
+                        monthKey: monthKey(for: currentMonth)
                     )
-                    .padding(.horizontal, 20)
-                    .padding(.top, 4)
                 }
                 
                 // Calendar content - FULL WIDTH with keyboard awareness
@@ -698,6 +687,32 @@ struct RedesignedMonthlyNotesView: View {
                 line2Text = newValue
             }
         }
+    }
+}
+
+// MARK: - Monthly Notes Container
+struct MonthlyNotesContainer: View {
+    let currentMonth: Date
+    let viewModel: ScheduleViewModel
+    let monthKey: String
+    
+    var body: some View {
+        let note = viewModel.monthlyNotes[monthKey]
+        redesignLog("🔍 UI: Looking for monthly note with key '\(monthKey)', found: \(String(describing: note))")
+        
+        return RedesignedMonthlyNotesView(
+            month: currentMonth,
+            line1: note?.line1 ?? "",
+            line2: note?.line2 ?? "",
+            onLine1Change: { newLine1 in
+                viewModel.updateMonthlyNotesLine1(for: currentMonth, line1: newLine1)
+            },
+            onLine2Change: { newLine2 in
+                viewModel.updateMonthlyNotesLine2(for: currentMonth, line2: newLine2)
+            }
+        )
+        .padding(.horizontal, 20)
+        .padding(.top, 4)
     }
 }
 
