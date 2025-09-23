@@ -16,6 +16,8 @@ class ScheduleViewModel: ObservableObject {
     // MARK: - Private Properties
     private let cloudKitManager = SimpleCloudKitManager()
     private var pendingChanges: Set<String> = []
+    private var pendingNoteChanges: Set<String> = []
+    private var isInitializing = true
     
     // MARK: - Computed Properties
     var availableMonths: [Date] {
@@ -56,6 +58,8 @@ class ScheduleViewModel: ObservableObject {
                     self.isLoading = false
                     self.hasChanges = false
                     self.pendingChanges.removeAll()
+                    self.pendingNoteChanges.removeAll()
+                    self.isInitializing = false
                 }
             } catch {
                 await MainActor.run {
@@ -67,6 +71,8 @@ class ScheduleViewModel: ObservableObject {
     
     
     func updateSchedule(date: Date, field: ScheduleField, value: String) {
+        guard !isInitializing else { return }
+        
         let dateKey = dateKey(for: date)
         
         // Get existing schedule or create new one
@@ -93,13 +99,11 @@ class ScheduleViewModel: ObservableObject {
         
         // Track change
         pendingChanges.insert(dateKey)
-        hasChanges = !pendingChanges.isEmpty
-        
+        hasChanges = !pendingChanges.isEmpty || !pendingNoteChanges.isEmpty
     }
     
     func saveChanges() async -> Bool {
-        guard !pendingChanges.isEmpty else {
-            redesignLog("💾 No changes to save")
+        guard !pendingChanges.isEmpty || !pendingNoteChanges.isEmpty else {
             return true
         }
         
@@ -119,10 +123,19 @@ class ScheduleViewModel: ObservableObject {
                 successCount += 1
             }
             
-            // TODO: Track changed monthly notes separately
+            // Save changed monthly notes
+            for monthKey in pendingNoteChanges {
+                if let note = monthlyNotes[monthKey] {
+                    try await cloudKitManager.saveMonthlyNote(note)
+                } else {
+                    // Note was deleted - implement delete if needed
+                }
+                successCount += 1
+            }
             
             await MainActor.run {
                 self.pendingChanges.removeAll()
+                self.pendingNoteChanges.removeAll()
                 self.hasChanges = false
                 self.isLoading = false
             }
@@ -150,6 +163,8 @@ class ScheduleViewModel: ObservableObject {
     
     // MARK: - Monthly Notes Methods (2 Lines)
     func updateMonthlyNotesLine1(for date: Date, line1: String) {
+        guard !isInitializing else { return }
+        
         let monthKey = monthKey(for: date)
         let calendar = Calendar.current
         let month = calendar.component(.month, from: date)
@@ -170,13 +185,16 @@ class ScheduleViewModel: ObservableObject {
             monthlyNotes[monthKey] = note
         }
         
-        // Only set hasChanges if value actually changed
+        // Track change
         if valueChanged {
-            hasChanges = true
+            pendingNoteChanges.insert(monthKey)
+            hasChanges = !pendingChanges.isEmpty || !pendingNoteChanges.isEmpty
         }
     }
     
     func updateMonthlyNotesLine2(for date: Date, line2: String) {
+        guard !isInitializing else { return }
+        
         let monthKey = monthKey(for: date)
         let calendar = Calendar.current
         let month = calendar.component(.month, from: date)
@@ -197,9 +215,10 @@ class ScheduleViewModel: ObservableObject {
             monthlyNotes[monthKey] = note
         }
         
-        // Only set hasChanges if value actually changed
+        // Track change
         if valueChanged {
-            hasChanges = true
+            pendingNoteChanges.insert(monthKey)
+            hasChanges = !pendingChanges.isEmpty || !pendingNoteChanges.isEmpty
         }
     }
     

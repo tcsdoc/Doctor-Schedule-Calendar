@@ -139,7 +139,7 @@ struct ContentView: View {
                         .cornerRadius(6)
                     }
                 }
-                .padding(.trailing, 40) // MUCH MORE padding to move buttons away from navigation area
+                .padding(.trailing, 60) // EVEN MORE padding - move buttons further from navigation area
             }
             
             // ULTRA-COMPACT: Month navigation inline
@@ -371,7 +371,7 @@ struct DayEditCell: View {
         .onAppear {
             loadScheduleData()
         }
-        .onChange(of: schedule) { _ in
+        .onChange(of: schedule) { _, _ in
             loadScheduleData()
         }
     }
@@ -417,8 +417,11 @@ struct ScheduleTextField: View {
                     onCommit(text.uppercased())
                 }
                 .onChange(of: text) { _, newValue in
-                    text = newValue.uppercased()
-                    onCommit(text)
+                    let uppercased = newValue.uppercased()
+                    if text != uppercased {
+                        text = uppercased
+                    }
+                    onCommit(uppercased)
                 }
         }
         .padding(.horizontal, 8)
@@ -447,20 +450,8 @@ struct RedesignedMonthlyNotesView: View {
     }
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text("📝 \(monthName) Notes")
-                    .font(.subheadline)
-                    .foregroundColor(.black)
-                
-                Spacer()
-                
-                Text("Blue: OS | Red: CL | Green: OFF | Orange: CALL")
-                    .font(.caption2)
-                    .foregroundColor(.black)
-            }
-            
-            VStack(spacing: 4) {
+        VStack(alignment: .leading, spacing: 2) {
+            VStack(spacing: 2) {
                 // Blue field (Line 1)
                 HStack(spacing: 8) {
                     Text("Line 1:")
@@ -472,7 +463,8 @@ struct RedesignedMonthlyNotesView: View {
                         .font(.system(size: 14))
                         .foregroundColor(.black)
                         .textFieldStyle(PlainTextFieldStyle())
-                        .padding(6)
+                        .autocapitalization(.allCharacters)
+                        .padding(4)
                         .background(Color.blue.opacity(0.1))
                         .cornerRadius(4)
                         .overlay(
@@ -480,7 +472,7 @@ struct RedesignedMonthlyNotesView: View {
                                 .stroke(Color.blue.opacity(0.3), lineWidth: 1)
                         )
                         .onSubmit {
-                            onLine1Change(line1Text)
+                            onLine1Change(line1Text.uppercased())
                         }
                 }
                 
@@ -495,7 +487,8 @@ struct RedesignedMonthlyNotesView: View {
                         .font(.system(size: 14))
                         .foregroundColor(.black)
                         .textFieldStyle(PlainTextFieldStyle())
-                        .padding(6)
+                        .autocapitalization(.allCharacters)
+                        .padding(4)
                         .background(Color.red.opacity(0.1))
                         .cornerRadius(4)
                         .overlay(
@@ -503,13 +496,13 @@ struct RedesignedMonthlyNotesView: View {
                                 .stroke(Color.red.opacity(0.3), lineWidth: 1)
                         )
                         .onSubmit {
-                            onLine2Change(line2Text)
+                            onLine2Change(line2Text.uppercased())
                         }
                 }
             }
         }
-        .padding(.vertical, 6)
-        .padding(.horizontal, 10)
+        .padding(.vertical, 4)
+        .padding(.horizontal, 8)
         .background(Color(.systemBackground))
         .cornerRadius(8)
         .shadow(color: Color.black.opacity(0.05), radius: 1, x: 0, y: 1)
