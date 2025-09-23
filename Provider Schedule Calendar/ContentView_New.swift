@@ -11,41 +11,41 @@ struct ContentView_New: View {
     private let calendar = Calendar.current
     
     var body: some View {
-        NavigationView {
-            VStack(spacing: 0) {
-                // Fixed header (SV-inspired)
-                modernHeader
-                    .background(Color(UIColor.systemBackground))
-                    .shadow(color: Color.black.opacity(0.1), radius: 2, x: 0, y: 2)
-                
-                // Calendar content
-                ScrollView {
-                    VStack(spacing: 20) {
-                        if let currentMonth = viewModel.availableMonths.safeGet(index: currentMonthIndex) {
-                            MonthCalendarView(
-                                month: currentMonth,
-                                schedules: viewModel.schedules,
-                                onScheduleChange: viewModel.updateSchedule
-                            )
-                        } else {
-                            Text("No data available")
-                                .foregroundColor(.gray)
-                                .padding()
-                        }
+        // FULL SCREEN iPad Layout - No NavigationView constraints
+        VStack(spacing: 0) {
+            // Fixed header - FULL WIDTH
+            modernHeader
+                .background(Color(UIColor.systemBackground))
+                .shadow(color: Color.black.opacity(0.1), radius: 2, x: 0, y: 2)
+            
+            // Calendar content - FULL WIDTH
+            ScrollView {
+                VStack(spacing: 20) {
+                    if let currentMonth = viewModel.availableMonths.safeGet(index: currentMonthIndex) {
+                        MonthCalendarView(
+                            month: currentMonth,
+                            schedules: viewModel.schedules,
+                            onScheduleChange: viewModel.updateSchedule
+                        )
+                        .padding(.horizontal, 20) // Only horizontal padding for calendar
+                    } else {
+                        Text("No data available")
+                            .foregroundColor(.gray)
+                            .padding()
                     }
-                    .padding()
                 }
+                .padding(.vertical, 20)
             }
-            .navigationBarHidden(true)
-            .onAppear {
-                viewModel.loadData()
-                initializeCurrentMonth()
-            }
-            .alert("Save Status", isPresented: $showingSaveAlert) {
-                Button("OK") {}
-            } message: {
-                Text(saveMessage)
-            }
+        }
+        .ignoresSafeArea(.all) // FORCE full screen edge-to-edge
+        .onAppear {
+            viewModel.loadData()
+            initializeCurrentMonth()
+        }
+        .alert("Save Status", isPresented: $showingSaveAlert) {
+            Button("OK") {}
+        } message: {
+            Text(saveMessage)
         }
     }
     
@@ -185,9 +185,10 @@ struct ContentView_New: View {
                 .padding(.horizontal, 40)
             }
         }
-        .padding()
+        .padding(.horizontal, 20) // Only horizontal padding - full width top/bottom
+        .padding(.vertical, 16)
         .background(Color.gray.opacity(0.05))
-        .cornerRadius(12)
+        .cornerRadius(0) // No corner radius for full width
     }
     
     // MARK: - Navigation Logic
@@ -274,8 +275,8 @@ struct MonthCalendarView: View {
                 }
             }
             
-            // Calendar grid
-            LazyVGrid(columns: columns, spacing: 2) {
+            // Calendar grid - FULL WIDTH
+            LazyVGrid(columns: columns, spacing: 4) {
                 ForEach(calendarDays, id: \.self) { date in
                     if calendar.isDate(date, equalTo: month, toGranularity: .month) {
                         DayEditCell(
