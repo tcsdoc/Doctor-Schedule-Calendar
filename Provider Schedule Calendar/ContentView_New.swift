@@ -98,7 +98,7 @@ struct ContentView_New: View {
                 
                 Spacer()
                 
-                // Right: Compact action buttons
+                // Right: Compact action buttons (with edge spacing)
                 HStack(spacing: 8) {
                     Button(action: saveData) {
                         HStack(spacing: 3) {
@@ -140,6 +140,7 @@ struct ContentView_New: View {
                         .cornerRadius(6)
                     }
                 }
+                .padding(.trailing, 10) // Additional padding to move buttons away from screen edge
             }
             
             // ULTRA-COMPACT: Month navigation inline
@@ -169,7 +170,7 @@ struct ContentView_New: View {
                 }
             }
         }
-        .padding(.horizontal, 20)
+        .padding(.horizontal, 30) // Increased from 20 to move buttons away from edges
         .padding(.vertical, 8)
         .background(Color.gray.opacity(0.05))
         .cornerRadius(0)
