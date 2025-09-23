@@ -54,7 +54,7 @@ struct ContentView_New: View {
                     .padding(.vertical, 20)
                 }
         }
-        .ignoresSafeArea(.all) // FORCE full screen edge-to-edge
+        // Respect safe area to avoid status bar overlap
         .onAppear {
             viewModel.loadData()
             initializeCurrentMonth()
