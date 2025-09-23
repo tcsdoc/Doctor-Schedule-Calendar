@@ -56,16 +56,7 @@ struct ContentView: View {
         }
         // Respect safe area to avoid status bar overlap
         .onAppear {
-            // Data already loads in ViewModel init() - don't duplicate
-            redesignLog("📱 ContentView appeared")
-        }
-        .onChange(of: viewModel.schedules) { newSchedules in
-            // Initialize month index AFTER data loads
-            redesignLog("📅 Schedules changed - count: \(newSchedules.count)")
             initializeCurrentMonth()
-        }
-        .onChange(of: viewModel.isLoading) { isLoading in
-            redesignLog("⏳ Loading state changed: \(isLoading)")
         }
         .alert("Save Status", isPresented: $showingSaveAlert) {
             Button("OK") {}
@@ -220,13 +211,6 @@ struct ContentView: View {
             currentMonthIndex = 0
         }
         
-        redesignLog("📅 Initialized to month index: \(currentMonthIndex)")
-        
-        // Force view update after setting month index
-        DispatchQueue.main.async {
-            // This triggers a view refresh to display the loaded data
-            self.currentMonthIndex = self.currentMonthIndex
-        }
     }
     
     // MARK: - Actions
@@ -249,8 +233,6 @@ struct ContentView: View {
     }
     
     private func shareCalendar() {
-        // CloudKit sharing functionality - to be implemented
-        redesignLog("Share calendar requested")
         // TODO: Implement CloudKit sharing
     }
     
