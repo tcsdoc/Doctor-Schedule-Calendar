@@ -440,6 +440,7 @@ struct RedesignedMonthlyNotesView: View {
     
     @State private var line1Text: String = ""
     @State private var line2Text: String = ""
+    @State private var initialized: Bool = false
     
     private var monthName: String {
         let formatter = DateFormatter()
@@ -480,8 +481,8 @@ struct RedesignedMonthlyNotesView: View {
                             RoundedRectangle(cornerRadius: 4)
                                 .stroke(Color.blue.opacity(0.3), lineWidth: 1)
                         )
-                        .onChange(of: line1Text) { newValue in
-                            onLine1Change(newValue)
+                        .onSubmit {
+                            onLine1Change(line1Text)
                         }
                 }
                 
@@ -503,8 +504,8 @@ struct RedesignedMonthlyNotesView: View {
                             RoundedRectangle(cornerRadius: 4)
                                 .stroke(Color.red.opacity(0.3), lineWidth: 1)
                         )
-                        .onChange(of: line2Text) { newValue in
-                            onLine2Change(newValue)
+                        .onSubmit {
+                            onLine2Change(line2Text)
                         }
                 }
             }
@@ -515,14 +516,23 @@ struct RedesignedMonthlyNotesView: View {
         .cornerRadius(8)
         .shadow(color: Color.black.opacity(0.05), radius: 1, x: 0, y: 1)
         .onAppear {
-            line1Text = line1
-            line2Text = line2
+            if !initialized {
+                line1Text = line1
+                line2Text = line2
+                initialized = true
+            }
         }
         .onChange(of: line1) { newValue in
-            line1Text = newValue
+            // Only update display if we've been initialized (prevents false changes during data load)
+            if initialized && newValue != line1Text {
+                line1Text = newValue
+            }
         }
         .onChange(of: line2) { newValue in
-            line2Text = newValue
+            // Only update display if we've been initialized (prevents false changes during data load)  
+            if initialized && newValue != line2Text {
+                line2Text = newValue
+            }
         }
     }
 }
