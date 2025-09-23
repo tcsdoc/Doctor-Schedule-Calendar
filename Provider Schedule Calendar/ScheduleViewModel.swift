@@ -143,21 +143,41 @@ class ScheduleViewModel: ObservableObject {
         }
     }
     
-    // MARK: - Monthly Notes Methods
-    func updateMonthlyNotes(for date: Date, notes: String) {
+    // MARK: - Monthly Notes Methods (2 Lines)
+    func updateMonthlyNotesLine1(for date: Date, line1: String) {
         let monthKey = monthKey(for: date)
         let calendar = Calendar.current
         let month = calendar.component(.month, from: date)
         let year = calendar.component(.year, from: date)
         
-        if notes.isEmpty {
+        // Get existing note or create new one
+        var note = monthlyNotes[monthKey] ?? MonthlyNote(month: month, year: year)
+        note.line1 = line1.isEmpty ? nil : line1
+        
+        // Remove note if both lines are empty
+        if (note.line1?.isEmpty ?? true) && (note.line2?.isEmpty ?? true) {
             monthlyNotes.removeValue(forKey: monthKey)
         } else {
-            monthlyNotes[monthKey] = MonthlyNote(
-                month: month,
-                year: year,
-                line1: notes // Store all notes in line1 for simplicity
-            )
+            monthlyNotes[monthKey] = note
+        }
+        hasChanges = true
+    }
+    
+    func updateMonthlyNotesLine2(for date: Date, line2: String) {
+        let monthKey = monthKey(for: date)
+        let calendar = Calendar.current
+        let month = calendar.component(.month, from: date)
+        let year = calendar.component(.year, from: date)
+        
+        // Get existing note or create new one
+        var note = monthlyNotes[monthKey] ?? MonthlyNote(month: month, year: year)
+        note.line2 = line2.isEmpty ? nil : line2
+        
+        // Remove note if both lines are empty
+        if (note.line1?.isEmpty ?? true) && (note.line2?.isEmpty ?? true) {
+            monthlyNotes.removeValue(forKey: monthKey)
+        } else {
+            monthlyNotes[monthKey] = note
         }
         hasChanges = true
     }

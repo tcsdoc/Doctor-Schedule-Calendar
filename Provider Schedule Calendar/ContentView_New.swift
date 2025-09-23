@@ -22,9 +22,13 @@ struct ContentView_New: View {
                 if let currentMonth = viewModel.availableMonths.safeGet(index: currentMonthIndex) {
                     RedesignedMonthlyNotesView(
                         month: currentMonth,
-                        notes: .constant(viewModel.monthlyNotes[monthKey(for: currentMonth)]?.line1 ?? ""),
-                        onNotesChange: { newNotes in
-                            viewModel.updateMonthlyNotes(for: currentMonth, notes: newNotes)
+                        line1: viewModel.monthlyNotes[monthKey(for: currentMonth)]?.line1 ?? "",
+                        line2: viewModel.monthlyNotes[monthKey(for: currentMonth)]?.line2 ?? "",
+                        onLine1Change: { newLine1 in
+                            viewModel.updateMonthlyNotesLine1(for: currentMonth, line1: newLine1)
+                        },
+                        onLine2Change: { newLine2 in
+                            viewModel.updateMonthlyNotesLine2(for: currentMonth, line2: newLine2)
                         }
                     )
                     .padding(.horizontal, 20)
@@ -409,7 +413,7 @@ struct ScheduleTextField: View {
             
             TextField("", text: $text)
                 .font(.system(size: 14))
-                .foregroundColor(fieldColor)
+                .foregroundColor(.black)
                 .textFieldStyle(PlainTextFieldStyle())
                 .autocapitalization(.allCharacters)
                 .onSubmit {
@@ -427,11 +431,16 @@ struct ScheduleTextField: View {
     }
 }
 
-// MARK: - Redesigned Monthly Notes View
+// MARK: - Redesigned Monthly Notes View (2 Fields)
 struct RedesignedMonthlyNotesView: View {
     let month: Date
-    @Binding var notes: String
-    let onNotesChange: (String) -> Void
+    let line1: String
+    let line2: String
+    let onLine1Change: (String) -> Void
+    let onLine2Change: (String) -> Void
+    
+    @State private var line1Text: String = ""
+    @State private var line2Text: String = ""
     
     private var monthName: String {
         let formatter = DateFormatter()
@@ -444,34 +453,78 @@ struct RedesignedMonthlyNotesView: View {
             HStack {
                 Text("📝 Monthly Notes for \(monthName)")
                     .font(.headline)
-                    .foregroundColor(.primary)
+                    .foregroundColor(.black)
                 
                 Spacer()
                 
                 Text("Blue: OS | Red: CL | Green: OFF | Orange: CALL")
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(.black)
             }
             
-            TextEditor(text: $notes)
-                .font(.system(size: 16))
-                .frame(minHeight: 80, maxHeight: 120)
-                .padding(8)
-                .background(Color(.systemGray6))
-                .cornerRadius(8)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
-                )
-                .onChange(of: notes) { newValue in
-                    onNotesChange(newValue)
+            VStack(spacing: 6) {
+                // Blue field (Line 1)
+                HStack(spacing: 8) {
+                    Text("Line 1:")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.blue)
+                        .frame(width: 60, alignment: .leading)
+                    
+                    TextField("", text: $line1Text)
+                        .font(.system(size: 16))
+                        .foregroundColor(.black)
+                        .textFieldStyle(PlainTextFieldStyle())
+                        .padding(8)
+                        .background(Color.blue.opacity(0.1))
+                        .cornerRadius(6)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6)
+                                .stroke(Color.blue.opacity(0.3), lineWidth: 1)
+                        )
+                        .onChange(of: line1Text) { newValue in
+                            onLine1Change(newValue)
+                        }
                 }
+                
+                // Red field (Line 2)
+                HStack(spacing: 8) {
+                    Text("Line 2:")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.red)
+                        .frame(width: 60, alignment: .leading)
+                    
+                    TextField("", text: $line2Text)
+                        .font(.system(size: 16))
+                        .foregroundColor(.black)
+                        .textFieldStyle(PlainTextFieldStyle())
+                        .padding(8)
+                        .background(Color.red.opacity(0.1))
+                        .cornerRadius(6)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6)
+                                .stroke(Color.red.opacity(0.3), lineWidth: 1)
+                        )
+                        .onChange(of: line2Text) { newValue in
+                            onLine2Change(newValue)
+                        }
+                }
+            }
         }
         .padding(.vertical, 8)
         .padding(.horizontal, 12)
         .background(Color(.systemBackground))
         .cornerRadius(12)
         .shadow(color: Color.black.opacity(0.05), radius: 2, x: 0, y: 1)
+        .onAppear {
+            line1Text = line1
+            line2Text = line2
+        }
+        .onChange(of: line1) { newValue in
+            line1Text = newValue
+        }
+        .onChange(of: line2) { newValue in
+            line2Text = newValue
+        }
     }
 }
 
