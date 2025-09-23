@@ -164,9 +164,19 @@ actor SimpleCloudKitManager {
         
         redesignLog("💾 Saving monthly note: \(note.id)")
         
-        // Create CloudKit record with deterministic ID
         let recordID = CKRecord.ID(recordName: note.id, zoneID: zoneID)
-        let record = CKRecord(recordType: "CD_MonthlyNotes", recordID: recordID)
+        
+        // Try to fetch existing record first, create new if doesn't exist
+        let record: CKRecord
+        do {
+            // Try to fetch existing record to update it
+            record = try await privateDatabase.record(for: recordID)
+            redesignLog("📝 Updating existing monthly note: \(note.id)")
+        } catch {
+            // Record doesn't exist, create new one
+            record = CKRecord(recordType: "CD_MonthlyNotes", recordID: recordID)
+            redesignLog("🆕 Creating new monthly note: \(note.id)")
+        }
         
         // Create month date for storage
         var components = DateComponents()
@@ -175,7 +185,7 @@ actor SimpleCloudKitManager {
         components.day = 1
         let monthDate = Calendar.current.date(from: components) ?? Date()
         
-        // Set fields
+        // Set/update fields
         record["CD_id"] = note.id as CKRecordValue
         record["CD_month"] = monthDate as CKRecordValue
         record["CD_line1"] = note.line1 as CKRecordValue?

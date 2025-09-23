@@ -38,6 +38,8 @@ class ScheduleViewModel: ObservableObject {
     // MARK: - Initialization
     init() {
         checkCloudKitStatus()
+        // Automatically load data on app launch
+        loadData()
     }
     
     // MARK: - Public Methods
@@ -113,6 +115,7 @@ class ScheduleViewModel: ObservableObject {
             // Save all pending changes
             var successCount = 0
             
+            // Save schedule changes
             for dateKey in pendingChanges {
                 if let schedule = schedules[dateKey] {
                     // Save schedule
@@ -125,13 +128,19 @@ class ScheduleViewModel: ObservableObject {
                 }
             }
             
+            // Save monthly notes changes
+            for (_, note) in monthlyNotes {
+                try await cloudKitManager.saveMonthlyNote(note)
+                successCount += 1
+            }
+            
             await MainActor.run {
                 self.pendingChanges.removeAll()
                 self.hasChanges = false
                 self.isLoading = false
             }
             
-            redesignLog("✅ Successfully saved \(successCount) changes")
+            redesignLog("✅ Successfully saved \(successCount) changes (schedules + monthly notes)")
             return true
             
         } catch {
