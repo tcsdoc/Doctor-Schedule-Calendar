@@ -49,104 +49,140 @@ struct ContentView_New: View {
         }
     }
     
-    // MARK: - Modern Header (SV-inspired)
+    // MARK: - iPad-Optimized Header
     private var modernHeader: some View {
-        VStack(spacing: 12) {
-            // Main header row: App name | Version | Save/Print
-            HStack {
-                Text("📅 Provider Schedule")
-                    .font(.title2)
-                    .fontWeight(.bold)
+        VStack(spacing: 16) {
+            // Main header row: FULL WIDTH iPad layout
+            HStack(spacing: 20) {
+                // Left section: App branding
+                HStack(spacing: 12) {
+                    Text("📅 Provider Schedule Calendar")
+                        .font(.largeTitle)
+                        .fontWeight(.bold)
+                    
+                    Text("v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "4.0")")
+                        .font(.title3)
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.gray.opacity(0.1))
+                        .cornerRadius(6)
+                }
                 
                 Spacer()
                 
-                Text("v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "3.7.5")")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                
-                Spacer()
-                
-                HStack(spacing: 8) {
-                    // Save button
+                // Right section: Action buttons - LARGER for iPad
+                HStack(spacing: 16) {
+                    // Save button - BIGGER
                     Button(action: saveData) {
-                        HStack(spacing: 4) {
+                        HStack(spacing: 8) {
                             Image(systemName: "square.and.arrow.down")
+                                .font(.title3)
                             Text(saveButtonText)
+                                .font(.title3)
+                                .fontWeight(.medium)
                         }
-                        .font(.caption)
                         .foregroundColor(.white)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 12)
                         .background(saveButtonColor)
-                        .cornerRadius(8)
+                        .cornerRadius(10)
                     }
                     .disabled(!viewModel.hasChanges)
                     
-                    // Print button
+                    // Print button - BIGGER
                     Button(action: printCalendar) {
-                        HStack(spacing: 4) {
+                        HStack(spacing: 8) {
                             Image(systemName: "printer")
+                                .font(.title3)
                             Text("Print")
+                                .font(.title3)
+                                .fontWeight(.medium)
                         }
-                        .font(.caption)
                         .foregroundColor(.blue)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 12)
                         .background(Color.blue.opacity(0.1))
-                        .cornerRadius(8)
+                        .cornerRadius(10)
                     }
                 }
             }
             
-            // Status row - centered
+            // Status indicator - LARGER for iPad
             HStack {
                 Spacer()
                 
                 if viewModel.isLoading {
-                    HStack {
+                    HStack(spacing: 8) {
                         ProgressView()
-                            .scaleEffect(0.8)
+                            .scaleEffect(1.2)
                         Text("Loading...")
+                            .font(.title2)
                     }
                     .foregroundColor(.blue)
                 } else if !viewModel.isCloudKitAvailable {
                     Text("⚠️ CloudKit Unavailable")
+                        .font(.title2)
                         .foregroundColor(.red)
                 } else if viewModel.hasChanges {
                     Text("📝 Unsaved Changes")
+                        .font(.title2)
                         .foregroundColor(.orange)
                 } else {
                     Text("✅ Ready")
+                        .font(.title2)
                         .foregroundColor(.green)
                 }
                 
                 Spacer()
             }
-            .font(.caption)
+            .padding(.vertical, 8)
             
-            // Month navigation row (SV-inspired)
+            // Month navigation - BIGGER for iPad
             if !viewModel.availableMonths.isEmpty {
-                HStack {
+                HStack(spacing: 30) {
+                    // Previous month button - MUCH BIGGER
                     Button(action: previousMonth) {
-                        Image(systemName: "chevron.left")
-                            .foregroundColor(.blue)
+                        HStack(spacing: 8) {
+                            Image(systemName: "chevron.left")
+                                .font(.title)
+                            Text("Previous")
+                                .font(.title2)
+                        }
+                        .foregroundColor(.blue)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 10)
+                        .background(Color.blue.opacity(0.1))
+                        .cornerRadius(10)
                     }
                     .disabled(currentMonthIndex <= 0)
                     
                     Spacer()
                     
+                    // Current month - MUCH LARGER
                     Text(currentMonthName)
-                        .font(.headline)
-                        .fontWeight(.semibold)
+                        .font(.system(size: 36, weight: .bold, design: .default))
+                        .foregroundColor(.primary)
                     
                     Spacer()
                     
+                    // Next month button - MUCH BIGGER
                     Button(action: nextMonth) {
-                        Image(systemName: "chevron.right")
-                            .foregroundColor(.blue)
+                        HStack(spacing: 8) {
+                            Text("Next")
+                                .font(.title2)
+                            Image(systemName: "chevron.right")
+                                .font(.title)
+                        }
+                        .foregroundColor(.blue)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 10)
+                        .background(Color.blue.opacity(0.1))
+                        .cornerRadius(10)
                     }
                     .disabled(currentMonthIndex >= viewModel.availableMonths.count - 1)
                 }
+                .padding(.horizontal, 40)
             }
         }
         .padding()
@@ -249,6 +285,7 @@ struct MonthCalendarView: View {
                                 onScheduleChange(date, field, value)
                             }
                         )
+                        .frame(minHeight: 140) // Bigger cells for iPad
                     } else {
                         // Empty cell for days outside current month
                         Rectangle()
@@ -326,8 +363,8 @@ struct DayEditCell: View {
                 }
             }
         }
-        .padding(4)
-        .frame(height: 120)
+        .padding(8)
+        .frame(minHeight: 140) // iPad-optimized height
         .background(Color(.systemBackground))
         .overlay(
             Rectangle()
@@ -356,14 +393,14 @@ struct ScheduleTextField: View {
     let onCommit: (String) -> Void
     
     var body: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: 4) {
             Text(label)
-                .font(.system(size: 8))
+                .font(.system(size: 12, weight: .medium)) // Bigger for iPad
                 .foregroundColor(.secondary)
-                .frame(width: 20, alignment: .leading)
+                .frame(width: 35, alignment: .leading)
             
             TextField("", text: $text)
-                .font(.system(size: 8))
+                .font(.system(size: 14)) // Much bigger for iPad
                 .textFieldStyle(PlainTextFieldStyle())
                 .autocapitalization(.allCharacters)
                 .onSubmit {
