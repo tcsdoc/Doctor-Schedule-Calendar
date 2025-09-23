@@ -154,7 +154,10 @@ actor SimpleCloudKitManager {
                 redesignLog("   CD_line2: \(record["CD_line2"] ?? "nil")")
                 if let note = parseMonthlyNoteRecord(record) {
                     redesignLog("✅ Parsed note: \(note)")
-                    notes[note.id] = note
+                    // Store using monthKey format (yyyy-MM) instead of note.id (notes_yyyy-MM)
+                    let monthKey = String(format: "%04d-%02d", note.year, note.month)
+                    redesignLog("🔑 Storing note with key: \(monthKey)")
+                    notes[monthKey] = note
                 } else {
                     redesignLog("❌ Failed to parse monthly note record")
                 }
