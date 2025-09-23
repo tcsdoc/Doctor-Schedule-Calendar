@@ -20,7 +20,7 @@ struct ContentView_New: View {
             
                 // Monthly Notes Section
                 if let currentMonth = viewModel.availableMonths.safeGet(index: currentMonthIndex) {
-                    MonthlyNotesView(
+                    RedesignedMonthlyNotesView(
                         month: currentMonth,
                         notes: .constant(viewModel.monthlyNotes[monthKey(for: currentMonth)]?.line1 ?? ""),
                         onNotesChange: { newNotes in
@@ -427,8 +427,8 @@ struct ScheduleTextField: View {
     }
 }
 
-// MARK: - Monthly Notes View
-struct MonthlyNotesView: View {
+// MARK: - Redesigned Monthly Notes View
+struct RedesignedMonthlyNotesView: View {
     let month: Date
     @Binding var notes: String
     let onNotesChange: (String) -> Void
