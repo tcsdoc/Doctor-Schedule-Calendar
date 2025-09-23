@@ -57,6 +57,9 @@ struct ContentView_New: View {
         // Respect safe area to avoid status bar overlap
         .onAppear {
             viewModel.loadData()
+        }
+        .onChange(of: viewModel.schedules) { _ in
+            // Initialize month index AFTER data loads
             initializeCurrentMonth()
         }
         .alert("Save Status", isPresented: $showingSaveAlert) {
@@ -212,13 +215,7 @@ struct ContentView_New: View {
             currentMonthIndex = 0
         }
         
-        // Force view refresh by triggering state change
-        // This ensures data displays after CloudKit load
-        let temp = currentMonthIndex
-        currentMonthIndex = -1
-        DispatchQueue.main.async {
-            self.currentMonthIndex = temp
-        }
+        redesignLog("📅 Initialized to month index: \(currentMonthIndex)")
     }
     
     // MARK: - Actions
