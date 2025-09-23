@@ -391,6 +391,8 @@ struct ScheduleTextField: View {
     @Binding var text: String
     let onCommit: (String) -> Void
     
+    @State private var isUserEditing = false
+    
     // PSC Field Colors: OS=blue, CL=red, OFF=green, CALL=yellow
     private var fieldColor: Color {
         switch fieldType {
@@ -413,21 +415,31 @@ struct ScheduleTextField: View {
                 .foregroundColor(.black)
                 .textFieldStyle(PlainTextFieldStyle())
                 .autocapitalization(.allCharacters)
+                .onTapGesture {
+                    isUserEditing = true
+                }
                 .onSubmit {
                     onCommit(text.uppercased())
+                    isUserEditing = false
                 }
                 .onChange(of: text) { _, newValue in
                     let uppercased = newValue.uppercased()
                     if text != uppercased {
                         text = uppercased
                     }
-                    // Only call onCommit on user submit, not on programmatic changes
+                    // Call onCommit for user changes (but not during programmatic initialization)
+                    if isUserEditing {
+                        onCommit(uppercased)
+                    }
                 }
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
         .background(fieldColor.opacity(0.1))
         .cornerRadius(4)
+        .onDisappear {
+            isUserEditing = false
+        }
     }
 }
 
