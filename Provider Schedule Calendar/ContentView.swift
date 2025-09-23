@@ -575,6 +575,10 @@ struct RedesignedMonthlyNotesView: View {
     @State private var line1Text: String = ""
     @State private var line2Text: String = ""
     @State private var initialized: Bool = false
+    @State private var line1LastKnown: String = ""
+    @State private var line2LastKnown: String = ""
+    @FocusState private var line1Focused: Bool
+    @FocusState private var line2Focused: Bool
     
     private var monthName: String {
         let formatter = DateFormatter()
@@ -597,6 +601,7 @@ struct RedesignedMonthlyNotesView: View {
                         .foregroundColor(.black)
                         .textFieldStyle(PlainTextFieldStyle())
                         .autocapitalization(.allCharacters)
+                        .focused($line1Focused)
                         .padding(4)
                         .background(Color.blue.opacity(0.1))
                         .cornerRadius(4)
@@ -606,6 +611,17 @@ struct RedesignedMonthlyNotesView: View {
                         )
                         .onSubmit {
                             onLine1Change(line1Text.uppercased())
+                        }
+                        .onChange(of: line1Text) { _, newValue in
+                            let uppercased = newValue.uppercased()
+                            if line1Text != uppercased {
+                                line1Text = uppercased
+                            }
+                            // Real-time change detection like daily schedule fields
+                            if !line1LastKnown.isEmpty || line1Focused {
+                                onLine1Change(uppercased)
+                            }
+                            line1LastKnown = uppercased
                         }
                 }
                 
@@ -621,6 +637,7 @@ struct RedesignedMonthlyNotesView: View {
                         .foregroundColor(.black)
                         .textFieldStyle(PlainTextFieldStyle())
                         .autocapitalization(.allCharacters)
+                        .focused($line2Focused)
                         .padding(4)
                         .background(Color.red.opacity(0.1))
                         .cornerRadius(4)
@@ -630,6 +647,17 @@ struct RedesignedMonthlyNotesView: View {
                         )
                         .onSubmit {
                             onLine2Change(line2Text.uppercased())
+                        }
+                        .onChange(of: line2Text) { _, newValue in
+                            let uppercased = newValue.uppercased()
+                            if line2Text != uppercased {
+                                line2Text = uppercased
+                            }
+                            // Real-time change detection like daily schedule fields
+                            if !line2LastKnown.isEmpty || line2Focused {
+                                onLine2Change(uppercased)
+                            }
+                            line2LastKnown = uppercased
                         }
                 }
             }
@@ -643,6 +671,8 @@ struct RedesignedMonthlyNotesView: View {
             if !initialized {
                 line1Text = line1
                 line2Text = line2
+                line1LastKnown = line1
+                line2LastKnown = line2
                 initialized = true
             }
         }
@@ -650,6 +680,8 @@ struct RedesignedMonthlyNotesView: View {
             // Reset when month changes
             line1Text = line1
             line2Text = line2
+            line1LastKnown = line1
+            line2LastKnown = line2
         }
         .onChange(of: line1) { _, newValue in
             // Update display when data changes from external source
