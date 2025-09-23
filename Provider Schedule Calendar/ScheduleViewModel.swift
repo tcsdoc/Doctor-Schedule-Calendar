@@ -53,6 +53,10 @@ class ScheduleViewModel: ObservableObject {
                 let loadedNotes = try await cloudKitManager.fetchAllMonthlyNotes()
                 
                 await MainActor.run {
+                    redesignLog("📥 Loaded \(loadedSchedules.count) schedules, \(loadedNotes.count) monthly notes")
+                    for (key, note) in loadedNotes {
+                        redesignLog("   Monthly note \(key): \(note)")
+                    }
                     self.schedules = loadedSchedules
                     self.monthlyNotes = loadedNotes
                     self.isLoading = false
@@ -282,13 +286,17 @@ struct ScheduleRecord: Identifiable, Codable, Equatable {
     }
 }
 
-struct MonthlyNote: Identifiable, Codable {
+struct MonthlyNote: Identifiable, Codable, CustomStringConvertible {
     let id: String
     let month: Int
     let year: Int
     var line1: String?
     var line2: String?
     var line3: String?
+    
+    var description: String {
+        return "MonthlyNote(id: \(id), month: \(month), year: \(year), line1: \(line1 ?? "nil"), line2: \(line2 ?? "nil"), line3: \(line3 ?? "nil"))"
+    }
     
     init(month: Int, year: Int, line1: String? = nil, line2: String? = nil, line3: String? = nil) {
         self.month = month

@@ -20,10 +20,13 @@ struct ContentView: View {
             
                 // Monthly Notes Section
                 if let currentMonth = viewModel.availableMonths.safeGet(index: currentMonthIndex) {
+                    let monthKey = monthKey(for: currentMonth)
+                    let note = viewModel.monthlyNotes[monthKey]
+                    redesignLog("🔍 UI: Looking for monthly note with key '\(monthKey)', found: \(note?.description ?? "nil")")
                     RedesignedMonthlyNotesView(
                         month: currentMonth,
-                        line1: viewModel.monthlyNotes[monthKey(for: currentMonth)]?.line1 ?? "",
-                        line2: viewModel.monthlyNotes[monthKey(for: currentMonth)]?.line2 ?? "",
+                        line1: note?.line1 ?? "",
+                        line2: note?.line2 ?? "",
                         onLine1Change: { newLine1 in
                             viewModel.updateMonthlyNotesLine1(for: currentMonth, line1: newLine1)
                         },

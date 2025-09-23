@@ -147,8 +147,16 @@ actor SimpleCloudKitManager {
         for (_, result) in matchResults {
             switch result {
             case .success(let record):
+                redesignLog("📄 Processing monthly note record: \(record.recordID.recordName)")
+                redesignLog("   CD_month: \(record["CD_month"] ?? "nil")")
+                redesignLog("   CD_year: \(record["CD_year"] ?? "nil")")
+                redesignLog("   CD_line1: \(record["CD_line1"] ?? "nil")")
+                redesignLog("   CD_line2: \(record["CD_line2"] ?? "nil")")
                 if let note = parseMonthlyNoteRecord(record) {
+                    redesignLog("✅ Parsed note: \(note)")
                     notes[note.id] = note
+                } else {
+                    redesignLog("❌ Failed to parse monthly note record")
                 }
             case .failure(let error):
                 redesignLog("❌ Failed to process monthly note record: \(error)")
