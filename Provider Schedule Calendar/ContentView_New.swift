@@ -140,7 +140,7 @@ struct ContentView_New: View {
                         .cornerRadius(6)
                     }
                 }
-                .padding(.trailing, 10) // Additional padding to move buttons away from screen edge
+                .padding(.trailing, 20) // More padding to move buttons further from screen edge
             }
             
             // ULTRA-COMPACT: Month navigation inline

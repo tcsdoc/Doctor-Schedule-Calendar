@@ -212,7 +212,11 @@ class ScheduleViewModel: ObservableObject {
         
         // Get existing note or create new one
         var note = monthlyNotes[monthKey] ?? MonthlyNote(month: month, year: year)
+        let oldLine1 = note.line1
         note.line1 = line1.isEmpty ? nil : line1
+        
+        // Only mark as changed if value actually changed
+        let valueChanged = oldLine1 != note.line1
         
         // Remove note if both lines are empty
         if (note.line1?.isEmpty ?? true) && (note.line2?.isEmpty ?? true) {
@@ -220,7 +224,11 @@ class ScheduleViewModel: ObservableObject {
         } else {
             monthlyNotes[monthKey] = note
         }
-        hasChanges = true
+        
+        // Only set hasChanges if value actually changed
+        if valueChanged {
+            hasChanges = true
+        }
     }
     
     func updateMonthlyNotesLine2(for date: Date, line2: String) {
@@ -231,7 +239,11 @@ class ScheduleViewModel: ObservableObject {
         
         // Get existing note or create new one
         var note = monthlyNotes[monthKey] ?? MonthlyNote(month: month, year: year)
+        let oldLine2 = note.line2
         note.line2 = line2.isEmpty ? nil : line2
+        
+        // Only mark as changed if value actually changed
+        let valueChanged = oldLine2 != note.line2
         
         // Remove note if both lines are empty
         if (note.line1?.isEmpty ?? true) && (note.line2?.isEmpty ?? true) {
@@ -239,7 +251,11 @@ class ScheduleViewModel: ObservableObject {
         } else {
             monthlyNotes[monthKey] = note
         }
-        hasChanges = true
+        
+        // Only set hasChanges if value actually changed
+        if valueChanged {
+            hasChanges = true
+        }
     }
     
     private func monthKey(for date: Date) -> String {
