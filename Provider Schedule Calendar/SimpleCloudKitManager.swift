@@ -178,16 +178,10 @@ actor SimpleCloudKitManager {
             redesignLog("🆕 Creating new monthly note: \(note.id)")
         }
         
-        // Create month date for storage
-        var components = DateComponents()
-        components.year = note.year
-        components.month = note.month
-        components.day = 1
-        let monthDate = Calendar.current.date(from: components) ?? Date()
-        
-        // Set/update fields
+        // Set/update fields - use integers for month/year as expected by CloudKit schema
         record["CD_id"] = note.id as CKRecordValue
-        record["CD_month"] = monthDate as CKRecordValue
+        record["CD_month"] = note.month as CKRecordValue  // Send integer, not Date
+        record["CD_year"] = note.year as CKRecordValue    // Send integer, not Date
         record["CD_line1"] = note.line1 as CKRecordValue?
         record["CD_line2"] = note.line2 as CKRecordValue?
         record["CD_line3"] = note.line3 as CKRecordValue?
@@ -236,14 +230,11 @@ actor SimpleCloudKitManager {
     }
     
     private func parseMonthlyNoteRecord(_ record: CKRecord) -> MonthlyNote? {
-        guard let monthDate = record["CD_month"] as? Date else {
-            redesignLog("❌ Invalid monthly note record - missing month date")
+        guard let month = record["CD_month"] as? Int,
+              let year = record["CD_year"] as? Int else {
+            redesignLog("❌ Invalid monthly note record - missing month/year integers")
             return nil
         }
-        
-        let calendar = Calendar.current
-        let month = calendar.component(.month, from: monthDate)
-        let year = calendar.component(.year, from: monthDate)
         
         return MonthlyNote(
             month: month,
