@@ -35,7 +35,7 @@ struct ContentView: View {
                     .padding(.top, 4)
                 }
                 
-                // Calendar content - FULL WIDTH
+                // Calendar content - FULL WIDTH with keyboard awareness
                 ScrollView {
                     VStack(spacing: 20) {
                         if let currentMonth = viewModel.availableMonths.safeGet(index: currentMonthIndex) {
@@ -55,6 +55,10 @@ struct ContentView: View {
                 }
         }
         // Respect safe area to avoid status bar overlap
+        .onTapGesture {
+            // Dismiss keyboard when tapping outside text fields
+            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        }
         .onAppear {
             initializeCurrentMonth()
         }
@@ -400,12 +404,12 @@ struct MonthCalendarView: View {
                                 onScheduleChange(date, field, value)
                             }
                         )
-                        .frame(minHeight: 140) // Bigger cells for iPad
+                        .frame(minHeight: 140, maxHeight: .infinity) // Flexible height for iPad
                     } else {
                         // Empty cell for days outside current month
                         Rectangle()
                             .fill(Color.clear)
-                            .frame(height: 120)
+                            .frame(minHeight: 120, maxHeight: .infinity)
                     }
                 }
             }
@@ -479,7 +483,7 @@ struct DayEditCell: View {
             }
         }
         .padding(8)
-        .frame(minHeight: 140) // iPad-optimized height
+        .frame(minHeight: 140, maxHeight: .infinity) // iPad-optimized flexible height
         .background(Color(.systemBackground))
         .overlay(
             Rectangle()
@@ -526,7 +530,7 @@ struct ScheduleTextField: View {
             Text(label)
                 .font(.system(size: 12, weight: .medium))
                 .foregroundColor(fieldColor)
-                .frame(width: 35, alignment: .leading)
+                .frame(minWidth: 35, maxWidth: 35, alignment: .leading)
             
             TextField("", text: $text)
                 .font(.system(size: 14))
@@ -586,7 +590,7 @@ struct RedesignedMonthlyNotesView: View {
                     Text("Line 1:")
                         .font(.system(size: 14, weight: .medium))
                         .foregroundColor(.blue)
-                        .frame(width: 60, alignment: .leading)
+                        .frame(minWidth: 60, maxWidth: 60, alignment: .leading)
                     
                     TextField("", text: $line1Text)
                         .font(.system(size: 14))
@@ -610,7 +614,7 @@ struct RedesignedMonthlyNotesView: View {
                     Text("Line 2:")
                         .font(.system(size: 14, weight: .medium))
                         .foregroundColor(.red)
-                        .frame(width: 60, alignment: .leading)
+                        .frame(minWidth: 60, maxWidth: 60, alignment: .leading)
                     
                     TextField("", text: $line2Text)
                         .font(.system(size: 14))
