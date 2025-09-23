@@ -508,7 +508,8 @@ struct ScheduleTextField: View {
     @Binding var text: String
     let onCommit: (String) -> Void
     
-    @State private var isUserEditing = false
+    @State private var lastKnownText = ""
+    @FocusState private var isFocused: Bool
     
     // PSC Field Colors: OS=blue, CL=red, OFF=green, CALL=yellow
     private var fieldColor: Color {
@@ -532,31 +533,30 @@ struct ScheduleTextField: View {
                 .foregroundColor(.black)
                 .textFieldStyle(PlainTextFieldStyle())
                 .autocapitalization(.allCharacters)
-                .onTapGesture {
-                    isUserEditing = true
-                }
+                .focused($isFocused)
                 .onSubmit {
                     onCommit(text.uppercased())
-                    isUserEditing = false
                 }
                 .onChange(of: text) { _, newValue in
                     let uppercased = newValue.uppercased()
                     if text != uppercased {
                         text = uppercased
                     }
-                    // Call onCommit for user changes (but not during programmatic initialization)
-                    if isUserEditing {
+                    // Call onCommit when text actually changes from user input
+                    // Skip if this is just the initial load (lastKnownText will be empty)
+                    if !lastKnownText.isEmpty || isFocused {
                         onCommit(uppercased)
                     }
+                    lastKnownText = uppercased
+                }
+                .onAppear {
+                    lastKnownText = text
                 }
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
         .background(fieldColor.opacity(0.1))
         .cornerRadius(4)
-        .onDisappear {
-            isUserEditing = false
-        }
     }
 }
 
