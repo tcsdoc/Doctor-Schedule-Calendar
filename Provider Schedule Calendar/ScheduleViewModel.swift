@@ -53,10 +53,6 @@ class ScheduleViewModel: ObservableObject {
                 let loadedNotes = try await cloudKitManager.fetchAllMonthlyNotes()
                 
                 await MainActor.run {
-                    redesignLog("📥 Loaded from CloudKit: \(loadedSchedules.count) schedules")
-                    for (key, schedule) in loadedSchedules {
-                        redesignLog("   \(key): \(schedule)")
-                    }
                     self.schedules = loadedSchedules
                     self.monthlyNotes = loadedNotes
                     self.isLoading = false
@@ -96,16 +92,13 @@ class ScheduleViewModel: ObservableObject {
         
         // Update local data
         if schedule.isEmpty {
-            redesignLog("🗑️ Local: Removing empty schedule for \(dateKey)")
             schedules.removeValue(forKey: dateKey)
         } else {
-            redesignLog("💾 Local: Updating schedule for \(dateKey): \(schedule)")
             schedules[dateKey] = schedule
         }
         
         // Track change
         pendingChanges.insert(dateKey)
-        redesignLog("📝 Tracking change for \(dateKey). Pending: \(pendingChanges)")
         hasChanges = !pendingChanges.isEmpty || !pendingNoteChanges.isEmpty
     }
     
@@ -123,10 +116,8 @@ class ScheduleViewModel: ObservableObject {
             // Save only changed schedules
             for dateKey in pendingChanges {
                 if let schedule = schedules[dateKey] {
-                    redesignLog("💾 Saving schedule for \(dateKey): \(schedule)")
                     try await cloudKitManager.saveSchedule(schedule)
                 } else {
-                    redesignLog("🗑️ Deleting schedule for \(dateKey)")
                     try await cloudKitManager.deleteSchedule(dateKey: dateKey)
                 }
                 successCount += 1
