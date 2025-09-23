@@ -222,7 +222,7 @@ class ScheduleViewModel: ObservableObject {
         }
     }
     
-    private func monthKey(for date: Date) -> String {
+    func monthKey(for date: Date) -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM"
         formatter.timeZone = TimeZone(identifier: "UTC")
@@ -239,7 +239,7 @@ class ScheduleViewModel: ObservableObject {
         }
     }
     
-    private func dateKey(for date: Date) -> String {
+    func dateKey(for date: Date) -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
         formatter.timeZone = TimeZone(identifier: "UTC")

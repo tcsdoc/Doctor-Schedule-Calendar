@@ -322,7 +322,7 @@ struct ContentView: View {
             let isWeekend = calendar.isDateInWeekend(date)
             let weekendClass = isWeekend ? " class=\"weekend\"" : ""
             
-            let schedule = viewModel.schedules[dateKey(for: date)]
+            let schedule = viewModel.schedules[viewModel.dateKey(for: date)]
             
             html += """
                 <tr\(weekendClass)>
@@ -337,7 +337,7 @@ struct ContentView: View {
         }
         
         // Add monthly notes if they exist
-        if let monthlyNote = viewModel.monthlyNotes[monthKey(for: month)] {
+        if let monthlyNote = viewModel.monthlyNotes[viewModel.monthKey(for: month)] {
             html += """
                 <tr>
                     <td colspan="6" style="background-color: #e8f4fd; font-weight: bold;">
