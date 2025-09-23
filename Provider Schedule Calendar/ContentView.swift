@@ -646,14 +646,19 @@ struct RedesignedMonthlyNotesView: View {
                 initialized = true
             }
         }
+        .onChange(of: month) { _, _ in
+            // Reset when month changes
+            line1Text = line1
+            line2Text = line2
+        }
         .onChange(of: line1) { _, newValue in
-            // Only update display if we've been initialized (prevents false changes during data load)
+            // Update display when data changes from external source
             if initialized && newValue != line1Text {
                 line1Text = newValue
             }
         }
         .onChange(of: line2) { _, newValue in
-            // Only update display if we've been initialized (prevents false changes during data load)  
+            // Update display when data changes from external source
             if initialized && newValue != line2Text {
                 line2Text = newValue
             }

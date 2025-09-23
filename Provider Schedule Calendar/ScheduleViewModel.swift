@@ -126,8 +126,10 @@ class ScheduleViewModel: ObservableObject {
             // Save changed monthly notes
             for monthKey in pendingNoteChanges {
                 if let note = monthlyNotes[monthKey] {
+                    redesignLog("💾 Saving monthly note for \(monthKey): \(note)")
                     try await cloudKitManager.saveMonthlyNote(note)
                 } else {
+                    redesignLog("🗑️ Monthly note was deleted for \(monthKey)")
                     // Note was deleted - implement delete if needed
                 }
                 successCount += 1
@@ -187,6 +189,7 @@ class ScheduleViewModel: ObservableObject {
         
         // Track change
         if valueChanged {
+            redesignLog("📝 Monthly note Line1 changed for \(monthKey): '\(oldLine1 ?? "")' → '\(note.line1 ?? "")'")
             pendingNoteChanges.insert(monthKey)
             hasChanges = !pendingChanges.isEmpty || !pendingNoteChanges.isEmpty
         }
@@ -217,6 +220,7 @@ class ScheduleViewModel: ObservableObject {
         
         // Track change
         if valueChanged {
+            redesignLog("📝 Monthly note Line2 changed for \(monthKey): '\(oldLine2 ?? "")' → '\(note.line2 ?? "")'")
             pendingNoteChanges.insert(monthKey)
             hasChanges = !pendingChanges.isEmpty || !pendingNoteChanges.isEmpty
         }
