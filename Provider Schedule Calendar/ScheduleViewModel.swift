@@ -37,20 +37,9 @@ class ScheduleViewModel: ObservableObject {
     
     // MARK: - Initialization
     init() {
-        redesignLog("🚀 ScheduleViewModel initializing...")
         checkCloudKitStatus()
-        
-        // Delayed initial load to ensure CloudKit is ready
-        Task {
-            redesignLog("⏱️ Starting delayed initial data load...")
-            // Small delay to let CloudKit status check complete
-            try await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
-            
-            await MainActor.run {
-                redesignLog("🔄 Forcing initial data refresh...")
-                self.forceRefreshData()
-            }
-        }
+        // Simple: Load data on app launch
+        loadData()
     }
     
     // MARK: - Public Methods

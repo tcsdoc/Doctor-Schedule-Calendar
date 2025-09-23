@@ -211,6 +211,14 @@ struct ContentView_New: View {
             // Default to first available month
             currentMonthIndex = 0
         }
+        
+        // Force view refresh by triggering state change
+        // This ensures data displays after CloudKit load
+        let temp = currentMonthIndex
+        currentMonthIndex = -1
+        DispatchQueue.main.async {
+            self.currentMonthIndex = temp
+        }
     }
     
     // MARK: - Actions
