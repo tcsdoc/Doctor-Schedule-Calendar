@@ -89,11 +89,21 @@ actor SimpleCloudKitManager {
         
         redesignLog("💾 Saving schedule for \(schedule.id)")
         
-        // Create CloudKit record with deterministic ID
         let recordID = CKRecord.ID(recordName: schedule.id, zoneID: zoneID)
-        let record = CKRecord(recordType: "CD_DailySchedule", recordID: recordID)
         
-        // Set fields
+        // Try to fetch existing record first, create new if doesn't exist
+        let record: CKRecord
+        do {
+            // Try to fetch existing record to update it
+            record = try await privateDatabase.record(for: recordID)
+            redesignLog("📝 Updating existing record: \(schedule.id)")
+        } catch {
+            // Record doesn't exist, create new one
+            record = CKRecord(recordType: "CD_DailySchedule", recordID: recordID)
+            redesignLog("🆕 Creating new record: \(schedule.id)")
+        }
+        
+        // Set/update fields
         record["CD_date"] = schedule.date as CKRecordValue
         record["CD_id"] = schedule.id as CKRecordValue
         record["CD_line1"] = schedule.os as CKRecordValue?
@@ -101,7 +111,7 @@ actor SimpleCloudKitManager {
         record["CD_line3"] = schedule.off as CKRecordValue?
         record["CD_line4"] = schedule.call as CKRecordValue?
         
-        // Save to CloudKit (automatically handles create vs update based on recordID)
+        // Save to CloudKit
         let _ = try await privateDatabase.save(record)
         redesignLog("✅ Schedule saved: \(schedule.id)")
     }

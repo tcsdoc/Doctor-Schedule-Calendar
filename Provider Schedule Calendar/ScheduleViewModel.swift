@@ -138,7 +138,16 @@ class ScheduleViewModel: ObservableObject {
             await MainActor.run {
                 self.isLoading = false
             }
-            redesignLog("❌ Save failed: \(error)")
+            
+            // Detailed error logging for CloudKit issues
+            if let ckError = error as? CKError {
+                redesignLog("❌ CloudKit Save Error: \(ckError.localizedDescription)")
+                redesignLog("❌ CloudKit Error Code: \(ckError.code.rawValue)")
+                redesignLog("❌ CloudKit Error Domain: \(ckError.errorUserInfo)")
+            } else {
+                redesignLog("❌ General Save Error: \(error.localizedDescription)")
+            }
+            
             return false
         }
     }
