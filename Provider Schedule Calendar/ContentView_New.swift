@@ -18,24 +18,37 @@ struct ContentView_New: View {
                 .background(Color(UIColor.systemBackground))
                 .shadow(color: Color.black.opacity(0.1), radius: 2, x: 0, y: 2)
             
-            // Calendar content - FULL WIDTH
-            ScrollView {
-                VStack(spacing: 20) {
-                    if let currentMonth = viewModel.availableMonths.safeGet(index: currentMonthIndex) {
-                        MonthCalendarView(
-                            month: currentMonth,
-                            schedules: viewModel.schedules,
-                            onScheduleChange: viewModel.updateSchedule
-                        )
-                        .padding(.horizontal, 20) // Only horizontal padding for calendar
-                    } else {
-                        Text("No data available")
-                            .foregroundColor(.gray)
-                            .padding()
-                    }
+                // Monthly Notes Section
+                if let currentMonth = viewModel.availableMonths.safeGet(index: currentMonthIndex) {
+                    MonthlyNotesView(
+                        month: currentMonth,
+                        notes: .constant(viewModel.monthlyNotes[monthKey(for: currentMonth)]?.line1 ?? ""),
+                        onNotesChange: { newNotes in
+                            viewModel.updateMonthlyNotes(for: currentMonth, notes: newNotes)
+                        }
+                    )
+                    .padding(.horizontal, 20)
+                    .padding(.top, 10)
                 }
-                .padding(.vertical, 20)
-            }
+                
+                // Calendar content - FULL WIDTH
+                ScrollView {
+                    VStack(spacing: 20) {
+                        if let currentMonth = viewModel.availableMonths.safeGet(index: currentMonthIndex) {
+                            MonthCalendarView(
+                                month: currentMonth,
+                                schedules: viewModel.schedules,
+                                onScheduleChange: viewModel.updateSchedule
+                            )
+                            .padding(.horizontal, 20) // Only horizontal padding for calendar
+                        } else {
+                            Text("No data available")
+                                .foregroundColor(.gray)
+                                .padding()
+                        }
+                    }
+                    .padding(.vertical, 20)
+                }
         }
         .ignoresSafeArea(.all) // FORCE full screen edge-to-edge
         .onAppear {
@@ -49,146 +62,115 @@ struct ContentView_New: View {
         }
     }
     
-    // MARK: - iPad-Optimized Header
+    // MARK: - Compact iPad Header (with room for monthly notes)
     private var modernHeader: some View {
-        VStack(spacing: 16) {
-            // Main header row: FULL WIDTH iPad layout
+        VStack(spacing: 12) {
+            // COMPACT: Single row with all essentials
             HStack(spacing: 20) {
-                // Left section: App branding
-                HStack(spacing: 12) {
-                    Text("📅 Provider Schedule Calendar")
-                        .font(.largeTitle)
+                // Left: App name + Version
+                HStack(spacing: 8) {
+                    Text("📅 Provider Schedule Calendar v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "4.0")")
+                        .font(.title2)
                         .fontWeight(.bold)
-                    
-                    Text("v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "4.0")")
-                        .font(.title3)
-                        .foregroundColor(.secondary)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color.gray.opacity(0.1))
-                        .cornerRadius(6)
                 }
                 
                 Spacer()
                 
-                // Right section: Action buttons - LARGER for iPad
-                HStack(spacing: 16) {
-                    // Save button - BIGGER
-                    Button(action: saveData) {
-                        HStack(spacing: 8) {
-                            Image(systemName: "square.and.arrow.down")
-                                .font(.title3)
-                            Text(saveButtonText)
-                                .font(.title3)
-                                .fontWeight(.medium)
-                        }
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 12)
-                        .background(saveButtonColor)
-                        .cornerRadius(10)
-                    }
-                    .disabled(!viewModel.hasChanges)
-                    
-                    // Print button - BIGGER
-                    Button(action: printCalendar) {
-                        HStack(spacing: 8) {
-                            Image(systemName: "printer")
-                                .font(.title3)
-                            Text("Print")
-                                .font(.title3)
-                                .fontWeight(.medium)
-                        }
-                        .foregroundColor(.blue)
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 12)
-                        .background(Color.blue.opacity(0.1))
-                        .cornerRadius(10)
-                    }
-                }
-            }
-            
-            // Status indicator - LARGER for iPad
-            HStack {
-                Spacer()
-                
+                // Center: Status
                 if viewModel.isLoading {
-                    HStack(spacing: 8) {
-                        ProgressView()
-                            .scaleEffect(1.2)
-                        Text("Loading...")
-                            .font(.title2)
+                    HStack(spacing: 6) {
+                        ProgressView().scaleEffect(0.8)
+                        Text("Loading")
                     }
                     .foregroundColor(.blue)
                 } else if !viewModel.isCloudKitAvailable {
-                    Text("⚠️ CloudKit Unavailable")
-                        .font(.title2)
+                    Text("⚠️ CloudKit Issue")
                         .foregroundColor(.red)
                 } else if viewModel.hasChanges {
-                    Text("📝 Unsaved Changes")
-                        .font(.title2)
+                    Text("📝 Unsaved")
                         .foregroundColor(.orange)
                 } else {
                     Text("✅ Ready")
-                        .font(.title2)
                         .foregroundColor(.green)
                 }
                 
                 Spacer()
-            }
-            .padding(.vertical, 8)
-            
-            // Month navigation - BIGGER for iPad
-            if !viewModel.availableMonths.isEmpty {
-                HStack(spacing: 30) {
-                    // Previous month button - MUCH BIGGER
-                    Button(action: previousMonth) {
-                        HStack(spacing: 8) {
-                            Image(systemName: "chevron.left")
-                                .font(.title)
-                            Text("Previous")
-                                .font(.title2)
+                
+                // Right: Action buttons
+                HStack(spacing: 12) {
+                    Button(action: saveData) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "square.and.arrow.down")
+                            Text(saveButtonText)
                         }
+                        .font(.title3)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(saveButtonColor)
+                        .cornerRadius(8)
+                    }
+                    .disabled(!viewModel.hasChanges)
+                    
+                    Button(action: shareCalendar) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "person.badge.plus")
+                            Text("Share")
+                        }
+                        .font(.title3)
+                        .foregroundColor(.green)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(Color.green.opacity(0.1))
+                        .cornerRadius(8)
+                    }
+                    
+                    Button(action: printCalendar) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "printer")
+                            Text("Print")
+                        }
+                        .font(.title3)
                         .foregroundColor(.blue)
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 10)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
                         .background(Color.blue.opacity(0.1))
-                        .cornerRadius(10)
+                        .cornerRadius(8)
+                    }
+                }
+            }
+            
+            // COMPACT: Month navigation
+            if !viewModel.availableMonths.isEmpty {
+                HStack(spacing: 20) {
+                    Button(action: previousMonth) {
+                        Image(systemName: "chevron.left.circle.fill")
+                            .font(.title)
+                            .foregroundColor(.blue)
                     }
                     .disabled(currentMonthIndex <= 0)
                     
                     Spacer()
                     
-                    // Current month - MUCH LARGER
                     Text(currentMonthName)
-                        .font(.system(size: 36, weight: .bold, design: .default))
+                        .font(.system(size: 28, weight: .bold))
                         .foregroundColor(.primary)
                     
                     Spacer()
                     
-                    // Next month button - MUCH BIGGER
                     Button(action: nextMonth) {
-                        HStack(spacing: 8) {
-                            Text("Next")
-                                .font(.title2)
-                            Image(systemName: "chevron.right")
-                                .font(.title)
-                        }
-                        .foregroundColor(.blue)
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 10)
-                        .background(Color.blue.opacity(0.1))
-                        .cornerRadius(10)
+                        Image(systemName: "chevron.right.circle.fill")
+                            .font(.title)
+                            .foregroundColor(.blue)
                     }
                     .disabled(currentMonthIndex >= viewModel.availableMonths.count - 1)
                 }
-                .padding(.horizontal, 40)
             }
         }
-        .padding(.horizontal, 20) // Only horizontal padding - full width top/bottom
-        .padding(.vertical, 16)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 12)
         .background(Color.gray.opacity(0.05))
-        .cornerRadius(0) // No corner radius for full width
+        .cornerRadius(0)
     }
     
     // MARK: - Navigation Logic
@@ -247,9 +229,23 @@ struct ContentView_New: View {
         }
     }
     
+    private func shareCalendar() {
+        // CloudKit sharing functionality - to be implemented
+        redesignLog("Share calendar requested")
+        // TODO: Implement CloudKit sharing
+    }
+    
     private func printCalendar() {
         // TODO: Implement simplified print function
         print("Print function to be implemented")
+    }
+    
+    // MARK: - Helper Functions
+    private func monthKey(for date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM"
+        formatter.timeZone = TimeZone(identifier: "UTC")
+        return formatter.string(from: date)
     }
 }
 
@@ -345,21 +341,21 @@ struct DayEditCell: View {
                 .fontWeight(.bold)
                 .frame(maxWidth: .infinity, alignment: .leading)
             
-            // Schedule fields (OS, CL, OFF, CALL)
+            // Schedule fields (OS, CL, OFF, CALL) with color coding
             VStack(spacing: 1) {
-                ScheduleTextField(label: "OS", text: $osText) { newValue in
+                ScheduleTextField(label: "OS", fieldType: .os, text: $osText) { newValue in
                     onFieldChange(.os, newValue)
                 }
                 
-                ScheduleTextField(label: "CL", text: $clText) { newValue in
+                ScheduleTextField(label: "CL", fieldType: .cl, text: $clText) { newValue in
                     onFieldChange(.cl, newValue)
                 }
                 
-                ScheduleTextField(label: "OFF", text: $offText) { newValue in
+                ScheduleTextField(label: "OFF", fieldType: .off, text: $offText) { newValue in
                     onFieldChange(.off, newValue)
                 }
                 
-                ScheduleTextField(label: "CALL", text: $callText) { newValue in
+                ScheduleTextField(label: "CALL", fieldType: .call, text: $callText) { newValue in
                     onFieldChange(.call, newValue)
                 }
             }
@@ -387,21 +383,33 @@ struct DayEditCell: View {
     }
 }
 
-// MARK: - Schedule Text Field
+// MARK: - Schedule Text Field with Color Coding
 struct ScheduleTextField: View {
     let label: String
+    let fieldType: ScheduleField
     @Binding var text: String
     let onCommit: (String) -> Void
+    
+    // PSC Field Colors: OS=blue, CL=red, OFF=green, CALL=yellow
+    private var fieldColor: Color {
+        switch fieldType {
+        case .os: return .blue
+        case .cl: return .red
+        case .off: return .green
+        case .call: return .orange // Using orange instead of yellow for better readability
+        }
+    }
     
     var body: some View {
         HStack(spacing: 4) {
             Text(label)
-                .font(.system(size: 12, weight: .medium)) // Bigger for iPad
-                .foregroundColor(.secondary)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(fieldColor)
                 .frame(width: 35, alignment: .leading)
             
             TextField("", text: $text)
-                .font(.system(size: 14)) // Much bigger for iPad
+                .font(.system(size: 14))
+                .foregroundColor(fieldColor)
                 .textFieldStyle(PlainTextFieldStyle())
                 .autocapitalization(.allCharacters)
                 .onSubmit {
@@ -412,6 +420,58 @@ struct ScheduleTextField: View {
                     onCommit(text)
                 }
         }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(fieldColor.opacity(0.1))
+        .cornerRadius(4)
+    }
+}
+
+// MARK: - Monthly Notes View
+struct MonthlyNotesView: View {
+    let month: Date
+    @Binding var notes: String
+    let onNotesChange: (String) -> Void
+    
+    private var monthName: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMMM yyyy"
+        return formatter.string(from: month)
+    }
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("📝 Monthly Notes for \(monthName)")
+                    .font(.headline)
+                    .foregroundColor(.primary)
+                
+                Spacer()
+                
+                Text("Blue: OS | Red: CL | Green: OFF | Orange: CALL")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            
+            TextEditor(text: $notes)
+                .font(.system(size: 16))
+                .frame(minHeight: 80, maxHeight: 120)
+                .padding(8)
+                .background(Color(.systemGray6))
+                .cornerRadius(8)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                )
+                .onChange(of: notes) { newValue in
+                    onNotesChange(newValue)
+                }
+        }
+        .padding(.vertical, 8)
+        .padding(.horizontal, 12)
+        .background(Color(.systemBackground))
+        .cornerRadius(12)
+        .shadow(color: Color.black.opacity(0.05), radius: 2, x: 0, y: 1)
     }
 }
 

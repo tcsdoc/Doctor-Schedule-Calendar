@@ -143,6 +143,32 @@ class ScheduleViewModel: ObservableObject {
         }
     }
     
+    // MARK: - Monthly Notes Methods
+    func updateMonthlyNotes(for date: Date, notes: String) {
+        let monthKey = monthKey(for: date)
+        let calendar = Calendar.current
+        let month = calendar.component(.month, from: date)
+        let year = calendar.component(.year, from: date)
+        
+        if notes.isEmpty {
+            monthlyNotes.removeValue(forKey: monthKey)
+        } else {
+            monthlyNotes[monthKey] = MonthlyNote(
+                month: month,
+                year: year,
+                line1: notes // Store all notes in line1 for simplicity
+            )
+        }
+        hasChanges = true
+    }
+    
+    private func monthKey(for date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM"
+        formatter.timeZone = TimeZone(identifier: "UTC")
+        return formatter.string(from: date)
+    }
+    
     // MARK: - Private Methods
     private func checkCloudKitStatus() {
         Task {
