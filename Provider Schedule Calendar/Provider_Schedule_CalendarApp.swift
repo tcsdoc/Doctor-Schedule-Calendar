@@ -17,8 +17,8 @@ struct Provider_Schedule_CalendarApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
-                .environmentObject(cloudKitManager) // CloudKitManager with custom zones for privacy
+            ContentView_New()
+                // New redesigned architecture uses MVVM - no environment object needed
         }
     }
 }
