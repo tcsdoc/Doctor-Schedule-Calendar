@@ -37,6 +37,8 @@ class ScheduleViewModel: ObservableObject {
     
     // MARK: - Initialization
     init() {
+        redesignLog("🚀 ScheduleViewModel initializing...")
+        hasChanges = false // Explicitly ensure no changes on init
         checkCloudKitStatus()
         // Simple: Load data on app launch
         loadData()
@@ -156,10 +158,12 @@ class ScheduleViewModel: ObservableObject {
             for dateKey in pendingChanges {
                 if let schedule = schedules[dateKey] {
                     // Save schedule
+                    redesignLog("💾 Saving schedule for \(dateKey): \(schedule)")
                     try await cloudKitManager.saveSchedule(schedule)
                     successCount += 1
                 } else {
                     // Delete schedule (all fields empty)
+                    redesignLog("🗑️ Deleting empty schedule for \(dateKey)")
                     try await cloudKitManager.deleteSchedule(dateKey: dateKey)
                     successCount += 1
                 }

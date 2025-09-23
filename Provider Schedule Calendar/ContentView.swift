@@ -58,9 +58,13 @@ struct ContentView: View {
         .onAppear {
             viewModel.loadData()
         }
-        .onChange(of: viewModel.schedules) { _ in
+        .onChange(of: viewModel.schedules) { newSchedules in
             // Initialize month index AFTER data loads
+            redesignLog("📅 Schedules changed - count: \(newSchedules.count)")
             initializeCurrentMonth()
+        }
+        .onChange(of: viewModel.isLoading) { isLoading in
+            redesignLog("⏳ Loading state changed: \(isLoading)")
         }
         .alert("Save Status", isPresented: $showingSaveAlert) {
             Button("OK") {}
