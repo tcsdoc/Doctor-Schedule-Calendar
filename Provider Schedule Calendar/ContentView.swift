@@ -56,7 +56,8 @@ struct ContentView: View {
         }
         // Respect safe area to avoid status bar overlap
         .onAppear {
-            viewModel.loadData()
+            // Data already loads in ViewModel init() - don't duplicate
+            redesignLog("📱 ContentView appeared")
         }
         .onChange(of: viewModel.schedules) { newSchedules in
             // Initialize month index AFTER data loads
@@ -220,6 +221,12 @@ struct ContentView: View {
         }
         
         redesignLog("📅 Initialized to month index: \(currentMonthIndex)")
+        
+        // Force view update after setting month index
+        DispatchQueue.main.async {
+            // This triggers a view refresh to display the loaded data
+            self.currentMonthIndex = self.currentMonthIndex
+        }
     }
     
     // MARK: - Actions
