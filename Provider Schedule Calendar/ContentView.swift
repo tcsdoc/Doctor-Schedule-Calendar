@@ -89,7 +89,7 @@ struct ContentView: View {
                         .foregroundColor(.red)
                 } else if viewModel.hasChanges {
                     Text("📝 Unsaved").font(.caption)
-                        .foregroundColor(.orange)
+                        .foregroundColor(.red)
                 } else {
                     Text("✅ Ready").font(.caption)
                         .foregroundColor(.green)
@@ -219,7 +219,7 @@ struct ContentView: View {
     }
     
     private var saveButtonColor: Color {
-        return viewModel.hasChanges ? .blue : .gray
+        return viewModel.hasChanges ? .blue : .blue
     }
     
     private func saveData() {
