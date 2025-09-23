@@ -44,6 +44,12 @@ class ScheduleViewModel: ObservableObject {
     
     // MARK: - Public Methods
     func loadData() {
+        // PROTECTION: Don't refresh if user has unsaved changes
+        if hasChanges {
+            redesignLog("⚠️ Skipping data refresh - user has unsaved changes")
+            return
+        }
+        
         isLoading = true
         
         Task {
@@ -67,6 +73,37 @@ class ScheduleViewModel: ObservableObject {
                     self.isLoading = false
                 }
                 redesignLog("❌ Failed to load data: \(error)")
+            }
+        }
+    }
+    
+    func forceRefreshData() {
+        // Force refresh even if there are changes (use with caution)
+        redesignLog("🔄 Force refreshing data (ignoring unsaved changes)")
+        
+        isLoading = true
+        
+        Task {
+            do {
+                // Load both schedules and monthly notes
+                let loadedSchedules = try await cloudKitManager.fetchAllSchedules()
+                let loadedNotes = try await cloudKitManager.fetchAllMonthlyNotes()
+                
+                await MainActor.run {
+                    self.schedules = loadedSchedules
+                    self.monthlyNotes = loadedNotes
+                    self.isLoading = false
+                    self.hasChanges = false
+                    self.pendingChanges.removeAll()
+                }
+                
+                redesignLog("✅ Force loaded \(loadedSchedules.count) schedules and \(loadedNotes.count) monthly notes")
+                
+            } catch {
+                await MainActor.run {
+                    self.isLoading = false
+                }
+                redesignLog("❌ Failed to force load data: \(error)")
             }
         }
     }
@@ -141,6 +178,11 @@ class ScheduleViewModel: ObservableObject {
             }
             
             redesignLog("✅ Successfully saved \(successCount) changes (schedules + monthly notes)")
+            
+            // After successful save, allow refresh again by clearing hasChanges
+            // This re-enables loadData() protection
+            redesignLog("🔄 Save complete - refresh protection re-enabled")
+            
             return true
             
         } catch {
