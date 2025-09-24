@@ -255,6 +255,11 @@ class ScheduleViewModel: ObservableObject {
         redesignLog("🔗 ScheduleViewModel: Creating share...")
         return try await cloudKitManager.getOrCreateZoneShare()
     }
+    
+    func getExistingShare() async throws -> CKShare? {
+        redesignLog("🔧 ScheduleViewModel: Looking for existing share...")
+        return try await cloudKitManager.fetchExistingZoneShare()
+    }
 }
 
 // MARK: - Data Models

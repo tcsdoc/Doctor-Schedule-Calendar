@@ -8,6 +8,8 @@ struct ContentView: View {
     @State private var currentMonthIndex = 0
     @State private var showingSaveAlert = false
     @State private var saveMessage = ""
+    @State private var showingManageSheet = false
+    @State private var existingShare: CKShare?
     // Note: Share functionality now uses standard iOS share sheet directly
     
     private let calendar = Calendar.current
@@ -61,6 +63,11 @@ struct ContentView: View {
             Button("OK") {}
         } message: {
             Text(saveMessage)
+        }
+        .sheet(isPresented: $showingManageSheet) {
+            if let share = existingShare {
+                CloudKitManagementView(share: share)
+            }
         }
     }
     
@@ -139,6 +146,20 @@ struct ContentView: View {
                         .background(Color.green.opacity(0.1))
                         .cornerRadius(6)
                     }
+                    
+                    Button(action: manageShares) {
+                        HStack(spacing: 3) {
+                            Image(systemName: "person.2.circle")
+                            Text("Manage")
+                        }
+                        .font(.caption)
+                        .foregroundColor(manageButtonEnabled ? .orange : .gray)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(manageButtonEnabled ? Color.orange.opacity(0.1) : Color.gray.opacity(0.1))
+                        .cornerRadius(6)
+                    }
+                    .disabled(!manageButtonEnabled)
                     
                     Button(action: printCalendar) {
                         HStack(spacing: 3) {
@@ -234,6 +255,11 @@ struct ContentView: View {
     
     private var saveButtonColor: Color {
         return viewModel.hasChanges ? .blue : .blue
+    }
+    
+    private var manageButtonEnabled: Bool {
+        // Enable manage button if we can potentially find existing shares
+        return true // We'll check for existing shares when tapped
     }
     
     private func saveData() {
@@ -335,6 +361,37 @@ struct ContentView: View {
                 saveMessage = "❌ Share creation failed: \(error.localizedDescription)"
                 showingSaveAlert = true
                 redesignLog("❌ Share creation error: \(error)")
+            }
+        }
+    }
+    
+    private func manageShares() {
+        Task {
+            do {
+                redesignLog("🔧 Looking for existing share to manage...")
+                
+                // Try to fetch existing share first
+                if let existingShare = try await viewModel.getExistingShare() {
+                    await MainActor.run {
+                        self.existingShare = existingShare
+                        self.showingManageSheet = true
+                        redesignLog("✅ Found existing share - opening management interface")
+                    }
+                } else {
+                    // No existing share found
+                    await MainActor.run {
+                        saveMessage = "ℹ️ No active shares found to manage. Create a share first using the Share button."
+                        showingSaveAlert = true
+                        redesignLog("ℹ️ No existing share found")
+                    }
+                }
+                
+            } catch {
+                await MainActor.run {
+                    saveMessage = "❌ Failed to check for existing shares: \(error.localizedDescription)"
+                    showingSaveAlert = true
+                    redesignLog("❌ Error checking for existing shares: \(error)")
+                }
             }
         }
     }
@@ -460,6 +517,46 @@ struct ContentView: View {
         formatter.dateFormat = "yyyy-MM"
         formatter.timeZone = TimeZone(identifier: "UTC")
         return formatter.string(from: date)
+    }
+}
+
+// MARK: - CloudKit Management View (for existing shares)
+struct CloudKitManagementView: UIViewControllerRepresentable {
+    let share: CKShare
+    
+    func makeUIViewController(context: Context) -> UICloudSharingController {
+        let sharingController = UICloudSharingController(share: share, container: CKContainer(identifier: "iCloud.com.gulfcoast.ProviderCalendar"))
+        sharingController.delegate = CloudKitSharingDelegate.shared
+        return sharingController
+    }
+    
+    func updateUIViewController(_ uiViewController: UICloudSharingController, context: Context) {
+        // No updates needed
+    }
+}
+
+// MARK: - CloudKit Sharing Delegate (for management interface)
+class CloudKitSharingDelegate: NSObject, UICloudSharingControllerDelegate {
+    static let shared = CloudKitSharingDelegate()
+    
+    func cloudSharingController(_ csc: UICloudSharingController, failedToSaveShareWithError error: Error) {
+        redesignLog("❌ Failed to save share: \(error.localizedDescription)")
+    }
+    
+    func itemTitle(for csc: UICloudSharingController) -> String? {
+        return "Provider Schedule Calendar"
+    }
+    
+    func itemType(for csc: UICloudSharingController) -> String? {
+        return "Calendar Schedule"
+    }
+    
+    func cloudSharingControllerDidSaveShare(_ csc: UICloudSharingController) {
+        redesignLog("✅ Share management saved successfully")
+    }
+    
+    func cloudSharingControllerDidStopSharing(_ csc: UICloudSharingController) {
+        redesignLog("🔗 Sharing stopped via management interface")
     }
 }
 
