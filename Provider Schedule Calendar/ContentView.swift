@@ -694,7 +694,7 @@ struct RedesignedMonthlyNotesView: View {
 // MARK: - Monthly Notes Container
 struct MonthlyNotesContainer: View {
     let currentMonth: Date
-    @ObservedObject let viewModel: ScheduleViewModel
+    @ObservedObject var viewModel: ScheduleViewModel
     let monthKey: String
     
     var body: some View {
