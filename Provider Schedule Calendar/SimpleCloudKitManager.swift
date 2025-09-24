@@ -61,26 +61,42 @@ actor SimpleCloudKitManager {
     func fetchAllSchedules() async throws -> [String: ScheduleRecord] {
         try await ensureCustomZoneExists()
         
-        redesignLog("📅 Fetching all schedules...")
+        redesignLog("📅 Fetching all schedules with pagination...")
         
         let query = CKQuery(recordType: "CD_DailySchedule", predicate: NSPredicate(value: true))
-        let (matchResults, _) = try await privateDatabase.records(matching: query, inZoneWith: zoneID)
-        
         var schedules: [String: ScheduleRecord] = [:]
+        var cursor: CKQueryOperation.Cursor? = nil
+        var totalFetched = 0
+        var batchCount = 0
         
-        for (_, result) in matchResults {
-            switch result {
-            case .success(let record):
-                if let schedule = parseScheduleRecord(record) {
-                    let dateKey = dateKey(for: schedule.date)
-                    schedules[dateKey] = schedule
+        repeat {
+            batchCount += 1
+            redesignLog("📦 Fetching batch \(batchCount)...")
+            
+            let (matchResults, moreComing) = try await privateDatabase.records(matching: query, inZoneWith: zoneID, resultsLimit: nil, cursor: cursor)
+            
+            // Process this batch of results
+            for (_, result) in matchResults {
+                switch result {
+                case .success(let record):
+                    if let schedule = parseScheduleRecord(record) {
+                        let dateKey = dateKey(for: schedule.date)
+                        schedules[dateKey] = schedule
+                        totalFetched += 1
+                    }
+                case .failure(let error):
+                    redesignLog("❌ Failed to process schedule record: \(error)")
                 }
-            case .failure(let error):
-                redesignLog("❌ Failed to process schedule record: \(error)")
             }
-        }
+            
+            redesignLog("📦 Batch \(batchCount): \(matchResults.count) records, \(totalFetched) total so far")
+            
+            // Update cursor for next batch
+            cursor = moreComing
+            
+        } while cursor != nil
         
-        redesignLog("✅ Fetched \(schedules.count) schedules")
+        redesignLog("✅ Fetched ALL \(schedules.count) schedules across \(batchCount) batches")
         return schedules
     }
     
@@ -137,27 +153,43 @@ actor SimpleCloudKitManager {
     func fetchAllMonthlyNotes() async throws -> [String: MonthlyNote] {
         try await ensureCustomZoneExists()
         
-        redesignLog("📝 Fetching all monthly notes...")
+        redesignLog("📝 Fetching all monthly notes with pagination...")
         
         let query = CKQuery(recordType: "CD_MonthlyNotes", predicate: NSPredicate(value: true))
-        let (matchResults, _) = try await privateDatabase.records(matching: query, inZoneWith: zoneID)
-        
         var notes: [String: MonthlyNote] = [:]
+        var cursor: CKQueryOperation.Cursor? = nil
+        var totalFetched = 0
+        var batchCount = 0
         
-        for (_, result) in matchResults {
-            switch result {
-            case .success(let record):
-                if let note = parseMonthlyNoteRecord(record) {
-                    // Store using monthKey format (yyyy-MM) instead of note.id (notes_yyyy-MM)
-                    let monthKey = String(format: "%04d-%02d", note.year, note.month)
-                    notes[monthKey] = note
+        repeat {
+            batchCount += 1
+            redesignLog("📦 Monthly notes batch \(batchCount)...")
+            
+            let (matchResults, moreComing) = try await privateDatabase.records(matching: query, inZoneWith: zoneID, resultsLimit: nil, cursor: cursor)
+            
+            // Process this batch of results
+            for (_, result) in matchResults {
+                switch result {
+                case .success(let record):
+                    if let note = parseMonthlyNoteRecord(record) {
+                        // Store using monthKey format (yyyy-MM) instead of note.id (notes_yyyy-MM)
+                        let monthKey = String(format: "%04d-%02d", note.year, note.month)
+                        notes[monthKey] = note
+                        totalFetched += 1
+                    }
+                case .failure(let error):
+                    redesignLog("❌ Failed to process monthly note record: \(error)")
                 }
-            case .failure(let error):
-                redesignLog("❌ Failed to process monthly note record: \(error)")
             }
-        }
+            
+            redesignLog("📦 Monthly notes batch \(batchCount): \(matchResults.count) records, \(totalFetched) total so far")
+            
+            // Update cursor for next batch
+            cursor = moreComing
+            
+        } while cursor != nil
         
-        redesignLog("✅ Fetched \(notes.count) monthly notes")
+        redesignLog("✅ Fetched ALL \(notes.count) monthly notes across \(batchCount) batches")
         return notes
     }
     
