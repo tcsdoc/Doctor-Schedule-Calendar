@@ -645,10 +645,10 @@ struct ContentView: View {
                 html += """
     <div class="day-entry\(weekendClass)">
         <div class="day-header">\(dayName)</div>
-        <div class="provider-entry os">OS: \(schedule.os)</div>
-        <div class="provider-entry cl">CL: \(schedule.cl)</div>
-        <div class="provider-entry off">OFF: \(schedule.off)</div>
-        <div class="provider-entry call">CALL: \(schedule.call)</div>
+        <div class="provider-entry os">OS: \(schedule.os ?? "")</div>
+        <div class="provider-entry cl">CL: \(schedule.cl ?? "")</div>
+        <div class="provider-entry off">OFF: \(schedule.off ?? "")</div>
+        <div class="provider-entry call">CALL: \(schedule.call ?? "")</div>
     </div>
 """
             }
@@ -744,10 +744,10 @@ struct ContentView: View {
             let dayString = dayFormatter.string(from: date)
             
             if let schedule = viewModel.schedules[viewModel.dateKey(for: date)] {
-                if !schedule.os.isEmpty { summaries["OS"]?.append("\(dayString): \(schedule.os)") }
-                if !schedule.cl.isEmpty { summaries["CL"]?.append("\(dayString): \(schedule.cl)") }
-                if !schedule.off.isEmpty { summaries["OFF"]?.append("\(dayString): \(schedule.off)") }
-                if !schedule.call.isEmpty { summaries["CALL"]?.append("\(dayString): \(schedule.call)") }
+                if let os = schedule.os, !os.isEmpty { summaries["OS"]?.append("\(dayString): \(os)") }
+                if let cl = schedule.cl, !cl.isEmpty { summaries["CL"]?.append("\(dayString): \(cl)") }
+                if let off = schedule.off, !off.isEmpty { summaries["OFF"]?.append("\(dayString): \(off)") }
+                if let call = schedule.call, !call.isEmpty { summaries["CALL"]?.append("\(dayString): \(call)") }
             }
         }
         
