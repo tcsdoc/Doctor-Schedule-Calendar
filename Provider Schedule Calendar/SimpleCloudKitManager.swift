@@ -291,63 +291,68 @@ actor SimpleCloudKitManager {
     }
     
     // MARK: - CloudKit Sharing
-    func createZoneShare() async throws -> CKShare {
-        redesignLog("🔗 Creating zone share...")
+    func createRootRecordShare() async throws -> CKShare {
+        redesignLog("🔗 Creating root record share...")
         
         // Ensure custom zone exists
         try await ensureCustomZoneExists()
         
-        // Create a share for the entire custom zone
-        let share = CKShare(recordZoneID: zoneID)
+        // Create a root record to share (represents the entire schedule)
+        let rootRecordID = CKRecord.ID(recordName: "PSC_ROOT_SHARE", zoneID: zoneID)
+        let rootRecord = CKRecord(recordType: "PSC_RootShare", recordID: rootRecordID)
+        rootRecord["title"] = "Provider Schedule Calendar" as CKRecordValue
+        rootRecord["description"] = "Shared provider schedules and monthly notes" as CKRecordValue
+        
+        // Save the root record first
+        let savedRootRecord = try await privateDatabase.save(rootRecord)
+        
+        // Create a share for this root record
+        let share = CKShare(rootRecord: savedRootRecord)
         
         // Configure share permissions
         share.publicPermission = .readOnly
         
         // Save the share
-        let savedRecord = try await privateDatabase.save(share)
+        let savedShare = try await privateDatabase.save(share)
         
-        redesignLog("✅ Zone share created successfully")
-        return savedRecord as! CKShare
+        redesignLog("✅ Root record share created successfully")
+        return savedShare as! CKShare
     }
     
-    func fetchExistingZoneShare() async throws -> CKShare? {
-        redesignLog("🔍 Looking for existing zone share...")
-        
-        // Query for shares in our zone
-        let query = CKQuery(recordType: "cloudkit.share", predicate: NSPredicate(value: true))
+    func fetchExistingRootShare() async throws -> CKShare? {
+        redesignLog("🔍 Looking for existing root share...")
         
         do {
-            let (matchResults, _) = try await privateDatabase.records(matching: query, inZoneWith: zoneID)
+            // Try to fetch the root record
+            let rootRecordID = CKRecord.ID(recordName: "PSC_ROOT_SHARE", zoneID: zoneID)
+            let rootRecord = try await privateDatabase.record(for: rootRecordID)
             
-            for (_, result) in matchResults {
-                switch result {
-                case .success(let record):
-                    if let share = record as? CKShare {
-                        redesignLog("✅ Found existing zone share")
-                        return share
-                    }
-                case .failure(let error):
-                    redesignLog("❌ Error fetching share record: \(error)")
+            // Check if this record has a share
+            if let shareReference = rootRecord.share {
+                let shareRecord = try await privateDatabase.record(for: shareReference.recordID)
+                if let share = shareRecord as? CKShare {
+                    redesignLog("✅ Found existing root share")
+                    return share
                 }
             }
             
-            redesignLog("ℹ️ No existing zone share found")
+            redesignLog("ℹ️ Root record exists but no share found")
             return nil
             
         } catch {
-            redesignLog("❌ Error querying for shares: \(error)")
-            throw error
+            redesignLog("ℹ️ No existing root record/share found: \(error)")
+            return nil
         }
     }
     
-    func getOrCreateZoneShare() async throws -> CKShare {
+    func getOrCreateRootShare() async throws -> CKShare {
         // First try to fetch existing share
-        if let existingShare = try await fetchExistingZoneShare() {
+        if let existingShare = try await fetchExistingRootShare() {
             return existingShare
         }
         
         // Create new share if none exists
-        return try await createZoneShare()
+        return try await createRootRecordShare()
     }
 }
 
