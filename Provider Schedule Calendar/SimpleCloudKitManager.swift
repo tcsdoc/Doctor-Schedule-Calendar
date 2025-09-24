@@ -73,7 +73,9 @@ actor SimpleCloudKitManager {
             batchCount += 1
             redesignLog("📦 Fetching batch \(batchCount)...")
             
-            let (matchResults, moreComing) = try await privateDatabase.records(matching: query, inZoneWith: zoneID, resultsLimit: nil, cursor: cursor)
+            let (matchResults, moreComing) = cursor == nil 
+                ? try await privateDatabase.records(matching: query, inZoneWith: zoneID)
+                : try await privateDatabase.records(continuingMatchFrom: cursor!)
             
             // Process this batch of results
             for (_, result) in matchResults {
@@ -165,7 +167,9 @@ actor SimpleCloudKitManager {
             batchCount += 1
             redesignLog("📦 Monthly notes batch \(batchCount)...")
             
-            let (matchResults, moreComing) = try await privateDatabase.records(matching: query, inZoneWith: zoneID, resultsLimit: nil, cursor: cursor)
+            let (matchResults, moreComing) = cursor == nil 
+                ? try await privateDatabase.records(matching: query, inZoneWith: zoneID)
+                : try await privateDatabase.records(continuingMatchFrom: cursor!)
             
             // Process this batch of results
             for (_, result) in matchResults {
