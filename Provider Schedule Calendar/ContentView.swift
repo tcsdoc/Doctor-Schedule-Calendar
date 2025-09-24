@@ -698,7 +698,6 @@ struct MonthlyNotesContainer: View {
     
     var body: some View {
         let note = viewModel.monthlyNotes[monthKey]
-        redesignLog("🔍 UI: Looking for monthly note with key '\(monthKey)', found: \(String(describing: note))")
         
         return RedesignedMonthlyNotesView(
             month: currentMonth,
