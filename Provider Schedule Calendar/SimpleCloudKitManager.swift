@@ -291,68 +291,79 @@ actor SimpleCloudKitManager {
     }
     
     // MARK: - CloudKit Sharing
-    func createRootRecordShare() async throws -> CKShare {
-        redesignLog("🔗 Creating root record share...")
+    func createCustomZoneShare() async throws -> CKShare {
+        redesignLog("🔗 Creating zone share...")
         
         // Ensure custom zone exists
         try await ensureCustomZoneExists()
         
-        // Create a root record to share (represents the entire schedule)
-        let rootRecordID = CKRecord.ID(recordName: "PSC_ROOT_SHARE", zoneID: zoneID)
-        let rootRecord = CKRecord(recordType: "PSC_RootShare", recordID: rootRecordID)
-        rootRecord["title"] = "Provider Schedule Calendar" as CKRecordValue
-        rootRecord["description"] = "Shared provider schedules and monthly notes" as CKRecordValue
+        // Create zone-level share (same as original working implementation)
+        let share = CKShare(recordZoneID: zoneID)
+        let currentYear = Calendar.current.component(.year, from: Date())
+        share[CKShare.SystemFieldKey.title] = "Provider Schedule \(currentYear)" as CKRecordValue
+        share.publicPermission = .readOnly // Allow read access for shared users
         
-        // Save the root record first
-        let savedRootRecord = try await privateDatabase.save(rootRecord)
+        redesignLog("🔗 Share object created for zone: \(zoneID.zoneName)")
+        redesignLog("🔗 Share title: Provider Schedule \(currentYear)")
         
-        // Create a share for this root record
-        let share = CKShare(rootRecord: savedRootRecord)
+        // Save using the original working pattern
+        let savedRecords = try await privateDatabase.modifyRecords(saving: [share], deleting: [])
         
-        // Configure share permissions
-        share.publicPermission = .readOnly
+        redesignLog("🔗 Save operation completed")
+        redesignLog("🔗 Save results count: \(savedRecords.saveResults.count)")
         
-        // Save the share
-        let savedShare = try await privateDatabase.save(share)
+        for (_, result) in savedRecords.saveResults {
+            switch result {
+            case .success(let record):
+                if let shareRecord = record as? CKShare {
+                    redesignLog("✅ Zone share created successfully")
+                    redesignLog("🔗 Share URL: \(shareRecord.url?.absoluteString ?? "NO URL")")
+                    return shareRecord
+                }
+            case .failure(let error):
+                redesignLog("❌ Failed to save share: \(error)")
+                throw error
+            }
+        }
         
-        redesignLog("✅ Root record share created successfully")
-        return savedShare as! CKShare
+        throw NSError(domain: "CloudKitManager", code: -2, userInfo: [NSLocalizedDescriptionKey: "Share created but not returned by CloudKit"])
     }
     
-    func fetchExistingRootShare() async throws -> CKShare? {
-        redesignLog("🔍 Looking for existing root share...")
+    func fetchExistingZoneShare() async throws -> CKShare? {
+        redesignLog("🔍 Looking for existing zone share...")
         
         do {
-            // Try to fetch the root record
-            let rootRecordID = CKRecord.ID(recordName: "PSC_ROOT_SHARE", zoneID: zoneID)
-            let rootRecord = try await privateDatabase.record(for: rootRecordID)
+            // Use the same pattern as the original working code
+            let shareRecordID = CKRecord.ID(recordName: "cloudkit.zoneshare", zoneID: zoneID)
+            redesignLog("🔍 Looking for record: \(shareRecordID.recordName) in zone: \(shareRecordID.zoneID.zoneName)")
+            let record = try await privateDatabase.record(for: shareRecordID)
             
-            // Check if this record has a share
-            if let shareReference = rootRecord.share {
-                let shareRecord = try await privateDatabase.record(for: shareReference.recordID)
-                if let share = shareRecord as? CKShare {
-                    redesignLog("✅ Found existing root share")
-                    return share
-                }
+            if let share = record as? CKShare {
+                redesignLog("✅ Found existing zone share")
+                redesignLog("🔗 Share URL: \(share.url?.absoluteString ?? "NO URL")")
+                return share
+            } else {
+                redesignLog("❌ Record found but not a CKShare: \(type(of: record))")
+                return nil
             }
             
-            redesignLog("ℹ️ Root record exists but no share found")
-            return nil
-            
         } catch {
-            redesignLog("ℹ️ No existing root record/share found: \(error)")
+            redesignLog("ℹ️ No existing zone share found: \(error)")
+            if let ckError = error as? CKError, ckError.code == .unknownItem {
+                redesignLog("🔍 No share exists for this zone")
+            }
             return nil
         }
     }
     
-    func getOrCreateRootShare() async throws -> CKShare {
+    func getOrCreateZoneShare() async throws -> CKShare {
         // First try to fetch existing share
-        if let existingShare = try await fetchExistingRootShare() {
+        if let existingShare = try await fetchExistingZoneShare() {
             return existingShare
         }
         
         // Create new share if none exists
-        return try await createRootRecordShare()
+        return try await createCustomZoneShare()
     }
 }
 

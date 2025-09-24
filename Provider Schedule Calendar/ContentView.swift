@@ -420,11 +420,43 @@ struct CloudKitSharingView: UIViewControllerRepresentable {
     
     func makeUIViewController(context: Context) -> UICloudSharingController {
         let sharingController = UICloudSharingController(share: share, container: CKContainer(identifier: "iCloud.com.gulfcoast.ProviderCalendar"))
+        sharingController.delegate = CloudKitSharingDelegate.shared
         return sharingController
     }
     
     func updateUIViewController(_ uiViewController: UICloudSharingController, context: Context) {
         // No updates needed
+    }
+}
+
+// MARK: - CloudKit Sharing Delegate (from original working implementation)
+class CloudKitSharingDelegate: NSObject, UICloudSharingControllerDelegate {
+    static let shared = CloudKitSharingDelegate()
+    
+    func cloudSharingController(_ csc: UICloudSharingController, failedToSaveShareWithError error: Error) {
+        redesignLog("❌ Failed to save share: \(error.localizedDescription)")
+        redesignLog("❌ SHARING ERROR: \(error)")
+    }
+    
+    func itemTitle(for csc: UICloudSharingController) -> String? {
+        return "Provider Schedule Calendar"
+    }
+    
+    func itemType(for csc: UICloudSharingController) -> String? {
+        return "Calendar Schedule"
+    }
+    
+    func cloudSharingControllerDidSaveShare(_ csc: UICloudSharingController) {
+        redesignLog("✅ Share saved successfully")
+        redesignLog("✅ SHARING SUCCESS - Share URL should be available in the controller")
+        if let share = csc.share {
+            redesignLog("🔗 Final share URL: \(share.url?.absoluteString ?? "Still no URL")")
+        }
+    }
+    
+    func cloudSharingControllerDidStopSharing(_ csc: UICloudSharingController) {
+        redesignLog("🔗 Sharing stopped")
+        redesignLog("🔗 User stopped sharing")
     }
 }
 

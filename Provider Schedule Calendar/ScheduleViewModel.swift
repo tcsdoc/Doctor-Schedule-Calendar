@@ -253,7 +253,7 @@ class ScheduleViewModel: ObservableObject {
     // MARK: - CloudKit Sharing
     func createShare() async throws -> CKShare {
         redesignLog("🔗 ScheduleViewModel: Creating share...")
-        return try await cloudKitManager.getOrCreateRootShare()
+        return try await cloudKitManager.getOrCreateZoneShare()
     }
 }
 
