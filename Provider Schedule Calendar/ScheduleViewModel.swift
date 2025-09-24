@@ -10,6 +10,7 @@ class ScheduleViewModel: ObservableObject {
     @Published var schedules: [String: ScheduleRecord] = [:]
     @Published var monthlyNotes: [String: MonthlyNote] = [:]
     @Published var isLoading = false
+    @Published var isSaving = false
     @Published var isCloudKitAvailable = false
     @Published var hasChanges = false
     
@@ -107,7 +108,7 @@ class ScheduleViewModel: ObservableObject {
             return true
         }
         
-        isLoading = true
+        isSaving = true
         
         do {
             // Save all pending changes
@@ -137,7 +138,7 @@ class ScheduleViewModel: ObservableObject {
                 self.pendingChanges.removeAll()
                 self.pendingNoteChanges.removeAll()
                 self.hasChanges = false
-                self.isLoading = false
+                self.isSaving = false
             }
             
             
@@ -145,7 +146,7 @@ class ScheduleViewModel: ObservableObject {
             
         } catch {
             await MainActor.run {
-                self.isLoading = false
+                self.isSaving = false
             }
             
             // Detailed error logging for CloudKit issues

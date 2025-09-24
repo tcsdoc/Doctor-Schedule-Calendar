@@ -75,7 +75,13 @@ struct ContentView: View {
                 Spacer()
                 
                 // Center: Status (compact)
-                if viewModel.isLoading {
+                if viewModel.isSaving {
+                    HStack(spacing: 4) {
+                        ProgressView().scaleEffect(0.7)
+                        Text("Saving").font(.caption)
+                    }
+                    .foregroundColor(.orange)
+                } else if viewModel.isLoading {
                     HStack(spacing: 4) {
                         ProgressView().scaleEffect(0.7)
                         Text("Loading").font(.caption)
