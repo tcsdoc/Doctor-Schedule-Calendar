@@ -538,8 +538,175 @@ struct ContentView: View {
         return html
     }
     
+    private func generateDailyListHTML(for month: Date, orientation: PrintOrientation) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMMM yyyy"
+        let monthName = formatter.string(from: month)
+        
+        let fontSize = orientation == .landscape ? "14px" : "12px"
+        
+        var html = """
+<html>
+<head>
+    <title>Provider Schedule - \(monthName) (Daily List)</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; font-size: \(fontSize); }
+        h1 { text-align: center; color: #333; font-size: 24px; margin-bottom: 10px; }
+        h2 { text-align: center; color: #666; font-size: 18px; margin-bottom: 20px; }
+        .day-entry { margin-bottom: 15px; padding: 10px; border: 1px solid #ddd; border-radius: 5px; }
+        .day-header { font-weight: bold; font-size: 16px; color: #333; margin-bottom: 8px; }
+        .provider-entry { margin: 4px 0; padding: 3px 0; }
+        .os { color: #0066cc; font-weight: bold; }
+        .cl { color: #cc0000; font-weight: bold; }
+        .off { color: #009900; font-weight: bold; }
+        .call { color: #ff6600; font-weight: bold; }
+        .weekend { background-color: #f9f9f9; }
+        .monthly-notes { background-color: #e8f4fd; padding: 15px; margin-bottom: 20px; border-radius: 5px; }
+        @page { margin: 0.5in; }
+    </style>
+</head>
+<body>
+    <h1>Provider Schedule Calendar</h1>
+    <h2>\(monthName) - Daily List</h2>
+"""
+        
+        // Add monthly notes first if they exist
+        if let monthlyNote = viewModel.monthlyNotes[viewModel.monthKey(for: month)] {
+            html += """
+    <div class="monthly-notes">
+        <strong>Monthly Notes:</strong><br>
+        Line 1: \(monthlyNote.line1 ?? "")<br>
+        Line 2: \(monthlyNote.line2 ?? "")
+    </div>
+"""
+        }
+        
+        let calendar = Calendar.current
+        let range = calendar.range(of: .day, in: .month, for: month)!
+        let dayFormatter = DateFormatter()
+        dayFormatter.dateFormat = "EEEE, MMMM d"
+        
+        for day in 1...range.count {
+            let date = calendar.date(byAdding: .day, value: day - 1, to: calendar.startOfDay(for: month))!
+            let dayName = dayFormatter.string(from: date)
+            let isWeekend = calendar.isDateInWeekend(date)
+            let weekendClass = isWeekend ? " weekend" : ""
+            
+            let schedule = viewModel.schedules[viewModel.dateKey(for: date)]
+            
+            // Only show days that have schedule data
+            if let schedule = schedule, !schedule.isEmpty {
+                html += """
+    <div class="day-entry\(weekendClass)">
+        <div class="day-header">\(dayName)</div>
+        <div class="provider-entry os">OS: \(schedule.os ?? "")</div>
+        <div class="provider-entry cl">CL: \(schedule.cl ?? "")</div>
+        <div class="provider-entry off">OFF: \(schedule.off ?? "")</div>
+        <div class="provider-entry call">CALL: \(schedule.call ?? "")</div>
+    </div>
+"""
+            }
+        }
+        
+        html += """
+</body>
+</html>
+"""
+        return html
+    }
     
+    private func generateSummaryHTML(for month: Date, orientation: PrintOrientation) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMMM yyyy"
+        let monthName = formatter.string(from: month)
+        
+        let fontSize = orientation == .landscape ? "14px" : "12px"
+        
+        var html = """
+<html>
+<head>
+    <title>Provider Schedule - \(monthName) (Summary)</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; font-size: \(fontSize); }
+        h1 { text-align: center; color: #333; font-size: 24px; margin-bottom: 10px; }
+        h2 { text-align: center; color: #666; font-size: 18px; margin-bottom: 20px; }
+        .summary-section { margin-bottom: 25px; }
+        .section-header { font-weight: bold; font-size: 16px; color: #333; margin-bottom: 10px; border-bottom: 2px solid #333; padding-bottom: 5px; }
+        .provider-summary { margin-bottom: 15px; }
+        .provider-label { font-weight: bold; margin-bottom: 5px; }
+        .dates-list { margin-left: 20px; line-height: 1.4; }
+        .os { color: #0066cc; }
+        .cl { color: #cc0000; }
+        .off { color: #009900; }
+        .call { color: #ff6600; }
+        .monthly-notes { background-color: #e8f4fd; padding: 15px; margin-bottom: 20px; border-radius: 5px; }
+        @page { margin: 0.5in; }
+    </style>
+</head>
+<body>
+    <h1>Provider Schedule Calendar</h1>
+    <h2>\(monthName) - Summary</h2>
+"""
+        
+        // Add monthly notes first if they exist
+        if let monthlyNote = viewModel.monthlyNotes[viewModel.monthKey(for: month)] {
+            html += """
+    <div class="monthly-notes">
+        <strong>Monthly Notes:</strong><br>
+        Line 1: \(monthlyNote.line1 ?? "")<br>
+        Line 2: \(monthlyNote.line2 ?? "")
+    </div>
+"""
+        }
+        
+        // Generate provider summaries
+        let providerSummaries = generateProviderSummaries(for: month)
+        
+        for (providerType, dates) in providerSummaries {
+            if !dates.isEmpty {
+                html += """
+    <div class="summary-section">
+        <div class="section-header \(providerType.lowercased())">\(providerType) Schedule</div>
+        <div class="dates-list">\(dates.joined(separator: ", "))</div>
+    </div>
+"""
+            }
+        }
+        
+        html += """
+</body>
+</html>
+"""
+        return html
+    }
     
+    private func generateProviderSummaries(for month: Date) -> [String: [String]] {
+        var summaries: [String: [String]] = [
+            "OS": [],
+            "CL": [],
+            "OFF": [],
+            "CALL": []
+        ]
+        
+        let calendar = Calendar.current
+        let range = calendar.range(of: .day, in: .month, for: month)!
+        let dayFormatter = DateFormatter()
+        dayFormatter.dateFormat = "MMM d"
+        
+        for day in 1...range.count {
+            let date = calendar.date(byAdding: .day, value: day - 1, to: calendar.startOfDay(for: month))!
+            let dayString = dayFormatter.string(from: date)
+            
+            if let schedule = viewModel.schedules[viewModel.dateKey(for: date)] {
+                if let os = schedule.os, !os.isEmpty { summaries["OS"]?.append("\(dayString): \(os)") }
+                if let cl = schedule.cl, !cl.isEmpty { summaries["CL"]?.append("\(dayString): \(cl)") }
+                if let off = schedule.off, !off.isEmpty { summaries["OFF"]?.append("\(dayString): \(off)") }
+                if let call = schedule.call, !call.isEmpty { summaries["CALL"]?.append("\(dayString): \(call)") }
+            }
+        }
+        
+        return summaries
+    }
     
     private func generateAllMonthsHTML() -> String {
         var fullHTML = """
@@ -678,6 +845,11 @@ struct ContentView: View {
     }
     
     // MARK: - Helper Functions
+    private func monthKey(for date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM"
+        formatter.timeZone = TimeZone(identifier: "UTC")
+        return formatter.string(from: date)
     }
 }
 
@@ -751,6 +923,112 @@ class ShareActivityItemSource: NSObject, UIActivityItemSource {
 }
 
 // MARK: - Print Options View
+struct PrintOptionsView: View {
+    @Binding var printFormat: PrintFormat
+    @Binding var printOrientation: PrintOrientation
+    let onPrint: (PrintFormat, PrintOrientation) -> Void
+    let onCancel: () -> Void
+    
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 30) {
+                VStack(alignment: .leading, spacing: 20) {
+                    Text("Print Options")
+                        .font(.title)
+                        .fontWeight(.bold)
+                        .padding(.top)
+                    
+                    Group {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Format")
+                                .font(.headline)
+                                .foregroundColor(.primary)
+                            
+                            VStack(spacing: 8) {
+                                ForEach(PrintFormat.allCases, id: \.self) { format in
+                                    HStack {
+                                        Button(action: {
+                                            printFormat = format
+                                        }) {
+                                            HStack {
+                                                Image(systemName: printFormat == format ? "checkmark.circle.fill" : "circle")
+                                                    .foregroundColor(printFormat == format ? .blue : .gray)
+                                                Text(format.description)
+                                                    .foregroundColor(.primary)
+                                                Spacer()
+                                            }
+                                            .padding(.vertical, 8)
+                                            .padding(.horizontal, 12)
+                                            .background(printFormat == format ? Color.blue.opacity(0.1) : Color.clear)
+                                            .cornerRadius(8)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Orientation")
+                                .font(.headline)
+                                .foregroundColor(.primary)
+                            
+                            VStack(spacing: 8) {
+                                ForEach(PrintOrientation.allCases, id: \.self) { orientation in
+                                    HStack {
+                                        Button(action: {
+                                            printOrientation = orientation
+                                        }) {
+                                            HStack {
+                                                Image(systemName: printOrientation == orientation ? "checkmark.circle.fill" : "circle")
+                                                    .foregroundColor(printOrientation == orientation ? .blue : .gray)
+                                                Text(orientation.description)
+                                                    .foregroundColor(.primary)
+                                                Spacer()
+                                            }
+                                            .padding(.vertical, 8)
+                                            .padding(.horizontal, 12)
+                                            .background(printOrientation == orientation ? Color.blue.opacity(0.1) : Color.clear)
+                                            .cornerRadius(8)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    Spacer()
+                    
+                    // Action buttons
+                    HStack(spacing: 20) {
+                        Button("Cancel") {
+                            onCancel()
+                        }
+                        .font(.title2)
+                        .foregroundColor(.red)
+                        .padding(.vertical, 12)
+                        .padding(.horizontal, 30)
+                        .background(Color.red.opacity(0.1))
+                        .cornerRadius(10)
+                        
+                        Button("Print") {
+                            onPrint(printFormat, printOrientation)
+                        }
+                        .font(.title2)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.white)
+                        .padding(.vertical, 12)
+                        .padding(.horizontal, 30)
+                        .background(Color.blue)
+                        .cornerRadius(10)
+                    }
+                    .padding(.bottom, 30)
+                }
+                .padding(.horizontal, 30)
+            }
+            .navigationBarHidden(true)
+        }
+    }
+}
 
 // MARK: - Month Calendar View (Editable Grid)
 struct MonthCalendarView: View {

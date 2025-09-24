@@ -1,0 +1,432 @@
+import SwiftUI
+import CloudKit
+import UIKit
+
+// MARK: - Temporary Print Types (to be removed)
+enum PrintOrientation: String {
+    case landscape = "Landscape"
+}
+
+enum PrintFormat: String {
+    case monthly = "Monthly"
+}
+
+// MARK: - Modern PSC with SV-Inspired UI + Calendar Editing
+struct ContentView: View {
+    @StateObject private var viewModel = ScheduleViewModel()
+    @State private var currentMonthIndex = 0
+    @State private var showingSaveAlert = false
+    @State private var saveMessage = ""
+    @State private var showingManageSheet = false
+    @State private var existingShare: CKShare?
+    // Note: Share functionality now uses standard iOS share sheet directly
+    
+    private let calendar = Calendar.current
+    
+    var body: some View {
+        // FULL SCREEN iPad Layout - No NavigationView constraints
+        VStack(spacing: 0) {
+            // Fixed header - FULL WIDTH
+            modernHeader
+                .background(Color(UIColor.systemBackground))
+                .shadow(color: Color.black.opacity(0.1), radius: 2, x: 0, y: 2)
+            
+                // Monthly Notes Section
+                if let currentMonth = viewModel.availableMonths.safeGet(index: currentMonthIndex) {
+                    MonthlyNotesContainer(
+                        currentMonth: currentMonth,
+                        viewModel: viewModel,
+                        monthKey: monthKey(for: currentMonth)
+                    )
+                    .id("\(monthKey(for: currentMonth))-\(viewModel.monthlyNotes.count)") // Force refresh when data changes
+                }
+                
+                // Calendar content - FULL WIDTH with keyboard awareness
+                ScrollView {
+                    VStack(spacing: 20) {
+                        if let currentMonth = viewModel.availableMonths.safeGet(index: currentMonthIndex) {
+                            MonthCalendarView(
+                                month: currentMonth,
+                                schedules: viewModel.schedules,
+                                onScheduleChange: viewModel.updateSchedule
+                            )
+                            .padding(.horizontal, 20) // Only horizontal padding for calendar
+                        } else {
+                            Text("No data available")
+                                .foregroundColor(.gray)
+                    .padding()
+                            }
+                        }
+                    .padding(.vertical, 20)
+                    }
+                }
+        // Respect safe area to avoid status bar overlap
+        .onTapGesture {
+            // Dismiss keyboard when tapping outside text fields
+            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+            }
+            .onAppear {
+            initializeCurrentMonth()
+        }
+        .alert("Save Status", isPresented: $showingSaveAlert) {
+            Button("OK") {}
+        } message: {
+            Text(saveMessage)
+        }
+        .sheet(isPresented: $showingManageSheet) {
+            if let share = existingShare {
+                CloudKitManagementView(share: share)
+            }
+        }
+    }
+    
+    // MARK: - Ultra-Compact iPad Header (minimal height for 6-week months)
+    private var modernHeader: some View {
+        VStack(spacing: 6) {
+            // ULTRA-COMPACT: Single row with essentials only
+            HStack(spacing: 16) {
+                // Left: App name only
+                Text("📅 PSC v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "4.0")")
+                    .font(.headline)
+                    .fontWeight(.bold)
+                
+                Spacer()
+                
+                // Center: Status (compact)
+                if viewModel.isSaving {
+                        HStack(spacing: 4) {
+                        ProgressView().scaleEffect(0.7)
+                        Text("Saving").font(.caption)
+                    }
+                    .foregroundColor(.orange)
+                } else if viewModel.isLoading {
+                    HStack(spacing: 4) {
+                        ProgressView().scaleEffect(0.7)
+                        Text("Loading").font(.caption)
+                    }
+                    .foregroundColor(.blue)
+                } else if !viewModel.isCloudKitAvailable {
+                    Text("⚠️ CloudKit Issue").font(.caption)
+                        .foregroundColor(.red)
+                } else if viewModel.hasChanges {
+                    Text("⚠️ UNSAVED")
+                        .font(.caption)
+                        .fontWeight(.bold)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.red)
+                        .cornerRadius(6)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6)
+                                .stroke(Color.red.opacity(0.8), lineWidth: 2)
+                        )
+                } else {
+                    Text("✅ Ready").font(.caption)
+                        .foregroundColor(.green)
+                }
+                
+                Spacer()
+                
+                // Right: Compact action buttons (with edge spacing)
+                HStack(spacing: 8) {
+                    Button(action: saveData) {
+                        HStack(spacing: 3) {
+                            Image(systemName: "square.and.arrow.down")
+                            Text(saveButtonText)
+                        }
+                        .font(.caption)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(saveButtonColor)
+                        .cornerRadius(6)
+                    }
+                    
+                    Button(action: shareCalendar) {
+                        HStack(spacing: 3) {
+                            Image(systemName: "person.badge.plus")
+                                Text("Share")
+                            }
+                        .font(.caption)
+                            .foregroundColor(.green)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(Color.green.opacity(0.1))
+                            .cornerRadius(6)
+                    }
+                    
+                    Button(action: manageShares) {
+                        HStack(spacing: 3) {
+                            Image(systemName: "person.2.circle")
+                            Text("Manage")
+                        }
+                    .font(.caption)
+                        .foregroundColor(manageButtonEnabled ? .orange : .gray)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(manageButtonEnabled ? Color.orange.opacity(0.1) : Color.gray.opacity(0.1))
+                        .cornerRadius(6)
+                    }
+                    .disabled(!manageButtonEnabled)
+                    
+                    Button(action: printAllMonths) {
+                        HStack(spacing: 3) {
+                            Image(systemName: "printer")
+                            Text("Print")
+                        }
+                        .font(.caption)
+                        .foregroundColor(.blue)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(Color.blue.opacity(0.1))
+                        .cornerRadius(6)
+                    }
+                }
+                .padding(.trailing, 60) // EVEN MORE padding - move buttons further from navigation area
+            }
+            
+            // ULTRA-COMPACT: Month navigation inline
+            if !viewModel.availableMonths.isEmpty {
+                HStack(spacing: 16) {
+                    Button(action: previousMonth) {
+                        Image(systemName: "chevron.left.circle.fill")
+                            .font(.title2)
+                            .foregroundColor(.blue)
+                    }
+                    .disabled(currentMonthIndex <= 0)
+                    
+                    Spacer()
+                    
+                    Text(currentMonthName)
+                        .font(.system(size: 22, weight: .bold))
+                        .foregroundColor(.primary)
+                    
+                    Spacer()
+                    
+                    Button(action: nextMonth) {
+                        Image(systemName: "chevron.right.circle.fill")
+                            .font(.title2)
+                            .foregroundColor(.blue)
+                    }
+                    .disabled(currentMonthIndex >= viewModel.availableMonths.count - 1)
+                }
+            }
+        }
+        .padding(.horizontal, 50) // MUCH MORE padding to move buttons away from edges
+        .padding(.vertical, 8)
+        .background(Color.gray.opacity(0.05))
+        .cornerRadius(0)
+    }
+    
+    // MARK: - Navigation Logic
+    private var currentMonthName: String {
+        guard let currentMonth = viewModel.availableMonths.safeGet(index: currentMonthIndex) else {
+            return "No Data"
+        }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMMM yyyy"
+        return formatter.string(from: currentMonth)
+    }
+    
+    private func previousMonth() {
+        if currentMonthIndex > 0 {
+            currentMonthIndex -= 1
+        }
+    }
+    
+    private func nextMonth() {
+        if currentMonthIndex < viewModel.availableMonths.count - 1 {
+            currentMonthIndex += 1
+        }
+    }
+    
+    private func initializeCurrentMonth() {
+        guard !viewModel.availableMonths.isEmpty else { return }
+        
+        let now = Date()
+        // Try to find current month in available months
+        if let foundIndex = viewModel.availableMonths.firstIndex(where: { month in
+            calendar.isDate(month, equalTo: now, toGranularity: .month)
+        }) {
+            currentMonthIndex = foundIndex
+        } else {
+            // Default to first available month
+            currentMonthIndex = 0
+        }
+        
+    }
+    
+    // MARK: - Actions
+    private var saveButtonText: String {
+        return viewModel.hasChanges ? "Save" : "Saved"
+    }
+    
+    private var saveButtonColor: Color {
+        return viewModel.hasChanges ? .blue : .blue
+    }
+    
+    private var manageButtonEnabled: Bool {
+        // Enable manage button if we can potentially find existing shares
+        return true // We'll check for existing shares when tapped
+    }
+    
+    private func saveData() {
+        Task {
+            if viewModel.hasChanges {
+                let (success, savedCount, totalCount) = await viewModel.saveChanges()
+                await MainActor.run {
+                    if success {
+                        saveMessage = "✅ All \(totalCount) changes saved successfully!"
+                    } else {
+                        let failedCount = totalCount - savedCount
+                        if savedCount > 0 {
+                            saveMessage = "⚠️ Partial save: \(savedCount)/\(totalCount) saved\n\(failedCount) records failed - please retry"
+                        } else {
+                            saveMessage = "❌ Save failed: All \(totalCount) records failed"
+                        }
+                    }
+                    showingSaveAlert = true
+                        }
+                    } else {
+                await MainActor.run {
+                    saveMessage = "✅ No changes to save"
+                    showingSaveAlert = true
+                }
+            }
+        }
+    }
+    
+    private func shareCalendar() {
+        // Check if there are unsaved changes that need to be saved first
+        if viewModel.hasChanges {
+            // Save first, then share
+            Task {
+                _ = await viewModel.saveChanges()
+                // Wait a moment for save completion, then share
+                try await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
+                await performShare()
+            }
+        } else {
+            // Data is already saved, proceed immediately with sharing
+            Task {
+                await performShare()
+            }
+        }
+    }
+    
+    private func performShare() async {
+        do {
+            redesignLog("🔗 Starting CloudKit share creation...")
+            let share = try await viewModel.createShare()
+            
+        guard let shareURL = share.url else {
+                await MainActor.run {
+                    saveMessage = "❌ No share URL available. Please try again."
+                    showingSaveAlert = true
+                }
+            return
+        }
+        
+            redesignLog("✅ Share URL obtained: \(shareURL.absoluteString)")
+            
+            // Present standard iOS share sheet with CloudKit URL (original working pattern)
+        let shareText = "You're invited to view my Provider Schedule Calendar. Open the link below on your iOS device to access the shared calendar."
+        
+        // Create a custom activity item source for better email formatting
+        let customItem = ShareActivityItemSource(
+            text: shareText,
+            url: shareURL,
+            subject: "Provider Schedule Calendar - Shared Access"
+        )
+        
+            await MainActor.run {
+        let activityViewController = UIActivityViewController(
+            activityItems: [customItem],
+            applicationActivities: nil
+        )
+        
+        // Configure for iPad
+        if let popover = activityViewController.popoverPresentationController {
+            if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+               let window = windowScene.windows.first {
+                popover.sourceView = window
+                popover.sourceRect = CGRect(x: window.bounds.midX, y: window.bounds.midY, width: 0, height: 0)
+                popover.permittedArrowDirections = []
+            }
+        }
+        
+                // Present the standard iOS share sheet
+                if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                   let window = windowScene.windows.first,
+                   let rootViewController = window.rootViewController {
+        rootViewController.present(activityViewController, animated: true)
+                    redesignLog("✅ Standard iOS share sheet presented")
+                }
+            }
+            
+        } catch {
+            await MainActor.run {
+                saveMessage = "❌ Share creation failed: \(error.localizedDescription)"
+                showingSaveAlert = true
+                redesignLog("❌ Share creation error: \(error)")
+            }
+        }
+    }
+    
+    private func manageShares() {
+        Task {
+            do {
+                redesignLog("🔧 Looking for existing share to manage...")
+                
+                // Try to fetch existing share first
+                if let existingShare = try await viewModel.getExistingShare() {
+                    await MainActor.run {
+                        redesignLog("✅ Found existing share:")
+                        redesignLog("   - Share URL: \(existingShare.url?.absoluteString ?? "NO URL")")
+                        redesignLog("   - Share title: \(existingShare[CKShare.SystemFieldKey.title] ?? "NO TITLE")")
+                        redesignLog("   - Public permission: \(existingShare.publicPermission.rawValue)")
+                        redesignLog("   - Participants count: \(existingShare.participants.count)")
+                        
+                        for (index, participant) in existingShare.participants.enumerated() {
+                            redesignLog("   - Participant \(index): \(participant.userIdentity.userRecordID?.recordName ?? "UNKNOWN")")
+                            redesignLog("   - Role: \(participant.role.rawValue), Permission: \(participant.permission.rawValue)")
+                        }
+                        
+                        self.existingShare = existingShare
+                        self.showingManageSheet = true
+                        redesignLog("🔧 Opening CloudKit management interface...")
+                    }
+                } else {
+                    // No existing share found
+                    await MainActor.run {
+                        saveMessage = "ℹ️ No active shares found to manage. Create a share first using the Share button."
+                        showingSaveAlert = true
+                        redesignLog("ℹ️ No existing share found")
+                    }
+                }
+                
+            } catch {
+                await MainActor.run {
+                    saveMessage = "❌ Failed to check for existing shares: \(error.localizedDescription)"
+                    showingSaveAlert = true
+                    redesignLog("❌ Error checking for existing shares: \(error)")
+                }
+            }
+        }
+    }
+    
+    private func printAllMonths() {
+        let printInfo = UIPrintInfo.printInfo()
+        printInfo.outputType = .general
+        printInfo.jobName = "Provider Schedule Calendar"
+        printInfo.orientation = .landscape // Default to landscape for better calendar layout
+        
+        let printController = UIPrintInteractionController.shared
+        printController.printInfo = printInfo
+        printController.showsNumberOfCopies = true
+        printController.showsPaperSelectionForLoadedPapers = true
+        printController.showsPageRange = true // KEY: This lets user select which months to print
+        
+        // Generate all months as separate pages
+        let htmlContent = generateAllMonthsHTML()
