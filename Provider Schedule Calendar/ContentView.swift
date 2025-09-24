@@ -1,5 +1,6 @@
 import SwiftUI
 import CloudKit
+import UIKit
 
 // MARK: - Modern PSC with SV-Inspired UI + Calendar Editing
 struct ContentView: View {
@@ -7,6 +8,8 @@ struct ContentView: View {
     @State private var currentMonthIndex = 0
     @State private var showingSaveAlert = false
     @State private var saveMessage = ""
+    @State private var showingShareSheet = false
+    @State private var shareItem: Any?
     
     private let calendar = Calendar.current
     
@@ -59,6 +62,11 @@ struct ContentView: View {
             Button("OK") {}
         } message: {
             Text(saveMessage)
+        }
+        .sheet(isPresented: $showingShareSheet) {
+            if let share = shareItem as? CKShare {
+                CloudKitSharingView(share: share)
+            }
         }
     }
     
@@ -261,8 +269,25 @@ struct ContentView: View {
     }
     
     private func shareCalendar() {
-        saveMessage = "🔗 Share feature will be implemented in next update"
-        showingSaveAlert = true
+        Task {
+            do {
+                redesignLog("🔗 Starting CloudKit share creation...")
+                let share = try await viewModel.createShare()
+                
+                await MainActor.run {
+                    shareItem = share
+                    showingShareSheet = true
+                    redesignLog("✅ Share sheet will be presented")
+                }
+                
+            } catch {
+                await MainActor.run {
+                    saveMessage = "❌ Share creation failed: \(error.localizedDescription)"
+                    showingSaveAlert = true
+                    redesignLog("❌ Share creation error: \(error)")
+                }
+            }
+        }
     }
     
     private func printCalendar() {
@@ -386,6 +411,20 @@ struct ContentView: View {
         formatter.dateFormat = "yyyy-MM"
         formatter.timeZone = TimeZone(identifier: "UTC")
         return formatter.string(from: date)
+    }
+}
+
+// MARK: - CloudKit Sharing View
+struct CloudKitSharingView: UIViewControllerRepresentable {
+    let share: CKShare
+    
+    func makeUIViewController(context: Context) -> UICloudSharingController {
+        let sharingController = UICloudSharingController(share: share, container: CKContainer(identifier: "iCloud.com.gulfcoast.ProviderCalendar"))
+        return sharingController
+    }
+    
+    func updateUIViewController(_ uiViewController: UICloudSharingController, context: Context) {
+        // No updates needed
     }
 }
 

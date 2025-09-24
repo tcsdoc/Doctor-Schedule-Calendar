@@ -249,6 +249,12 @@ class ScheduleViewModel: ObservableObject {
         formatter.timeZone = TimeZone(identifier: "UTC")
         return formatter.string(from: date)
     }
+    
+    // MARK: - CloudKit Sharing
+    func createShare() async throws -> CKShare {
+        redesignLog("🔗 ScheduleViewModel: Creating share...")
+        return try await cloudKitManager.getOrCreateZoneShare()
+    }
 }
 
 // MARK: - Data Models

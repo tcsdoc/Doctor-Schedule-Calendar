@@ -289,5 +289,65 @@ actor SimpleCloudKitManager {
         formatter.timeZone = TimeZone(identifier: "UTC")
         return formatter.string(from: date)
     }
+    
+    // MARK: - CloudKit Sharing
+    func createZoneShare() async throws -> CKShare {
+        redesignLog("🔗 Creating zone share...")
+        
+        // Ensure custom zone exists
+        try await ensureCustomZoneExists()
+        
+        // Create a share for the entire custom zone
+        let share = CKShare(recordZoneID: zoneID)
+        
+        // Configure share permissions
+        share.publicPermission = .readOnly
+        
+        // Save the share
+        let savedRecord = try await privateDatabase.save(share)
+        
+        redesignLog("✅ Zone share created successfully")
+        return savedRecord as! CKShare
+    }
+    
+    func fetchExistingZoneShare() async throws -> CKShare? {
+        redesignLog("🔍 Looking for existing zone share...")
+        
+        // Query for shares in our zone
+        let query = CKQuery(recordType: "cloudkit.share", predicate: NSPredicate(value: true))
+        
+        do {
+            let (matchResults, _) = try await privateDatabase.records(matching: query, inZoneWith: zoneID)
+            
+            for (_, result) in matchResults {
+                switch result {
+                case .success(let record):
+                    if let share = record as? CKShare {
+                        redesignLog("✅ Found existing zone share")
+                        return share
+                    }
+                case .failure(let error):
+                    redesignLog("❌ Error fetching share record: \(error)")
+                }
+            }
+            
+            redesignLog("ℹ️ No existing zone share found")
+            return nil
+            
+        } catch {
+            redesignLog("❌ Error querying for shares: \(error)")
+            throw error
+        }
+    }
+    
+    func getOrCreateZoneShare() async throws -> CKShare {
+        // First try to fetch existing share
+        if let existingShare = try await fetchExistingZoneShare() {
+            return existingShare
+        }
+        
+        // Create new share if none exists
+        return try await createZoneShare()
+    }
 }
 
