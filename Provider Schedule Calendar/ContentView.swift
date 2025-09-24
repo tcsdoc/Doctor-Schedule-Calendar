@@ -25,6 +25,7 @@ struct ContentView: View {
                         viewModel: viewModel,
                         monthKey: monthKey(for: currentMonth)
                     )
+                    .id("\(monthKey(for: currentMonth))-\(viewModel.monthlyNotes.count)") // Force refresh when data changes
                 }
                 
                 // Calendar content - FULL WIDTH with keyboard awareness
@@ -693,13 +694,13 @@ struct RedesignedMonthlyNotesView: View {
 // MARK: - Monthly Notes Container
 struct MonthlyNotesContainer: View {
     let currentMonth: Date
-    let viewModel: ScheduleViewModel
+    @ObservedObject let viewModel: ScheduleViewModel
     let monthKey: String
     
     var body: some View {
         let note = viewModel.monthlyNotes[monthKey]
         
-        return RedesignedMonthlyNotesView(
+        RedesignedMonthlyNotesView(
             month: currentMonth,
             line1: note?.line1 ?? "",
             line2: note?.line2 ?? "",
