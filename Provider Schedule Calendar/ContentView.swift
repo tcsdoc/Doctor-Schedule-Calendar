@@ -45,18 +45,18 @@ struct ContentView: View {
                         } else {
                             Text("No data available")
                                 .foregroundColor(.gray)
-                                .padding()
+                    .padding()
+                            }
                         }
-                    }
                     .padding(.vertical, 20)
+                    }
                 }
-        }
         // Respect safe area to avoid status bar overlap
         .onTapGesture {
             // Dismiss keyboard when tapping outside text fields
             UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-        }
-        .onAppear {
+            }
+            .onAppear {
             initializeCurrentMonth()
         }
         .alert("Save Status", isPresented: $showingSaveAlert) {
@@ -85,7 +85,7 @@ struct ContentView: View {
                 
                 // Center: Status (compact)
                 if viewModel.isSaving {
-                    HStack(spacing: 4) {
+                        HStack(spacing: 4) {
                         ProgressView().scaleEffect(0.7)
                         Text("Saving").font(.caption)
                     }
@@ -137,14 +137,14 @@ struct ContentView: View {
                     Button(action: shareCalendar) {
                         HStack(spacing: 3) {
                             Image(systemName: "person.badge.plus")
-                            Text("Share")
-                        }
+                                Text("Share")
+                            }
                         .font(.caption)
-                        .foregroundColor(.green)
+                            .foregroundColor(.green)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
                         .background(Color.green.opacity(0.1))
-                        .cornerRadius(6)
+                            .cornerRadius(6)
                     }
                     
                     Button(action: manageShares) {
@@ -152,7 +152,7 @@ struct ContentView: View {
                             Image(systemName: "person.2.circle")
                             Text("Manage")
                         }
-                        .font(.caption)
+                    .font(.caption)
                         .foregroundColor(manageButtonEnabled ? .orange : .gray)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
@@ -278,8 +278,8 @@ struct ContentView: View {
                         }
                     }
                     showingSaveAlert = true
-                }
-            } else {
+                        }
+                    } else {
                 await MainActor.run {
                     saveMessage = "✅ No changes to save"
                     showingSaveAlert = true
@@ -311,47 +311,47 @@ struct ContentView: View {
             redesignLog("🔗 Starting CloudKit share creation...")
             let share = try await viewModel.createShare()
             
-            guard let shareURL = share.url else {
+        guard let shareURL = share.url else {
                 await MainActor.run {
                     saveMessage = "❌ No share URL available. Please try again."
                     showingSaveAlert = true
                 }
-                return
-            }
-            
+            return
+        }
+        
             redesignLog("✅ Share URL obtained: \(shareURL.absoluteString)")
             
             // Present standard iOS share sheet with CloudKit URL (original working pattern)
-            let shareText = "You're invited to view my Provider Schedule Calendar. Open the link below on your iOS device to access the shared calendar."
-            
-            // Create a custom activity item source for better email formatting
-            let customItem = ShareActivityItemSource(
-                text: shareText,
-                url: shareURL,
-                subject: "Provider Schedule Calendar - Shared Access"
-            )
-            
+        let shareText = "You're invited to view my Provider Schedule Calendar. Open the link below on your iOS device to access the shared calendar."
+        
+        // Create a custom activity item source for better email formatting
+        let customItem = ShareActivityItemSource(
+            text: shareText,
+            url: shareURL,
+            subject: "Provider Schedule Calendar - Shared Access"
+        )
+        
             await MainActor.run {
-                let activityViewController = UIActivityViewController(
-                    activityItems: [customItem],
-                    applicationActivities: nil
-                )
-                
-                // Configure for iPad
-                if let popover = activityViewController.popoverPresentationController {
-                    if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-                       let window = windowScene.windows.first {
-                        popover.sourceView = window
-                        popover.sourceRect = CGRect(x: window.bounds.midX, y: window.bounds.midY, width: 0, height: 0)
-                        popover.permittedArrowDirections = []
-                    }
-                }
-                
+        let activityViewController = UIActivityViewController(
+            activityItems: [customItem],
+            applicationActivities: nil
+        )
+        
+        // Configure for iPad
+        if let popover = activityViewController.popoverPresentationController {
+            if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+               let window = windowScene.windows.first {
+                popover.sourceView = window
+                popover.sourceRect = CGRect(x: window.bounds.midX, y: window.bounds.midY, width: 0, height: 0)
+                popover.permittedArrowDirections = []
+            }
+        }
+        
                 // Present the standard iOS share sheet
                 if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
                    let window = windowScene.windows.first,
                    let rootViewController = window.rootViewController {
-                    rootViewController.present(activityViewController, animated: true)
+        rootViewController.present(activityViewController, animated: true)
                     redesignLog("✅ Standard iOS share sheet presented")
                 }
             }
@@ -373,9 +373,20 @@ struct ContentView: View {
                 // Try to fetch existing share first
                 if let existingShare = try await viewModel.getExistingShare() {
                     await MainActor.run {
+                        redesignLog("✅ Found existing share:")
+                        redesignLog("   - Share URL: \(existingShare.url?.absoluteString ?? "NO URL")")
+                        redesignLog("   - Share title: \(existingShare[CKShare.SystemFieldKey.title] ?? "NO TITLE")")
+                        redesignLog("   - Public permission: \(existingShare.publicPermission.rawValue)")
+                        redesignLog("   - Participants count: \(existingShare.participants.count)")
+                        
+                        for (index, participant) in existingShare.participants.enumerated() {
+                            redesignLog("   - Participant \(index): \(participant.userIdentity.userRecordID?.recordName ?? "UNKNOWN")")
+                            redesignLog("   - Role: \(participant.role.rawValue), Permission: \(participant.permission.rawValue)")
+                        }
+                        
                         self.existingShare = existingShare
                         self.showingManageSheet = true
-                        redesignLog("✅ Found existing share - opening management interface")
+                        redesignLog("🔧 Opening CloudKit management interface...")
                     }
                 } else {
                     // No existing share found
@@ -434,36 +445,36 @@ struct ContentView: View {
         let monthName = formatter.string(from: month)
         
         var html = """
-        <html>
-        <head>
-            <title>Provider Schedule - \(monthName)</title>
-            <style>
-                body { font-family: Arial, sans-serif; margin: 20px; }
-                h1 { text-align: center; color: #333; }
-                table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-                th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-                th { background-color: #f2f2f2; font-weight: bold; }
-                .weekend { background-color: #f9f9f9; }
-                .os { color: blue; }
-                .cl { color: red; }
-                .off { color: green; }
-                .call { color: orange; }
-            </style>
-        </head>
-        <body>
-            <h1>Provider Schedule Calendar</h1>
-            <h2>\(monthName)</h2>
-            <table>
-                <tr>
-                    <th>Date</th>
-                    <th>Day</th>
-                    <th>OS</th>
-                    <th>CL</th>
-                    <th>OFF</th>
-                    <th>CALL</th>
-                </tr>
-        """
-        
+<html>
+<head>
+    <title>Provider Schedule - \(monthName)</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        h1 { text-align: center; color: #333; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; font-weight: bold; }
+        .weekend { background-color: #f9f9f9; }
+        .os { color: blue; }
+        .cl { color: red; }
+        .off { color: green; }
+        .call { color: orange; }
+    </style>
+</head>
+<body>
+    <h1>Provider Schedule Calendar</h1>
+    <h2>\(monthName)</h2>
+    <table>
+        <tr>
+            <th>Date</th>
+            <th>Day</th>
+            <th>OS</th>
+            <th>CL</th>
+            <th>OFF</th>
+            <th>CALL</th>
+        </tr>
+"""
+            
         let calendar = Calendar.current
         let range = calendar.range(of: .day, in: .month, for: month)!
         let dayFormatter = DateFormatter()
@@ -478,35 +489,35 @@ struct ContentView: View {
             let schedule = viewModel.schedules[viewModel.dateKey(for: date)]
             
             html += """
-                <tr\(weekendClass)>
-                    <td>\(day)</td>
-                    <td>\(dayName)</td>
-                    <td class="os">\(schedule?.os ?? "")</td>
-                    <td class="cl">\(schedule?.cl ?? "")</td>
-                    <td class="off">\(schedule?.off ?? "")</td>
-                    <td class="call">\(schedule?.call ?? "")</td>
-                </tr>
-            """
+        <tr\(weekendClass)>
+            <td>\(day)</td>
+            <td>\(dayName)</td>
+            <td class="os">\(schedule?.os ?? "")</td>
+            <td class="cl">\(schedule?.cl ?? "")</td>
+            <td class="off">\(schedule?.off ?? "")</td>
+            <td class="call">\(schedule?.call ?? "")</td>
+        </tr>
+"""
         }
         
         // Add monthly notes if they exist
         if let monthlyNote = viewModel.monthlyNotes[viewModel.monthKey(for: month)] {
             html += """
-                <tr>
-                    <td colspan="6" style="background-color: #e8f4fd; font-weight: bold;">
-                        Monthly Notes:<br>
-                        Line 1: \(monthlyNote.line1 ?? "")<br>
-                        Line 2: \(monthlyNote.line2 ?? "")
-                    </td>
-                </tr>
-            """
+        <tr>
+            <td colspan="6" style="background-color: #e8f4fd; font-weight: bold;">
+                Monthly Notes:<br>
+                Line 1: \(monthlyNote.line1 ?? "")<br>
+                Line 2: \(monthlyNote.line2 ?? "")
+            </td>
+        </tr>
+"""
         }
         
         html += """
-            </table>
-        </body>
-        </html>
-        """
+    </table>
+</body>
+</html>
+"""
         
         return html
     }
@@ -601,12 +612,12 @@ struct MonthCalendarView: View {
     var body: some View {
         VStack(spacing: 12) {
             // Days of week header
-            HStack {
+        HStack {
                 ForEach(calendar.shortWeekdaySymbols, id: \.self) { day in
-                    Text(day)
+                Text(day)
                         .font(.caption)
                         .fontWeight(.bold)
-                        .frame(maxWidth: .infinity)
+                    .frame(maxWidth: .infinity)
                         .foregroundColor(.secondary)
                 }
             }
@@ -614,7 +625,7 @@ struct MonthCalendarView: View {
             // Calendar grid - FULL WIDTH
             LazyVGrid(columns: columns, spacing: 4) {
                 ForEach(calendarDays, id: \.self) { date in
-                    if calendar.isDate(date, equalTo: month, toGranularity: .month) {
+                if calendar.isDate(date, equalTo: month, toGranularity: .month) {
                         DayEditCell(
                             date: date,
                             schedule: schedules[dateKey(for: date)],
@@ -623,10 +634,10 @@ struct MonthCalendarView: View {
                             }
                         )
                         .frame(minHeight: 140, maxHeight: .infinity) // Flexible height for iPad
-                    } else {
+                } else {
                         // Empty cell for days outside current month
-                        Rectangle()
-                            .fill(Color.clear)
+                    Rectangle()
+                        .fill(Color.clear)
                             .frame(minHeight: 120, maxHeight: .infinity)
                     }
                 }
@@ -703,7 +714,7 @@ struct DayEditCell: View {
         .padding(8)
         .frame(minHeight: 140, maxHeight: .infinity) // iPad-optimized flexible height
         .background(Color(.systemBackground))
-        .overlay(
+            .overlay(
             Rectangle()
                 .stroke(Color.gray.opacity(0.3), lineWidth: 1)
         )
@@ -820,11 +831,11 @@ struct RedesignedMonthlyNotesView: View {
                         .textFieldStyle(PlainTextFieldStyle())
                         .autocapitalization(.allCharacters)
                         .focused($line1Focused)
-                        .padding(4)
+        .padding(4)
                         .background(Color.blue.opacity(0.1))
                         .cornerRadius(4)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 4)
+        .overlay(
+            RoundedRectangle(cornerRadius: 4)
                                 .stroke(Color.blue.opacity(0.3), lineWidth: 1)
                         )
                         .onSubmit {
@@ -858,12 +869,12 @@ struct RedesignedMonthlyNotesView: View {
                         .focused($line2Focused)
                         .padding(4)
                         .background(Color.red.opacity(0.1))
-                        .cornerRadius(4)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 4)
+            .cornerRadius(4)
+            .overlay(
+                RoundedRectangle(cornerRadius: 4)
                                 .stroke(Color.red.opacity(0.3), lineWidth: 1)
-                        )
-                        .onSubmit {
+            )
+            .onSubmit {
                             onLine2Change(line2Text.uppercased())
                         }
                         .onChange(of: line2Text) { _, newValue in
