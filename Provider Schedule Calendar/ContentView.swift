@@ -2,6 +2,22 @@ import SwiftUI
 import CloudKit
 import UIKit
 
+// MARK: - Print Configuration Enums
+enum PrintFormat: String, CaseIterable {
+    case monthly = "Monthly Calendar"
+    case list = "Daily List"
+    case summary = "Summary View"
+    
+    var description: String { self.rawValue }
+}
+
+enum PrintOrientation: String, CaseIterable {
+    case portrait = "Portrait"
+    case landscape = "Landscape"
+    
+    var description: String { self.rawValue }
+}
+
 // MARK: - Modern PSC with SV-Inspired UI + Calendar Editing
 struct ContentView: View {
     @StateObject private var viewModel = ScheduleViewModel()
@@ -10,6 +26,9 @@ struct ContentView: View {
     @State private var saveMessage = ""
     @State private var showingManageSheet = false
     @State private var existingShare: CKShare?
+    @State private var showingPrintOptions = false
+    @State private var printFormat: PrintFormat = .monthly
+    @State private var printOrientation: PrintOrientation = .portrait
     // Note: Share functionality now uses standard iOS share sheet directly
     
     private let calendar = Calendar.current
@@ -68,6 +87,21 @@ struct ContentView: View {
             if let share = existingShare {
                 CloudKitManagementView(share: share)
             }
+        }
+        .sheet(isPresented: $showingPrintOptions) {
+            PrintOptionsView(
+                printFormat: $printFormat,
+                printOrientation: $printOrientation,
+                onPrint: { format, orientation in
+                    showingPrintOptions = false
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        performPrint(format: format, orientation: orientation)
+                    }
+                },
+                onCancel: {
+                    showingPrintOptions = false
+                }
+            )
         }
     }
     
@@ -161,7 +195,7 @@ struct ContentView: View {
                     }
                     .disabled(!manageButtonEnabled)
                     
-                    Button(action: printCalendar) {
+                    Button(action: { showingPrintOptions = true }) {
                         HStack(spacing: 3) {
                             Image(systemName: "printer")
                             Text("Print")
@@ -407,20 +441,26 @@ struct ContentView: View {
         }
     }
     
-    private func printCalendar() {
+    private func performPrint(format: PrintFormat, orientation: PrintOrientation) {
         guard let currentMonth = viewModel.availableMonths.safeGet(index: currentMonthIndex) else { return }
         
         let printInfo = UIPrintInfo.printInfo()
         printInfo.outputType = .general
-        printInfo.jobName = "Provider Schedule - \(currentMonthName)"
+        printInfo.jobName = "Provider Schedule - \(currentMonthName) (\(format.description))"
+        printInfo.orientation = orientation == .landscape ? .landscape : .portrait
         
         let printController = UIPrintInteractionController.shared
         printController.printInfo = printInfo
+        printController.showsNumberOfCopies = true
+        printController.showsPaperSelectionForLoadedPapers = true
         
-        // Create simple print content
-        let htmlContent = generatePrintHTML(for: currentMonth)
+        // Generate content based on selected format
+        let htmlContent = generateEnhancedPrintHTML(for: currentMonth, format: format, orientation: orientation)
         let printFormatter = UIMarkupTextPrintFormatter(markupText: htmlContent)
-        printFormatter.perPageContentInsets = UIEdgeInsets(top: 72, left: 72, bottom: 72, right: 72)
+        
+        // Better margins for readability
+        let margin: CGFloat = orientation == .landscape ? 50 : 72
+        printFormatter.perPageContentInsets = UIEdgeInsets(top: margin, left: margin, bottom: margin, right: margin)
         
         printController.printFormatter = printFormatter
         
@@ -432,33 +472,55 @@ struct ContentView: View {
                 }
             } else if completed {
                 DispatchQueue.main.async {
-                    self.saveMessage = "🖨️ Schedule printed successfully!"
+                    self.saveMessage = "🖨️ \(format.description) printed successfully!"
                     self.showingSaveAlert = true
                 }
             }
         }
     }
     
-    private func generatePrintHTML(for month: Date) -> String {
+    private func generateEnhancedPrintHTML(for month: Date, format: PrintFormat, orientation: PrintOrientation) -> String {
+        switch format {
+        case .monthly:
+            return generateMonthlyCalendarHTML(for: month, orientation: orientation)
+        case .list:
+            return generateDailyListHTML(for: month, orientation: orientation)
+        case .summary:
+            return generateSummaryHTML(for: month, orientation: orientation)
+        }
+    }
+    
+    private func generateMonthlyCalendarHTML(for month: Date, orientation: PrintOrientation) -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "MMMM yyyy"
         let monthName = formatter.string(from: month)
+        
+        // Enhanced styling for much better readability
+        let fontSize = orientation == .landscape ? "14px" : "12px"
+        let cellHeight = orientation == .landscape ? "100px" : "120px"
+        let headerHeight = orientation == .landscape ? "40px" : "45px"
         
         var html = """
 <html>
 <head>
     <title>Provider Schedule - \(monthName)</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 20px; }
-        h1 { text-align: center; color: #333; }
+        body { font-family: Arial, sans-serif; margin: 20px; font-size: \(fontSize); }
+        h1 { text-align: center; color: #333; font-size: 24px; margin-bottom: 10px; }
+        h2 { text-align: center; color: #666; font-size: 18px; margin-bottom: 20px; }
         table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-        th { background-color: #f2f2f2; font-weight: bold; }
-        .weekend { background-color: #f9f9f9; }
-        .os { color: blue; }
-        .cl { color: red; }
-        .off { color: green; }
-        .call { color: orange; }
+        th, td { border: 2px solid #333; padding: 8px; text-align: left; vertical-align: top; }
+        th { background-color: #e0e0e0; font-weight: bold; height: \(headerHeight); text-align: center; font-size: \(fontSize); }
+        td { height: \(cellHeight); }
+        .weekend { background-color: #f5f5f5; }
+        .os { color: #0066cc; font-weight: bold; }
+        .cl { color: #cc0000; font-weight: bold; }
+        .off { color: #009900; font-weight: bold; }
+        .call { color: #ff6600; font-weight: bold; }
+        .monthly-notes { background-color: #e8f4fd; font-weight: bold; padding: 15px; }
+        .day-number { font-weight: bold; font-size: \(fontSize); margin-bottom: 4px; }
+        .provider-line { margin: 2px 0; line-height: 1.3; }
+        @page { margin: 0.5in; }
     </style>
 </head>
 <body>
@@ -520,6 +582,176 @@ struct ContentView: View {
 """
         
         return html
+    }
+    
+    private func generateDailyListHTML(for month: Date, orientation: PrintOrientation) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMMM yyyy"
+        let monthName = formatter.string(from: month)
+        
+        let fontSize = orientation == .landscape ? "14px" : "12px"
+        
+        var html = """
+<html>
+<head>
+    <title>Provider Schedule - \(monthName) (Daily List)</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; font-size: \(fontSize); }
+        h1 { text-align: center; color: #333; font-size: 24px; margin-bottom: 10px; }
+        h2 { text-align: center; color: #666; font-size: 18px; margin-bottom: 20px; }
+        .day-entry { margin-bottom: 15px; padding: 10px; border: 1px solid #ddd; border-radius: 5px; }
+        .day-header { font-weight: bold; font-size: 16px; color: #333; margin-bottom: 8px; }
+        .provider-entry { margin: 4px 0; padding: 3px 0; }
+        .os { color: #0066cc; font-weight: bold; }
+        .cl { color: #cc0000; font-weight: bold; }
+        .off { color: #009900; font-weight: bold; }
+        .call { color: #ff6600; font-weight: bold; }
+        .weekend { background-color: #f9f9f9; }
+        .monthly-notes { background-color: #e8f4fd; padding: 15px; margin-bottom: 20px; border-radius: 5px; }
+        @page { margin: 0.5in; }
+    </style>
+</head>
+<body>
+    <h1>Provider Schedule Calendar</h1>
+    <h2>\(monthName) - Daily List</h2>
+"""
+        
+        // Add monthly notes first if they exist
+        if let monthlyNote = viewModel.monthlyNotes[viewModel.monthKey(for: month)] {
+            html += """
+    <div class="monthly-notes">
+        <strong>Monthly Notes:</strong><br>
+        Line 1: \(monthlyNote.line1 ?? "")<br>
+        Line 2: \(monthlyNote.line2 ?? "")
+    </div>
+"""
+        }
+        
+        let calendar = Calendar.current
+        let range = calendar.range(of: .day, in: .month, for: month)!
+        let dayFormatter = DateFormatter()
+        dayFormatter.dateFormat = "EEEE, MMMM d"
+        
+        for day in 1...range.count {
+            let date = calendar.date(byAdding: .day, value: day - 1, to: calendar.startOfDay(for: month))!
+            let dayName = dayFormatter.string(from: date)
+            let isWeekend = calendar.isDateInWeekend(date)
+            let weekendClass = isWeekend ? " weekend" : ""
+            
+            let schedule = viewModel.schedules[viewModel.dateKey(for: date)]
+            
+            // Only show days that have schedule data
+            if let schedule = schedule, !schedule.isEmpty {
+                html += """
+    <div class="day-entry\(weekendClass)">
+        <div class="day-header">\(dayName)</div>
+        <div class="provider-entry os">OS: \(schedule.os)</div>
+        <div class="provider-entry cl">CL: \(schedule.cl)</div>
+        <div class="provider-entry off">OFF: \(schedule.off)</div>
+        <div class="provider-entry call">CALL: \(schedule.call)</div>
+    </div>
+"""
+            }
+        }
+        
+        html += """
+</body>
+</html>
+"""
+        return html
+    }
+    
+    private func generateSummaryHTML(for month: Date, orientation: PrintOrientation) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMMM yyyy"
+        let monthName = formatter.string(from: month)
+        
+        let fontSize = orientation == .landscape ? "14px" : "12px"
+        
+        var html = """
+<html>
+<head>
+    <title>Provider Schedule - \(monthName) (Summary)</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; font-size: \(fontSize); }
+        h1 { text-align: center; color: #333; font-size: 24px; margin-bottom: 10px; }
+        h2 { text-align: center; color: #666; font-size: 18px; margin-bottom: 20px; }
+        .summary-section { margin-bottom: 25px; }
+        .section-header { font-weight: bold; font-size: 16px; color: #333; margin-bottom: 10px; border-bottom: 2px solid #333; padding-bottom: 5px; }
+        .provider-summary { margin-bottom: 15px; }
+        .provider-label { font-weight: bold; margin-bottom: 5px; }
+        .dates-list { margin-left: 20px; line-height: 1.4; }
+        .os { color: #0066cc; }
+        .cl { color: #cc0000; }
+        .off { color: #009900; }
+        .call { color: #ff6600; }
+        .monthly-notes { background-color: #e8f4fd; padding: 15px; margin-bottom: 20px; border-radius: 5px; }
+        @page { margin: 0.5in; }
+    </style>
+</head>
+<body>
+    <h1>Provider Schedule Calendar</h1>
+    <h2>\(monthName) - Summary</h2>
+"""
+        
+        // Add monthly notes first if they exist
+        if let monthlyNote = viewModel.monthlyNotes[viewModel.monthKey(for: month)] {
+            html += """
+    <div class="monthly-notes">
+        <strong>Monthly Notes:</strong><br>
+        Line 1: \(monthlyNote.line1 ?? "")<br>
+        Line 2: \(monthlyNote.line2 ?? "")
+    </div>
+"""
+        }
+        
+        // Generate provider summaries
+        let providerSummaries = generateProviderSummaries(for: month)
+        
+        for (providerType, dates) in providerSummaries {
+            if !dates.isEmpty {
+                html += """
+    <div class="summary-section">
+        <div class="section-header \(providerType.lowercased())">\(providerType) Schedule</div>
+        <div class="dates-list">\(dates.joined(separator: ", "))</div>
+    </div>
+"""
+            }
+        }
+        
+        html += """
+</body>
+</html>
+"""
+        return html
+    }
+    
+    private func generateProviderSummaries(for month: Date) -> [String: [String]] {
+        var summaries: [String: [String]] = [
+            "OS": [],
+            "CL": [],
+            "OFF": [],
+            "CALL": []
+        ]
+        
+        let calendar = Calendar.current
+        let range = calendar.range(of: .day, in: .month, for: month)!
+        let dayFormatter = DateFormatter()
+        dayFormatter.dateFormat = "MMM d"
+        
+        for day in 1...range.count {
+            let date = calendar.date(byAdding: .day, value: day - 1, to: calendar.startOfDay(for: month))!
+            let dayString = dayFormatter.string(from: date)
+            
+            if let schedule = viewModel.schedules[viewModel.dateKey(for: date)] {
+                if !schedule.os.isEmpty { summaries["OS"]?.append("\(dayString): \(schedule.os)") }
+                if !schedule.cl.isEmpty { summaries["CL"]?.append("\(dayString): \(schedule.cl)") }
+                if !schedule.off.isEmpty { summaries["OFF"]?.append("\(dayString): \(schedule.off)") }
+                if !schedule.call.isEmpty { summaries["CALL"]?.append("\(dayString): \(schedule.call)") }
+            }
+        }
+        
+        return summaries
     }
     
     // MARK: - Helper Functions
@@ -597,6 +829,114 @@ class ShareActivityItemSource: NSObject, UIActivityItemSource {
     
     func activityViewController(_ activityViewController: UIActivityViewController, subjectForActivityType activityType: UIActivity.ActivityType?) -> String {
         return subject
+    }
+}
+
+// MARK: - Print Options View
+struct PrintOptionsView: View {
+    @Binding var printFormat: PrintFormat
+    @Binding var printOrientation: PrintOrientation
+    let onPrint: (PrintFormat, PrintOrientation) -> Void
+    let onCancel: () -> Void
+    
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 30) {
+                VStack(alignment: .leading, spacing: 20) {
+                    Text("Print Options")
+                        .font(.title)
+                        .fontWeight(.bold)
+                        .padding(.top)
+                    
+                    Group {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Format")
+                                .font(.headline)
+                                .foregroundColor(.primary)
+                            
+                            VStack(spacing: 8) {
+                                ForEach(PrintFormat.allCases, id: \.self) { format in
+                                    HStack {
+                                        Button(action: {
+                                            printFormat = format
+                                        }) {
+                                            HStack {
+                                                Image(systemName: printFormat == format ? "checkmark.circle.fill" : "circle")
+                                                    .foregroundColor(printFormat == format ? .blue : .gray)
+                                                Text(format.description)
+                                                    .foregroundColor(.primary)
+                                                Spacer()
+                                            }
+                                            .padding(.vertical, 8)
+                                            .padding(.horizontal, 12)
+                                            .background(printFormat == format ? Color.blue.opacity(0.1) : Color.clear)
+                                            .cornerRadius(8)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Orientation")
+                                .font(.headline)
+                                .foregroundColor(.primary)
+                            
+                            VStack(spacing: 8) {
+                                ForEach(PrintOrientation.allCases, id: \.self) { orientation in
+                                    HStack {
+                                        Button(action: {
+                                            printOrientation = orientation
+                                        }) {
+                                            HStack {
+                                                Image(systemName: printOrientation == orientation ? "checkmark.circle.fill" : "circle")
+                                                    .foregroundColor(printOrientation == orientation ? .blue : .gray)
+                                                Text(orientation.description)
+                                                    .foregroundColor(.primary)
+                                                Spacer()
+                                            }
+                                            .padding(.vertical, 8)
+                                            .padding(.horizontal, 12)
+                                            .background(printOrientation == orientation ? Color.blue.opacity(0.1) : Color.clear)
+                                            .cornerRadius(8)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    Spacer()
+                    
+                    // Action buttons
+                    HStack(spacing: 20) {
+                        Button("Cancel") {
+                            onCancel()
+                        }
+                        .font(.title2)
+                        .foregroundColor(.red)
+                        .padding(.vertical, 12)
+                        .padding(.horizontal, 30)
+                        .background(Color.red.opacity(0.1))
+                        .cornerRadius(10)
+                        
+                        Button("Print") {
+                            onPrint(printFormat, printOrientation)
+                        }
+                        .font(.title2)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.white)
+                        .padding(.vertical, 12)
+                        .padding(.horizontal, 30)
+                        .background(Color.blue)
+                        .cornerRadius(10)
+                    }
+                    .padding(.bottom, 30)
+                }
+                .padding(.horizontal, 30)
+            }
+            .navigationBarHidden(true)
+        }
     }
 }
 
