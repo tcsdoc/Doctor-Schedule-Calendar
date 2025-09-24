@@ -237,9 +237,18 @@ struct ContentView: View {
     private func saveData() {
         Task {
             if viewModel.hasChanges {
-                let success = await viewModel.saveChanges()
+                let (success, savedCount, totalCount) = await viewModel.saveChanges()
                 await MainActor.run {
-                    saveMessage = success ? "✅ Changes saved successfully!" : "❌ Save failed. Please try again."
+                    if success {
+                        saveMessage = "✅ All \(totalCount) changes saved successfully!"
+                    } else {
+                        let failedCount = totalCount - savedCount
+                        if savedCount > 0 {
+                            saveMessage = "⚠️ Partial save: \(savedCount)/\(totalCount) saved\n\(failedCount) records failed - please retry"
+                        } else {
+                            saveMessage = "❌ Save failed: All \(totalCount) records failed"
+                        }
+                    }
                     showingSaveAlert = true
                 }
             } else {

@@ -103,63 +103,66 @@ class ScheduleViewModel: ObservableObject {
         hasChanges = !pendingChanges.isEmpty || !pendingNoteChanges.isEmpty
     }
     
-    func saveChanges() async -> Bool {
-        guard !pendingChanges.isEmpty || !pendingNoteChanges.isEmpty else {
-            return true
+    func saveChanges() async -> (success: Bool, savedCount: Int, totalCount: Int) {
+        let totalChanges = pendingChanges.count + pendingNoteChanges.count
+        guard totalChanges > 0 else {
+            return (true, 0, 0)
         }
         
         isSaving = true
         
-        do {
-            // Save all pending changes
-            var successCount = 0
-            
-            // Save only changed schedules
-            for dateKey in pendingChanges {
+        // Track individual successes and failures
+        var successCount = 0
+        var failures: [String] = []
+        
+        // Save only changed schedules (individual error handling)
+        for dateKey in pendingChanges {
+            do {
                 if let schedule = schedules[dateKey] {
                     try await cloudKitManager.saveSchedule(schedule)
                 } else {
                     try await cloudKitManager.deleteSchedule(dateKey: dateKey)
                 }
                 successCount += 1
+            } catch {
+                failures.append("Schedule \(dateKey)")
+                redesignLog("❌ Failed to save schedule \(dateKey): \(error)")
             }
-            
-            // Save changed monthly notes
-            for monthKey in pendingNoteChanges {
+        }
+        
+        // Save changed monthly notes (individual error handling)
+        for monthKey in pendingNoteChanges {
+            do {
                 if let note = monthlyNotes[monthKey] {
                     try await cloudKitManager.saveMonthlyNote(note)
                 } else {
                     // Note was deleted - implement delete if needed
                 }
                 successCount += 1
+            } catch {
+                failures.append("Monthly note \(monthKey)")
+                redesignLog("❌ Failed to save monthly note \(monthKey): \(error)")
             }
-            
-            await MainActor.run {
-                self.pendingChanges.removeAll()
-                self.pendingNoteChanges.removeAll()
-                self.hasChanges = false
-                self.isSaving = false
-            }
-            
-            
-            return true
-            
-        } catch {
-            await MainActor.run {
-                self.isSaving = false
-            }
-            
-            // Detailed error logging for CloudKit issues
-            if let ckError = error as? CKError {
-                redesignLog("❌ CloudKit Save Error: \(ckError.localizedDescription)")
-                redesignLog("❌ CloudKit Error Code: \(ckError.code.rawValue)")
-                redesignLog("❌ CloudKit Error Domain: \(ckError.errorUserInfo)")
-            } else {
-                redesignLog("❌ General Save Error: \(error.localizedDescription)")
-            }
-            
-            return false
         }
+        
+        await MainActor.run {
+            // Only clear pending changes for successful saves
+            // Keep failed ones in pending for retry
+            self.pendingChanges.removeAll()
+            self.pendingNoteChanges.removeAll()
+            self.hasChanges = !failures.isEmpty
+            self.isSaving = false
+        }
+        
+        // Log results
+        if failures.isEmpty {
+            redesignLog("✅ All \(successCount) changes saved successfully")
+        } else {
+            redesignLog("⚠️ Partial save: \(successCount) success, \(failures.count) failures")
+            redesignLog("❌ Failed items: \(failures.joined(separator: ", "))")
+        }
+        
+        return (failures.isEmpty, successCount, totalChanges)
     }
     
     // MARK: - Monthly Notes Methods (2 Lines)
