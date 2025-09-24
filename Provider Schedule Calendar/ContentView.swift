@@ -8,8 +8,7 @@ struct ContentView: View {
     @State private var currentMonthIndex = 0
     @State private var showingSaveAlert = false
     @State private var saveMessage = ""
-    @State private var showingShareSheet = false
-    @State private var shareItem: Any?
+    // Note: Share functionality now uses standard iOS share sheet directly
     
     private let calendar = Calendar.current
     
@@ -62,11 +61,6 @@ struct ContentView: View {
             Button("OK") {}
         } message: {
             Text(saveMessage)
-        }
-        .sheet(isPresented: $showingShareSheet) {
-            if let share = shareItem as? CKShare {
-                CloudKitSharingView(share: share)
-            }
         }
     }
     
@@ -269,23 +263,78 @@ struct ContentView: View {
     }
     
     private func shareCalendar() {
-        Task {
-            do {
-                redesignLog("🔗 Starting CloudKit share creation...")
-                let share = try await viewModel.createShare()
-                
+        // Check if there are unsaved changes that need to be saved first
+        if viewModel.hasChanges {
+            // Save first, then share
+            Task {
+                _ = await viewModel.saveChanges()
+                // Wait a moment for save completion, then share
+                try await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
+                await performShare()
+            }
+        } else {
+            // Data is already saved, proceed immediately with sharing
+            Task {
+                await performShare()
+            }
+        }
+    }
+    
+    private func performShare() async {
+        do {
+            redesignLog("🔗 Starting CloudKit share creation...")
+            let share = try await viewModel.createShare()
+            
+            guard let shareURL = share.url else {
                 await MainActor.run {
-                    shareItem = share
-                    showingShareSheet = true
-                    redesignLog("✅ Share sheet will be presented")
-                }
-                
-            } catch {
-                await MainActor.run {
-                    saveMessage = "❌ Share creation failed: \(error.localizedDescription)"
+                    saveMessage = "❌ No share URL available. Please try again."
                     showingSaveAlert = true
-                    redesignLog("❌ Share creation error: \(error)")
                 }
+                return
+            }
+            
+            redesignLog("✅ Share URL obtained: \(shareURL.absoluteString)")
+            
+            // Present standard iOS share sheet with CloudKit URL (original working pattern)
+            let shareText = "You're invited to view my Provider Schedule Calendar. Open the link below on your iOS device to access the shared calendar."
+            
+            // Create a custom activity item source for better email formatting
+            let customItem = ShareActivityItemSource(
+                text: shareText,
+                url: shareURL,
+                subject: "Provider Schedule Calendar - Shared Access"
+            )
+            
+            await MainActor.run {
+                let activityViewController = UIActivityViewController(
+                    activityItems: [customItem],
+                    applicationActivities: nil
+                )
+                
+                // Configure for iPad
+                if let popover = activityViewController.popoverPresentationController {
+                    if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                       let window = windowScene.windows.first {
+                        popover.sourceView = window
+                        popover.sourceRect = CGRect(x: window.bounds.midX, y: window.bounds.midY, width: 0, height: 0)
+                        popover.permittedArrowDirections = []
+                    }
+                }
+                
+                // Present the standard iOS share sheet
+                if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                   let window = windowScene.windows.first,
+                   let rootViewController = window.rootViewController {
+                    rootViewController.present(activityViewController, animated: true)
+                    redesignLog("✅ Standard iOS share sheet presented")
+                }
+            }
+            
+        } catch {
+            await MainActor.run {
+                saveMessage = "❌ Share creation failed: \(error.localizedDescription)"
+                showingSaveAlert = true
+                redesignLog("❌ Share creation error: \(error)")
             }
         }
     }
@@ -414,49 +463,32 @@ struct ContentView: View {
     }
 }
 
-// MARK: - CloudKit Sharing View
-struct CloudKitSharingView: UIViewControllerRepresentable {
-    let share: CKShare
+// MARK: - Standard iOS Share Activity Item Source (from original working implementation)
+class ShareActivityItemSource: NSObject, UIActivityItemSource {
+    private let text: String
+    private let url: URL
+    private let subject: String
     
-    func makeUIViewController(context: Context) -> UICloudSharingController {
-        let sharingController = UICloudSharingController(share: share, container: CKContainer(identifier: "iCloud.com.gulfcoast.ProviderCalendar"))
-        sharingController.delegate = CloudKitSharingDelegate.shared
-        return sharingController
+    init(text: String, url: URL, subject: String) {
+        self.text = text
+        self.url = url
+        self.subject = subject
+        super.init()
     }
     
-    func updateUIViewController(_ uiViewController: UICloudSharingController, context: Context) {
-        // No updates needed
-    }
-}
-
-// MARK: - CloudKit Sharing Delegate (from original working implementation)
-class CloudKitSharingDelegate: NSObject, UICloudSharingControllerDelegate {
-    static let shared = CloudKitSharingDelegate()
-    
-    func cloudSharingController(_ csc: UICloudSharingController, failedToSaveShareWithError error: Error) {
-        redesignLog("❌ Failed to save share: \(error.localizedDescription)")
-        redesignLog("❌ SHARING ERROR: \(error)")
+    func activityViewControllerPlaceholderItem(_ activityViewController: UIActivityViewController) -> Any {
+        return text
     }
     
-    func itemTitle(for csc: UICloudSharingController) -> String? {
-        return "Provider Schedule Calendar"
-    }
-    
-    func itemType(for csc: UICloudSharingController) -> String? {
-        return "Calendar Schedule"
-    }
-    
-    func cloudSharingControllerDidSaveShare(_ csc: UICloudSharingController) {
-        redesignLog("✅ Share saved successfully")
-        redesignLog("✅ SHARING SUCCESS - Share URL should be available in the controller")
-        if let share = csc.share {
-            redesignLog("🔗 Final share URL: \(share.url?.absoluteString ?? "Still no URL")")
+    func activityViewController(_ activityViewController: UIActivityViewController, itemForActivityType activityType: UIActivity.ActivityType?) -> Any? {
+        if activityType == .mail {
+            return "\(text)\n\n\(url.absoluteString)"
         }
+        return url
     }
     
-    func cloudSharingControllerDidStopSharing(_ csc: UICloudSharingController) {
-        redesignLog("🔗 Sharing stopped")
-        redesignLog("🔗 User stopped sharing")
+    func activityViewController(_ activityViewController: UIActivityViewController, subjectForActivityType activityType: UIActivity.ActivityType?) -> String {
+        return subject
     }
 }
 
