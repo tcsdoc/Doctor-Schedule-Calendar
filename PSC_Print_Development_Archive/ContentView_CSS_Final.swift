@@ -162,7 +162,7 @@ struct ContentView: View {
                     }
                     .disabled(!manageButtonEnabled)
                     
-                    Button(action: printAllMonths) {
+                    Button(action: printCalendar) {
                         HStack(spacing: 3) {
                             Image(systemName: "printer")
                             Text("Print")
@@ -174,6 +174,7 @@ struct ContentView: View {
                         .background(Color.blue.opacity(0.1))
                         .cornerRadius(6)
                     }
+                    
                 }
                 .padding(.trailing, 60) // EVEN MORE padding - move buttons further from navigation area
             }
@@ -408,25 +409,33 @@ struct ContentView: View {
         }
     }
     
-    private func printAllMonths() {
+    private func monthKey(for date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM"
+        formatter.timeZone = TimeZone(identifier: "UTC")
+        return formatter.string(from: date)
+    }
+    
+    // MARK: - Print Functions (Adapted from ScheduleViewer)
+    private func printCalendar() {
+        let printController = UIPrintInteractionController.shared
         let printInfo = UIPrintInfo.printInfo()
+        
         printInfo.outputType = .general
         printInfo.jobName = "Provider Schedule Calendar"
-        printInfo.orientation = .landscape // Default to landscape for better calendar layout
+        printInfo.orientation = .portrait
         
-        let printController = UIPrintInteractionController.shared
         printController.printInfo = printInfo
         printController.showsNumberOfCopies = true
-        printController.showsPaperSelectionForLoadedPapers = true
-        printController.showsPageRange = true // KEY: This lets user select which months to print
         
-        // Generate all months as separate pages
-        let htmlContent = generateAllMonthsHTML()
-        let printFormatter = UIMarkupTextPrintFormatter(markupText: htmlContent)
-        printFormatter.perPageContentInsets = UIEdgeInsets(top: 50, left: 50, bottom: 50, right: 50)
+        // Create printable content using HTML
+        let htmlContent = generateCalendarHTML()
+        let formatter = UIMarkupTextPrintFormatter(markupText: htmlContent)
+        formatter.perPageContentInsets = UIEdgeInsets(top: 30, left: 30, bottom: 30, right: 30)
         
-        printController.printFormatter = printFormatter
+        printController.printFormatter = formatter
         
+        // Present print dialog
         printController.present(animated: true) { (controller, completed, error) in
             if let error = error {
                 DispatchQueue.main.async {
@@ -442,340 +451,58 @@ struct ContentView: View {
         }
     }
     
-    
-    // MARK: - Helper Functions
-    private func monthKey(for date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMMM yyyy"
-        let monthName = formatter.string(from: month)
-        
-        // Enhanced styling for much better readability
-        let fontSize = orientation == .landscape ? "14px" : "12px"
-        let cellHeight = orientation == .landscape ? "100px" : "120px"
-        let headerHeight = orientation == .landscape ? "40px" : "45px"
-        
-        var html = """
-<html>
-<head>
-    <title>Provider Schedule - \(monthName)</title>
-    <style>
-        body { font-family: Arial, sans-serif; margin: 20px; font-size: \(fontSize); }
-        h1 { text-align: center; color: #333; font-size: 24px; margin-bottom: 10px; }
-        h2 { text-align: center; color: #666; font-size: 18px; margin-bottom: 20px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        th, td { border: 2px solid #333; padding: 8px; text-align: left; vertical-align: top; }
-        th { background-color: #e0e0e0; font-weight: bold; height: \(headerHeight); text-align: center; font-size: \(fontSize); }
-        td { height: \(cellHeight); }
-        .weekend { background-color: #f5f5f5; }
-        .os { color: #0066cc; font-weight: bold; }
-        .cl { color: #cc0000; font-weight: bold; }
-        .off { color: #009900; font-weight: bold; }
-        .call { color: #ff6600; font-weight: bold; }
-        .monthly-notes { background-color: #e8f4fd; font-weight: bold; padding: 15px; }
-        .day-number { font-weight: bold; font-size: \(fontSize); margin-bottom: 4px; }
-        .provider-line { margin: 2px 0; line-height: 1.3; }
-        @page { margin: 0.5in; }
-    </style>
-</head>
-<body>
-    <h1>Provider Schedule Calendar</h1>
-    <h2>\(monthName)</h2>
-    <table>
-        <tr>
-            <th>Date</th>
-            <th>Day</th>
-            <th>OS</th>
-            <th>CL</th>
-            <th>OFF</th>
-            <th>CALL</th>
-        </tr>
-"""
-            
-        let calendar = Calendar.current
-        let range = calendar.range(of: .day, in: .month, for: month)!
-        let dayFormatter = DateFormatter()
-        dayFormatter.dateFormat = "EEEE"
-        
-        for day in 1...range.count {
-            let date = calendar.date(byAdding: .day, value: day - 1, to: calendar.startOfDay(for: month))!
-            let dayName = dayFormatter.string(from: date)
-            let isWeekend = calendar.isDateInWeekend(date)
-            let weekendClass = isWeekend ? " class=\"weekend\"" : ""
-            
-            let schedule = viewModel.schedules[viewModel.dateKey(for: date)]
-            
-            html += """
-        <tr\(weekendClass)>
-            <td>\(day)</td>
-            <td>\(dayName)</td>
-            <td class="os">\(schedule?.os ?? "")</td>
-            <td class="cl">\(schedule?.cl ?? "")</td>
-            <td class="off">\(schedule?.off ?? "")</td>
-            <td class="call">\(schedule?.call ?? "")</td>
-        </tr>
-"""
-        }
-        
-        // Add monthly notes if they exist
-        if let monthlyNote = viewModel.monthlyNotes[viewModel.monthKey(for: month)] {
-            html += """
-        <tr>
-            <td colspan="6" style="background-color: #e8f4fd; font-weight: bold;">
-                Monthly Notes:<br>
-                Line 1: \(monthlyNote.line1 ?? "")<br>
-                Line 2: \(monthlyNote.line2 ?? "")
-            </td>
-        </tr>
-"""
-        }
-        
-        html += """
-    </table>
-</body>
-</html>
-"""
-        
-        return html
-    }
-    
-    private func generateDailyListHTML(for month: Date, orientation: PrintOrientation) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMMM yyyy"
-        let monthName = formatter.string(from: month)
-        
-        let fontSize = orientation == .landscape ? "14px" : "12px"
-        
-        var html = """
-<html>
-<head>
-    <title>Provider Schedule - \(monthName) (Daily List)</title>
-    <style>
-        body { font-family: Arial, sans-serif; margin: 20px; font-size: \(fontSize); }
-        h1 { text-align: center; color: #333; font-size: 24px; margin-bottom: 10px; }
-        h2 { text-align: center; color: #666; font-size: 18px; margin-bottom: 20px; }
-        .day-entry { margin-bottom: 15px; padding: 10px; border: 1px solid #ddd; border-radius: 5px; }
-        .day-header { font-weight: bold; font-size: 16px; color: #333; margin-bottom: 8px; }
-        .provider-entry { margin: 4px 0; padding: 3px 0; }
-        .os { color: #0066cc; font-weight: bold; }
-        .cl { color: #cc0000; font-weight: bold; }
-        .off { color: #009900; font-weight: bold; }
-        .call { color: #ff6600; font-weight: bold; }
-        .weekend { background-color: #f9f9f9; }
-        .monthly-notes { background-color: #e8f4fd; padding: 15px; margin-bottom: 20px; border-radius: 5px; }
-        @page { margin: 0.5in; }
-    </style>
-</head>
-<body>
-    <h1>Provider Schedule Calendar</h1>
-    <h2>\(monthName) - Daily List</h2>
-"""
-        
-        // Add monthly notes first if they exist
-        if let monthlyNote = viewModel.monthlyNotes[viewModel.monthKey(for: month)] {
-            html += """
-    <div class="monthly-notes">
-        <strong>Monthly Notes:</strong><br>
-        Line 1: \(monthlyNote.line1 ?? "")<br>
-        Line 2: \(monthlyNote.line2 ?? "")
-    </div>
-"""
-        }
-        
-        let calendar = Calendar.current
-        let range = calendar.range(of: .day, in: .month, for: month)!
-        let dayFormatter = DateFormatter()
-        dayFormatter.dateFormat = "EEEE, MMMM d"
-        
-        for day in 1...range.count {
-            let date = calendar.date(byAdding: .day, value: day - 1, to: calendar.startOfDay(for: month))!
-            let dayName = dayFormatter.string(from: date)
-            let isWeekend = calendar.isDateInWeekend(date)
-            let weekendClass = isWeekend ? " weekend" : ""
-            
-            let schedule = viewModel.schedules[viewModel.dateKey(for: date)]
-            
-            // Only show days that have schedule data
-            if let schedule = schedule, !schedule.isEmpty {
-                html += """
-    <div class="day-entry\(weekendClass)">
-        <div class="day-header">\(dayName)</div>
-        <div class="provider-entry os">OS: \(schedule.os ?? "")</div>
-        <div class="provider-entry cl">CL: \(schedule.cl ?? "")</div>
-        <div class="provider-entry off">OFF: \(schedule.off ?? "")</div>
-        <div class="provider-entry call">CALL: \(schedule.call ?? "")</div>
-    </div>
-"""
-            }
-        }
-        
-        html += """
-</body>
-</html>
-"""
-        return html
-    }
-    
-    private func generateSummaryHTML(for month: Date, orientation: PrintOrientation) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMMM yyyy"
-        let monthName = formatter.string(from: month)
-        
-        let fontSize = orientation == .landscape ? "14px" : "12px"
-        
-        var html = """
-<html>
-<head>
-    <title>Provider Schedule - \(monthName) (Summary)</title>
-    <style>
-        body { font-family: Arial, sans-serif; margin: 20px; font-size: \(fontSize); }
-        h1 { text-align: center; color: #333; font-size: 24px; margin-bottom: 10px; }
-        h2 { text-align: center; color: #666; font-size: 18px; margin-bottom: 20px; }
-        .summary-section { margin-bottom: 25px; }
-        .section-header { font-weight: bold; font-size: 16px; color: #333; margin-bottom: 10px; border-bottom: 2px solid #333; padding-bottom: 5px; }
-        .provider-summary { margin-bottom: 15px; }
-        .provider-label { font-weight: bold; margin-bottom: 5px; }
-        .dates-list { margin-left: 20px; line-height: 1.4; }
-        .os { color: #0066cc; }
-        .cl { color: #cc0000; }
-        .off { color: #009900; }
-        .call { color: #ff6600; }
-        .monthly-notes { background-color: #e8f4fd; padding: 15px; margin-bottom: 20px; border-radius: 5px; }
-        @page { margin: 0.5in; }
-    </style>
-</head>
-<body>
-    <h1>Provider Schedule Calendar</h1>
-    <h2>\(monthName) - Summary</h2>
-"""
-        
-        // Add monthly notes first if they exist
-        if let monthlyNote = viewModel.monthlyNotes[viewModel.monthKey(for: month)] {
-            html += """
-    <div class="monthly-notes">
-        <strong>Monthly Notes:</strong><br>
-        Line 1: \(monthlyNote.line1 ?? "")<br>
-        Line 2: \(monthlyNote.line2 ?? "")
-    </div>
-"""
-        }
-        
-        // Generate provider summaries
-        let providerSummaries = generateProviderSummaries(for: month)
-        
-        for (providerType, dates) in providerSummaries {
-            if !dates.isEmpty {
-                html += """
-    <div class="summary-section">
-        <div class="section-header \(providerType.lowercased())">\(providerType) Schedule</div>
-        <div class="dates-list">\(dates.joined(separator: ", "))</div>
-    </div>
-"""
-            }
-        }
-        
-        html += """
-</body>
-</html>
-"""
-        return html
-    }
-    
-    private func generateProviderSummaries(for month: Date) -> [String: [String]] {
-        var summaries: [String: [String]] = [
-            "OS": [],
-            "CL": [],
-            "OFF": [],
-            "CALL": []
-        ]
-        
-        let calendar = Calendar.current
-        let range = calendar.range(of: .day, in: .month, for: month)!
-        let dayFormatter = DateFormatter()
-        dayFormatter.dateFormat = "MMM d"
-        
-        for day in 1...range.count {
-            let date = calendar.date(byAdding: .day, value: day - 1, to: calendar.startOfDay(for: month))!
-            let dayString = dayFormatter.string(from: date)
-            
-            if let schedule = viewModel.schedules[viewModel.dateKey(for: date)] {
-                if let os = schedule.os, !os.isEmpty { summaries["OS"]?.append("\(dayString): \(os)") }
-                if let cl = schedule.cl, !cl.isEmpty { summaries["CL"]?.append("\(dayString): \(cl)") }
-                if let off = schedule.off, !off.isEmpty { summaries["OFF"]?.append("\(dayString): \(off)") }
-                if let call = schedule.call, !call.isEmpty { summaries["CALL"]?.append("\(dayString): \(call)") }
-            }
-        }
-        
-        return summaries
-    }
-    
-    private func generateAllMonthsHTML() -> String {
+    private func generateCalendarHTML() -> String {
         var fullHTML = """
-<!DOCTYPE html>
-<html>
-<head>
-    <style>
-        body { font-family: Arial, sans-serif; margin: 0; padding: 0; }
-        .page { 
-            page-break-after: always; 
-            padding: 20px; 
-            height: 100vh; 
-            box-sizing: border-box; 
-        }
-        .page:last-child { page-break-after: avoid; }
-        .header { text-align: center; margin-bottom: 20px; }
-        .title { font-size: 28px; font-weight: bold; margin-bottom: 10px; color: #333; }
-        .month-title { font-size: 22px; font-weight: bold; margin-bottom: 20px; color: #666; }
-        .monthly-notes { 
-            background-color: #e8f4fd; 
-            padding: 12px; 
-            margin-bottom: 20px; 
-            border-radius: 5px; 
-            font-size: 14px; 
-        }
-        table { 
-            width: 100%; 
-            border-collapse: collapse; 
-            margin-bottom: 20px; 
-            table-layout: fixed;
-        }
-        th, td { 
-            border: 2px solid #333; 
-            padding: 8px; 
-            text-align: left; 
-            vertical-align: top; 
-            height: 60px;
-        }
-        th { 
-            background-color: #e0e0e0; 
-            font-weight: bold; 
-            text-align: center; 
-            height: 40px;
-            font-size: 14px;
-        }
-        .weekend { background-color: #f5f5f5; }
-        .os { color: #0066cc; font-weight: bold; }
-        .cl { color: #cc0000; font-weight: bold; }
-        .off { color: #009900; font-weight: bold; }
-        .call { color: #ff6600; font-weight: bold; }
-        @page { margin: 0.5in; }
-    </style>
-</head>
-<body>
-"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <style>
+                body { font-family: Arial, sans-serif; margin: 0; padding: 0; }
+                .page { 
+                    page-break-after: always; 
+                    page-break-inside: avoid;
+                    padding: 15px; 
+                    box-sizing: border-box;
+                    height: auto;
+                    min-height: 100vh;
+                }
+                .page:last-child { page-break-after: avoid; }
+                .header { text-align: center; margin-bottom: 8px; }
+                .title { font-size: 24px; font-weight: bold; margin-bottom: 8px; }
+                .month-title { font-size: 18px; font-weight: bold; margin-bottom: 8px; }
+                .notes { margin-bottom: 15px; padding: 8px; background-color: #f0f0f0; font-size: 12px; }
+                .calendar { 
+                    width: 100%; 
+                    border-collapse: collapse; 
+                    margin-bottom: 15px;
+                    page-break-inside: avoid;
+                }
+                .calendar th, .calendar td { border: 1.5px solid #000; padding: 4px; vertical-align: top; }
+                .calendar th { background-color: #e0e0e0; text-align: center; height: 16px; font-size: 10px; font-weight: bold; padding: 2px; }
+                .calendar td { height: 65px; width: 14.28%; }
+                .day-number { font-weight: bold; font-size: 12px; margin-bottom: 3px; }
+                .schedule-line { font-size: 9px; margin: 1px 0; line-height: 1.2; }
+                .os { color: #0066cc; }
+                .cl { color: #cc0000; }
+                .off { color: #009900; }
+                .call { color: #ff6600; }
+                @page { margin: 0.5in; }
+            </style>
+        </head>
+        <body>
+        """
         
         // Generate each month as a separate page
         for month in viewModel.availableMonths {
-            let formatter = DateFormatter()
-            formatter.dateFormat = "MMMM yyyy"
-            let monthName = formatter.string(from: month)
+            let monthFormatter = DateFormatter()
+            monthFormatter.dateFormat = "MMMM yyyy"
             
             fullHTML += """
-<div class="page">
-    <div class="header">
-        <div class="title">Provider Schedule Calendar</div>
-        <div class="month-title">\(monthName)</div>
-    </div>
-"""
+            <div class="page">
+                <div class="header">
+                    <div class="month-title">\(monthFormatter.string(from: month))</div>
+                </div>
+            """
             
             // Add monthly notes if they exist
             if let monthlyNote = viewModel.monthlyNotes[viewModel.monthKey(for: month)] {
@@ -783,73 +510,88 @@ struct ContentView: View {
                 let line2 = monthlyNote.line2?.isEmpty == false ? monthlyNote.line2! : ""
                 
                 if !line1.isEmpty || !line2.isEmpty {
-                    fullHTML += """
-    <div class="monthly-notes">
-        <strong>Monthly Notes:</strong><br>
-        \(!line1.isEmpty ? "Line 1: \(line1)<br>" : "")
-        \(!line2.isEmpty ? "Line 2: \(line2)" : "")
-    </div>
-"""
+                    fullHTML += "<div class=\"notes\"><strong>Monthly Notes:</strong><br>"
+                    if !line1.isEmpty {
+                        fullHTML += "• \(line1)<br>"
+                    }
+                    if !line2.isEmpty {
+                        fullHTML += "• \(line2)<br>"
+                    }
+                    fullHTML += "</div>"
                 }
             }
             
             // Add calendar table
-            fullHTML += """
-    <table>
-        <tr>
-            <th>Date</th>
-            <th>Day</th>
-            <th>OS</th>
-            <th>CL</th>
-            <th>OFF</th>
-            <th>CALL</th>
-        </tr>
-"""
+            fullHTML += "<table class=\"calendar\">"
             
-            let calendar = Calendar.current
-            let range = calendar.range(of: .day, in: .month, for: month)!
-            let dayFormatter = DateFormatter()
-            dayFormatter.dateFormat = "EEEE"
+            // Days of week header
+            fullHTML += "<tr>"
+            for day in Calendar.current.shortWeekdaySymbols {
+                fullHTML += "<th>\(day)</th>"
+            }
+            fullHTML += "</tr>"
             
-            for day in 1...range.count {
-                let date = calendar.date(byAdding: .day, value: day - 1, to: calendar.startOfDay(for: month))!
-                let dayName = dayFormatter.string(from: date)
-                let isWeekend = calendar.isDateInWeekend(date)
-                let weekendClass = isWeekend ? " class=\"weekend\"" : ""
-                
-                let schedule = viewModel.schedules[viewModel.dateKey(for: date)]
-                
-                fullHTML += """
-        <tr\(weekendClass)>
-            <td>\(day)</td>
-            <td>\(dayName)</td>
-            <td class="os">\(schedule?.os ?? "")</td>
-            <td class="cl">\(schedule?.cl ?? "")</td>
-            <td class="off">\(schedule?.off ?? "")</td>
-            <td class="call">\(schedule?.call ?? "")</td>
-        </tr>
-"""
+            // Get properly aligned calendar grid
+            let calendarDays = getCalendarDaysWithAlignment(for: month)
+            let weeks = calendarDays.chunked(into: 7)
+            
+            for week in weeks {
+                fullHTML += "<tr>"
+                for date in week {
+                    if Calendar.current.isDate(date, equalTo: month, toGranularity: .month) {
+                        let dayNumber = Calendar.current.component(.day, from: date)
+                        let schedule = viewModel.schedules[viewModel.dateKey(for: date)]
+                        
+                        fullHTML += "<td>"
+                        fullHTML += "<div class=\"day-number\">\(dayNumber)</div>"
+                        fullHTML += "<div class=\"schedule-line os\"><strong>OS:</strong> \(schedule?.os ?? "")</div>"
+                        fullHTML += "<div class=\"schedule-line cl\"><strong>CL:</strong> \(schedule?.cl ?? "")</div>"
+                        fullHTML += "<div class=\"schedule-line off\"><strong>OFF:</strong> \(schedule?.off ?? "")</div>"
+                        fullHTML += "<div class=\"schedule-line call\"><strong>CALL:</strong> \(schedule?.call ?? "")</div>"
+                        fullHTML += "</td>"
+                    } else {
+                        fullHTML += "<td></td>"
+                    }
+                }
+                fullHTML += "</tr>"
             }
             
-            fullHTML += """
-    </table>
-</div>
-"""
+            fullHTML += "</table></div>"
         }
         
-        fullHTML += """
-</body>
-</html>
-"""
+        fullHTML += "</body></html>"
         return fullHTML
     }
     
-    // MARK: - Helper Functions
-    private func monthKey(for date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM"
-        formatter.timeZone = TimeZone(identifier: "UTC")
-        return formatter.string(from: date)
+    private func getCalendarDaysWithAlignment(for month: Date) -> [Date] {
+        let calendar = Calendar.current
+        guard let monthInterval = calendar.dateInterval(of: .month, for: month) else {
+            return []
+        }
+        
+        let startOfMonth = monthInterval.start
+        guard let firstWeekday = calendar.dateInterval(of: .weekOfYear, for: startOfMonth)?.start else {
+            return []
+        }
+        
+        var days: [Date] = []
+        var currentDate = firstWeekday
+        
+        for _ in 0..<42 {
+            days.append(currentDate)
+            currentDate = calendar.date(byAdding: .day, value: 1, to: currentDate)!
+        }
+        
+        return days
+    }
+}
+
+// MARK: - Array Extension for Calendar Grid
+extension Array {
+    func chunked(into size: Int) -> [[Element]] {
+        return stride(from: 0, to: count, by: size).map {
+            Array(self[$0..<Swift.min($0 + size, count)])
+        }
     }
 }
 
@@ -919,114 +661,6 @@ class ShareActivityItemSource: NSObject, UIActivityItemSource {
     
     func activityViewController(_ activityViewController: UIActivityViewController, subjectForActivityType activityType: UIActivity.ActivityType?) -> String {
         return subject
-    }
-}
-
-// MARK: - Print Options View
-struct PrintOptionsView: View {
-    @Binding var printFormat: PrintFormat
-    @Binding var printOrientation: PrintOrientation
-    let onPrint: (PrintFormat, PrintOrientation) -> Void
-    let onCancel: () -> Void
-    
-    var body: some View {
-        NavigationView {
-            VStack(spacing: 30) {
-                VStack(alignment: .leading, spacing: 20) {
-                    Text("Print Options")
-                        .font(.title)
-                        .fontWeight(.bold)
-                        .padding(.top)
-                    
-                    Group {
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("Format")
-                                .font(.headline)
-                                .foregroundColor(.primary)
-                            
-                            VStack(spacing: 8) {
-                                ForEach(PrintFormat.allCases, id: \.self) { format in
-                                    HStack {
-                                        Button(action: {
-                                            printFormat = format
-                                        }) {
-                                            HStack {
-                                                Image(systemName: printFormat == format ? "checkmark.circle.fill" : "circle")
-                                                    .foregroundColor(printFormat == format ? .blue : .gray)
-                                                Text(format.description)
-                                                    .foregroundColor(.primary)
-                                                Spacer()
-                                            }
-                                            .padding(.vertical, 8)
-                                            .padding(.horizontal, 12)
-                                            .background(printFormat == format ? Color.blue.opacity(0.1) : Color.clear)
-                                            .cornerRadius(8)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("Orientation")
-                                .font(.headline)
-                                .foregroundColor(.primary)
-                            
-                            VStack(spacing: 8) {
-                                ForEach(PrintOrientation.allCases, id: \.self) { orientation in
-                                    HStack {
-                                        Button(action: {
-                                            printOrientation = orientation
-                                        }) {
-                                            HStack {
-                                                Image(systemName: printOrientation == orientation ? "checkmark.circle.fill" : "circle")
-                                                    .foregroundColor(printOrientation == orientation ? .blue : .gray)
-                                                Text(orientation.description)
-                                                    .foregroundColor(.primary)
-                                                Spacer()
-                                            }
-                                            .padding(.vertical, 8)
-                                            .padding(.horizontal, 12)
-                                            .background(printOrientation == orientation ? Color.blue.opacity(0.1) : Color.clear)
-                                            .cornerRadius(8)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    
-                    Spacer()
-                    
-                    // Action buttons
-                    HStack(spacing: 20) {
-                        Button("Cancel") {
-                            onCancel()
-                        }
-                        .font(.title2)
-                        .foregroundColor(.red)
-                        .padding(.vertical, 12)
-                        .padding(.horizontal, 30)
-                        .background(Color.red.opacity(0.1))
-                        .cornerRadius(10)
-                        
-                        Button("Print") {
-                            onPrint(printFormat, printOrientation)
-                        }
-                        .font(.title2)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.white)
-                        .padding(.vertical, 12)
-                        .padding(.horizontal, 30)
-                        .background(Color.blue)
-                        .cornerRadius(10)
-                    }
-                    .padding(.bottom, 30)
-                }
-                .padding(.horizontal, 30)
-            }
-            .navigationBarHidden(true)
-        }
     }
 }
 
