@@ -85,8 +85,18 @@ struct ContentView: View {
                     Text("⚠️ CloudKit Issue").font(.caption)
                         .foregroundColor(.red)
                 } else if viewModel.hasChanges {
-                    Text("📝 Unsaved").font(.caption)
-                        .foregroundColor(.red)
+                    Text("⚠️ UNSAVED")
+                        .font(.caption)
+                        .fontWeight(.bold)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.red)
+                        .cornerRadius(6)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6)
+                                .stroke(Color.red.opacity(0.8), lineWidth: 2)
+                        )
                 } else {
                     Text("✅ Ready").font(.caption)
                         .foregroundColor(.green)
