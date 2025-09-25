@@ -12,6 +12,8 @@ struct ContentView: View {
     @State private var saveMessage = ""
     @State private var showingManageSheet = false
     @State private var existingShare: CKShare?
+    @State private var shareReadyForManagement = false
+    @State private var isFlashing = false
     // Note: Share functionality now uses standard iOS share sheet directly
     
     private let calendar = Calendar.current
@@ -47,8 +49,8 @@ struct ContentView: View {
                         } else {
                             Text("No data available")
                                 .foregroundColor(.gray)
-                    .padding()
-                            }
+                                .padding()
+                        }
                         }
                     .padding(.vertical, 20)
                     }
@@ -71,6 +73,12 @@ struct ContentView: View {
                 CloudKitManagementView(share: share)
             }
         }
+        .onChange(of: shareReadyForManagement) { ready in
+            if ready && existingShare != nil {
+                showingManageSheet = true
+                shareReadyForManagement = false // Reset for next use
+            }
+        }
     }
     
     // MARK: - Ultra-Compact iPad Header (minimal height for 6-week months)
@@ -79,7 +87,7 @@ struct ContentView: View {
             // ULTRA-COMPACT: Single row with essentials only
             HStack(spacing: 16) {
                 // Left: App name only
-                Text("📅 PSC v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "4.0")")
+                Text("📅 PSC v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "4.0.1")")
                     .font(.headline)
                     .fontWeight(.bold)
                 
@@ -93,11 +101,23 @@ struct ContentView: View {
                     }
                     .foregroundColor(.orange)
                 } else if viewModel.isLoading {
-                    HStack(spacing: 4) {
-                        ProgressView().scaleEffect(0.7)
-                        Text("Loading").font(.caption)
+                    HStack(spacing: 6) {
+                        ProgressView().scaleEffect(1.0)
+                        Text("Loading from CloudKit...").font(.headline).fontWeight(.semibold)
                     }
                     .foregroundColor(.blue)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(Color.blue.opacity(0.1))
+                    .cornerRadius(8)
+                    .opacity(isFlashing ? 0.3 : 1.0)
+                    .animation(.easeInOut(duration: 0.6).repeatForever(autoreverses: true), value: isFlashing)
+                    .onAppear {
+                        isFlashing = true
+                    }
+                    .onDisappear {
+                        isFlashing = false
+                    }
                 } else if !viewModel.isCloudKitAvailable {
                     Text("⚠️ CloudKit Issue").font(.caption)
                         .foregroundColor(.red)
@@ -388,8 +408,16 @@ struct ContentView: View {
                         }
                         
                         self.existingShare = existingShare
-                        self.showingManageSheet = true
-                        redesignLog("🔧 Opening CloudKit management interface...")
+                        
+                        // Trigger sheet presentation via onChange
+                        if existingShare.url != nil {
+                            self.shareReadyForManagement = true
+                            redesignLog("🔧 Share ready for management interface...")
+                        } else {
+                            redesignLog("❌ Share has no URL, cannot open management interface")
+                            saveMessage = "❌ Share is invalid - cannot manage"
+                            showingSaveAlert = true
+                        }
                     }
                 } else {
                     // No existing share found
@@ -518,7 +546,7 @@ struct ContentView: View {
                     notesText += "\(line1) | \(line2)"
                 } else if !line1.isEmpty {
                     notesText += line1
-                } else {
+        } else {
                     notesText += line2
                 }
                 

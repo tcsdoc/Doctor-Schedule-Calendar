@@ -297,11 +297,11 @@ actor SimpleCloudKitManager {
         // Ensure custom zone exists
         try await ensureCustomZoneExists()
         
-        // Create zone-level share (same as original working implementation)
+        // Create zone-level share with secure permissions
         let share = CKShare(recordZoneID: zoneID)
         let currentYear = Calendar.current.component(.year, from: Date())
         share[CKShare.SystemFieldKey.title] = "Provider Schedule \(currentYear)" as CKRecordValue
-        share.publicPermission = .readOnly // Allow read access for shared users
+        share.publicPermission = .none // SECURE: Only invited people can access
         
         redesignLog("🔗 Share object created for zone: \(zoneID.zoneName)")
         redesignLog("🔗 Share title: Provider Schedule \(currentYear)")
@@ -333,19 +333,30 @@ actor SimpleCloudKitManager {
         redesignLog("🔍 Looking for existing zone share...")
         
         do {
-            // Use the same pattern as the original working code
-            let shareRecordID = CKRecord.ID(recordName: "cloudkit.zoneshare", zoneID: zoneID)
-            redesignLog("🔍 Looking for record: \(shareRecordID.recordName) in zone: \(shareRecordID.zoneID.zoneName)")
-            let record = try await privateDatabase.record(for: shareRecordID)
+            // Query for share records in the zone (correct approach)
+            let predicate = NSPredicate(format: "TRUEPREDICATE")
+            let query = CKQuery(recordType: "cloudkit.share", predicate: predicate)
             
-            if let share = record as? CKShare {
-                redesignLog("✅ Found existing zone share")
-                redesignLog("🔗 Share URL: \(share.url?.absoluteString ?? "NO URL")")
-                return share
-            } else {
-                redesignLog("❌ Record found but not a CKShare: \(type(of: record))")
-                return nil
+            redesignLog("🔍 Querying for shares in zone: \(zoneID.zoneName)")
+            let result = try await privateDatabase.records(matching: query, inZoneWith: zoneID)
+            
+            // Look for the first share record
+            for (_, recordResult) in result.matchResults {
+                switch recordResult {
+                case .success(let record):
+                    if let share = record as? CKShare {
+                        redesignLog("✅ Found existing zone share")
+                        redesignLog("🔗 Share URL: \(share.url?.absoluteString ?? "NO URL")")
+                        redesignLog("🔗 Share record name: \(share.recordID.recordName)")
+                        return share
+                    }
+                case .failure(let error):
+                    redesignLog("❌ Error fetching share record: \(error)")
+                }
             }
+            
+            redesignLog("ℹ️ No share records found in zone")
+            return nil
             
         } catch {
             redesignLog("ℹ️ No existing zone share found: \(error)")
