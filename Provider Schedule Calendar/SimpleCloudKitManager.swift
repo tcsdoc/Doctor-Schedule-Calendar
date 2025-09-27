@@ -229,27 +229,9 @@ actor SimpleCloudKitManager {
         redesignLog("✅ Monthly note saved: \(note.id)")
     }
     
-    // MARK: - Sharing Operations
-    func createShare() async throws -> CKShare {
-        try await ensureCustomZoneExists()
-        
-        redesignLog("🔗 Creating share for custom zone...")
-        
-        // Create share for the custom zone
-        let share = CKShare(recordZoneID: zoneID)
-        share[CKShare.SystemFieldKey.title] = "Provider Schedule Calendar" as CKRecordValue
-        share.publicPermission = .none
-        
-        // Save the share
-        let savedRecord = try await privateDatabase.save(share)
-        
-        guard let savedShare = savedRecord as? CKShare else {
-            throw NSError(domain: "PSC", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to create share"])
-        }
-        
-        redesignLog("✅ Share created successfully")
-        return savedShare
-    }
+    // MARK: - Sharing Operations - REMOVED DUPLICATE
+    // createShare() function removed - was conflicting with createCustomZoneShare()
+    // All sharing now uses createCustomZoneShare() via getOrCreateZoneShare()
     
     // MARK: - Helper Methods
     private func parseScheduleRecord(_ record: CKRecord) -> ScheduleRecord? {
@@ -301,7 +283,7 @@ actor SimpleCloudKitManager {
         let share = CKShare(recordZoneID: zoneID)
         let currentYear = Calendar.current.component(.year, from: Date())
         share[CKShare.SystemFieldKey.title] = "Provider Schedule \(currentYear)" as CKRecordValue
-        share.publicPermission = .none // SECURE: Only invited people can access
+        share.publicPermission = .readOnly // Anyone with link can read (original working mode)
         
         redesignLog("🔗 Share object created for zone: \(zoneID.zoneName)")
         redesignLog("🔗 Share title: Provider Schedule \(currentYear)")
