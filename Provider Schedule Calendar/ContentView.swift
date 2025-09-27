@@ -540,7 +540,7 @@ struct ContentView: View {
             let line2 = monthlyNote.line2?.isEmpty == false ? monthlyNote.line2! : ""
             
             if !line1.isEmpty || !line2.isEmpty {
-                let notesFont = UIFont.systemFont(ofSize: 11)
+                let notesFont = UIFont.systemFont(ofSize: 9)
                 var notesText = "Notes: "
                 if !line1.isEmpty && !line2.isEmpty {
                     notesText += "\(line1) | \(line2)"
