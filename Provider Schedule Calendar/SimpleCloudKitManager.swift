@@ -283,7 +283,7 @@ actor SimpleCloudKitManager {
             
             let result = try await privateDatabase.records(matching: query, inZoneWith: zoneID)
             
-            for (recordID, recordResult) in result.matchResults {
+            for (_, recordResult) in result.matchResults {
                 switch recordResult {
                 case .success(let record):
                     if let share = record as? CKShare {

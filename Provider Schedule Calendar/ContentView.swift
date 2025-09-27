@@ -73,8 +73,8 @@ struct ContentView: View {
                 CloudKitManagementView(share: share)
             }
         }
-        .onChange(of: shareReadyForManagement) { ready in
-            if ready && existingShare != nil {
+        .onChange(of: shareReadyForManagement) {
+            if shareReadyForManagement && existingShare != nil {
                 showingManageSheet = true
                 shareReadyForManagement = false // Reset for next use
             }
@@ -541,33 +541,42 @@ struct ContentView: View {
             
             if !line1.isEmpty || !line2.isEmpty {
                 let notesFont = UIFont.systemFont(ofSize: 9)
-                var notesText = "Notes: "
-                if !line1.isEmpty && !line2.isEmpty {
-                    notesText += "\(line1) | \(line2)"
-                } else if !line1.isEmpty {
-                    notesText += line1
-        } else {
-                    notesText += line2
-                }
+                let lineHeight: CGFloat = 12  // Compact line spacing
+                var totalHeight: CGFloat = 0
                 
-                let notesSize = notesText.size(withAttributes: [.font: notesFont])
-                let notesRect = CGRect(x: rect.minX, y: currentY, width: rect.width, height: notesSize.height)
+                // Calculate total height needed
+                if !line1.isEmpty { totalHeight += lineHeight }
+                if !line2.isEmpty { totalHeight += lineHeight }
+                
+                let notesRect = CGRect(x: rect.minX, y: currentY, width: rect.width, height: totalHeight)
                 
                 // Draw compact background
                 context.setFillColor(UIColor.lightGray.cgColor)
                 context.fill(notesRect.insetBy(dx: -3, dy: -2))
                 
-                // Draw text
-                notesText.draw(in: notesRect, withAttributes: [
-                    .font: notesFont,
-                    .foregroundColor: UIColor.black
-                ])
-                currentY += notesSize.height + 5  // Minimal gap
+                // Draw each line separately
+                var lineY = currentY
+                if !line1.isEmpty {
+                    line1.draw(at: CGPoint(x: rect.minX, y: lineY), withAttributes: [
+                        .font: notesFont,
+                        .foregroundColor: UIColor.black
+                    ])
+                    lineY += lineHeight
+                }
+                if !line2.isEmpty {
+                    line2.draw(at: CGPoint(x: rect.minX, y: lineY), withAttributes: [
+                        .font: notesFont,
+                        .foregroundColor: UIColor.black
+                    ])
+                }
+                
+                currentY += totalHeight + 5  // Minimal gap
             }
         }
         
         // Calculate calendar grid dimensions (no gap between notes and calendar)
-        let availableHeight = rect.maxY - currentY - 5
+        // Reserve extra space for potential two-line monthly notes
+        let availableHeight = rect.maxY - currentY - 17  // Extra 12pt for second line
         let cellWidth = rect.width / 7
         let headerHeight: CGFloat = 30
         let calendarHeight = availableHeight - headerHeight
