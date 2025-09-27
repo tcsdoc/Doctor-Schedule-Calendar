@@ -273,8 +273,49 @@ actor SimpleCloudKitManager {
     }
     
     // MARK: - CloudKit Sharing
+    
+    func deleteBrokenShare() async throws {
+        redesignLog("🗑️ Deleting broken share...")
+        
+        do {
+            let predicate = NSPredicate(format: "TRUEPREDICATE")
+            let query = CKQuery(recordType: "cloudkit.share", predicate: predicate)
+            
+            let result = try await privateDatabase.records(matching: query, inZoneWith: zoneID)
+            
+            for (recordID, recordResult) in result.matchResults {
+                switch recordResult {
+                case .success(let record):
+                    if let share = record as? CKShare {
+                        redesignLog("🗑️ Deleting share: \(share.recordID.recordName)")
+                        let deleteResult = try await privateDatabase.modifyRecords(saving: [], deleting: [share.recordID])
+                        
+                        for (deletedID, deleteResult) in deleteResult.deleteResults {
+                            switch deleteResult {
+                            case .success:
+                                redesignLog("✅ Successfully deleted share: \(deletedID.recordName)")
+                            case .failure(let error):
+                                redesignLog("❌ Failed to delete share \(deletedID.recordName): \(error)")
+                                throw error
+                            }
+                        }
+                    }
+                case .failure(let error):
+                    redesignLog("❌ Error fetching share for deletion: \(error)")
+                    throw error
+                }
+            }
+            
+            redesignLog("✅ Broken share cleanup completed")
+        } catch {
+            redesignLog("❌ Error during share deletion: \(error)")
+            throw error
+        }
+    }
     func createCustomZoneShare() async throws -> CKShare {
         redesignLog("🔗 Creating zone share...")
+        redesignLog("🔗 Target zone: \(zoneID.zoneName)")
+        redesignLog("🔗 Zone owner: \(zoneID.ownerName)")
         
         // Ensure custom zone exists
         try await ensureCustomZoneExists()
@@ -283,10 +324,15 @@ actor SimpleCloudKitManager {
         let share = CKShare(recordZoneID: zoneID)
         let currentYear = Calendar.current.component(.year, from: Date())
         share[CKShare.SystemFieldKey.title] = "Provider Schedule \(currentYear)" as CKRecordValue
+        
+        // CRITICAL: Set permission for SV compatibility
         share.publicPermission = .readOnly // Anyone with link can read (original working mode)
         
         redesignLog("🔗 Share object created for zone: \(zoneID.zoneName)")
         redesignLog("🔗 Share title: Provider Schedule \(currentYear)")
+        redesignLog("🔗 Share recordID: \(share.recordID)")
+        redesignLog("🔗 Share publicPermission: \(share.publicPermission.rawValue)")
+        redesignLog("🔗 Share participants count (before save): \(share.participants.count)")
         
         // Save using the original working pattern
         let savedRecords = try await privateDatabase.modifyRecords(saving: [share], deleting: [])
@@ -300,6 +346,17 @@ actor SimpleCloudKitManager {
                 if let shareRecord = record as? CKShare {
                     redesignLog("✅ Zone share created successfully")
                     redesignLog("🔗 Share URL: \(shareRecord.url?.absoluteString ?? "NO URL")")
+                    redesignLog("🔗 Share recordID (after save): \(shareRecord.recordID)")
+                    redesignLog("🔗 Share publicPermission (after save): \(shareRecord.publicPermission.rawValue)")
+                    redesignLog("🔗 Share participants count (after save): \(shareRecord.participants.count)")
+                    
+                    // Log participant details
+                    for (index, participant) in shareRecord.participants.enumerated() {
+                        redesignLog("🔗 Participant \(index): \(participant.userIdentity.userRecordID?.recordName ?? "UNKNOWN")")
+                        redesignLog("🔗   Role: \(participant.role.rawValue), Permission: \(participant.permission.rawValue)")
+                        redesignLog("🔗   Status: \(participant.acceptanceStatus.rawValue)")
+                    }
+                    
                     return shareRecord
                 }
             case .failure(let error):
@@ -323,17 +380,31 @@ actor SimpleCloudKitManager {
             let result = try await privateDatabase.records(matching: query, inZoneWith: zoneID)
             
             // Look for the first share record
-            for (_, recordResult) in result.matchResults {
+            redesignLog("🔍 Query returned \(result.matchResults.count) results")
+            for (recordID, recordResult) in result.matchResults {
+                redesignLog("🔍 Processing record: \(recordID.recordName)")
                 switch recordResult {
                 case .success(let record):
                     if let share = record as? CKShare {
                         redesignLog("✅ Found existing zone share")
                         redesignLog("🔗 Share URL: \(share.url?.absoluteString ?? "NO URL")")
                         redesignLog("🔗 Share record name: \(share.recordID.recordName)")
+                        redesignLog("🔗 Share publicPermission: \(share.publicPermission.rawValue)")
+                        redesignLog("🔗 Share participants count: \(share.participants.count)")
+                        
+                        // Log participant details for existing share
+                        for (index, participant) in share.participants.enumerated() {
+                            redesignLog("🔗 Existing Participant \(index): \(participant.userIdentity.userRecordID?.recordName ?? "UNKNOWN")")
+                            redesignLog("🔗   Role: \(participant.role.rawValue), Permission: \(participant.permission.rawValue)")
+                            redesignLog("🔗   Status: \(participant.acceptanceStatus.rawValue)")
+                        }
+                        
                         return share
+                    } else {
+                        redesignLog("⚠️ Found cloudkit.share record but not CKShare type: \(type(of: record))")
                     }
                 case .failure(let error):
-                    redesignLog("❌ Error fetching share record: \(error)")
+                    redesignLog("❌ Error fetching share record \(recordID.recordName): \(error)")
                 }
             }
             
@@ -352,6 +423,14 @@ actor SimpleCloudKitManager {
     func getOrCreateZoneShare() async throws -> CKShare {
         // First try to fetch existing share
         if let existingShare = try await fetchExistingZoneShare() {
+            // Check if share is broken (has readOnly permission but only owner participant)
+            // This indicates it was created as invitation-only but never properly shared
+            if existingShare.participants.count <= 1 {
+                redesignLog("🚨 Found broken share with only owner participant - deleting...")
+                try await deleteBrokenShare()
+                redesignLog("🔄 Creating fresh share with public access...")
+                return try await createCustomZoneShare()
+            }
             return existingShare
         }
         
