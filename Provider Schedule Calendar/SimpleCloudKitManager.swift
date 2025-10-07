@@ -115,10 +115,18 @@ actor SimpleCloudKitManager {
             // Try to fetch existing record to update it
             record = try await privateDatabase.record(for: recordID)
             redesignLog("📝 Updating existing record: \(schedule.id)")
-        } catch {
-            // Record doesn't exist, create new one
+        } catch let error as CKError where error.code == .unknownItem {
+            // ONLY create new record if it truly doesn't exist
             record = CKRecord(recordType: "CD_DailySchedule", recordID: recordID)
             redesignLog("🆕 Creating new record: \(schedule.id)")
+        } catch {
+            // For all other errors (network, throttling, zone busy, etc), propagate the error
+            // This prevents duplicate creation when CloudKit has transient issues
+            redesignLog("❌ Failed to fetch record \(schedule.id) for update: \(error)")
+            if let ckError = error as? CKError {
+                redesignLog("❌ CloudKit error code: \(ckError.code.rawValue) - \(ckError.localizedDescription)")
+            }
+            throw error
         }
         
         // Set/update fields
@@ -210,10 +218,18 @@ actor SimpleCloudKitManager {
             // Try to fetch existing record to update it
             record = try await privateDatabase.record(for: recordID)
             redesignLog("📝 Updating existing monthly note: \(note.id)")
-        } catch {
-            // Record doesn't exist, create new one
+        } catch let error as CKError where error.code == .unknownItem {
+            // ONLY create new record if it truly doesn't exist
             record = CKRecord(recordType: "CD_MonthlyNotes", recordID: recordID)
             redesignLog("🆕 Creating new monthly note: \(note.id)")
+        } catch {
+            // For all other errors (network, throttling, zone busy, etc), propagate the error
+            // This prevents duplicate creation when CloudKit has transient issues
+            redesignLog("❌ Failed to fetch monthly note \(note.id) for update: \(error)")
+            if let ckError = error as? CKError {
+                redesignLog("❌ CloudKit error code: \(ckError.code.rawValue) - \(ckError.localizedDescription)")
+            }
+            throw error
         }
         
         // Set/update fields - use integers for month/year as expected by CloudKit schema
