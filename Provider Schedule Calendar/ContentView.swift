@@ -14,6 +14,13 @@ struct ContentView: View {
     @State private var existingShare: CKShare?
     @State private var shareReadyForManagement = false
     @State private var isFlashing = false
+    
+    // Duplicate detection states
+    @State private var showingDuplicateAlert = false
+    @State private var duplicateDetectionResult: ScheduleViewModel.DuplicateDetectionResult?
+    @State private var showingDuplicateDetails = false
+    @State private var isDuplicateCheckComplete = false
+    
     // Note: Share functionality now uses standard iOS share sheet directly
     
     private let calendar = Calendar.current
@@ -62,15 +69,49 @@ struct ContentView: View {
             }
             .onAppear {
             initializeCurrentMonth()
+            checkForDuplicatesOnLaunch()
         }
         .alert("Save Status", isPresented: $showingSaveAlert) {
             Button("OK") {}
         } message: {
             Text(saveMessage)
         }
+        .alert("Data Integrity Check", isPresented: $showingDuplicateAlert) {
+            if let result = duplicateDetectionResult {
+                if result.totalAffectedDates <= 10 {
+                    // Simple alert for small numbers
+                    Button("Cancel", role: .cancel) {}
+                    Button("Fix Now", role: .destructive) {
+                        performDuplicateCleanup(result)
+                    }
+                } else {
+                    // Require review for large numbers
+                    Button("Cancel", role: .cancel) {}
+                    Button("Review Report") {
+                        showingDuplicateDetails = true
+                    }
+                }
+            }
+        } message: {
+            if let result = duplicateDetectionResult {
+                if result.totalAffectedDates <= 10 {
+                    Text(formatSimpleDuplicateMessage(result))
+                } else {
+                    Text(formatLargeDuplicateMessage(result))
+                }
+            }
+        }
         .sheet(isPresented: $showingManageSheet) {
             if let share = existingShare {
                 CloudKitManagementView(share: share)
+            }
+        }
+        .sheet(isPresented: $showingDuplicateDetails) {
+            if let result = duplicateDetectionResult {
+                DuplicateDetailsView(result: result, onCleanup: {
+                    showingDuplicateDetails = false
+                    performDuplicateCleanup(result)
+                })
             }
         }
         .onChange(of: shareReadyForManagement) {
@@ -788,6 +829,93 @@ struct ContentView: View {
         
         return days
     }
+    
+    // MARK: - Duplicate Detection Functions
+    
+    private func checkForDuplicatesOnLaunch() {
+        // Don't run multiple times
+        guard !isDuplicateCheckComplete else { return }
+        isDuplicateCheckComplete = true
+        
+        Task {
+            do {
+                let result = try await viewModel.checkForDuplicates()
+                
+                await MainActor.run {
+                    if result.hasDuplicates {
+                        self.duplicateDetectionResult = result
+                        self.showingDuplicateAlert = true
+                    }
+                }
+            } catch {
+                redesignLog("❌ Duplicate detection failed: \(error)")
+            }
+        }
+    }
+    
+    private func formatSimpleDuplicateMessage(_ result: ScheduleViewModel.DuplicateDetectionResult) -> String {
+        var message = "⚠️ Found \(result.totalDuplicateCount) duplicate records across \(result.totalAffectedDates) dates.\n\n"
+        message += "This may cause incorrect data in ScheduleViewer.\n\n"
+        message += "Affected dates:\n"
+        
+        for group in result.scheduleDuplicates.prefix(10) {
+            message += "• \(group.dateKey) (Schedule)\n"
+        }
+        for group in result.monthlyNoteDuplicates.prefix(10) {
+            message += "• \(group.dateKey) (Monthly Note)\n"
+        }
+        
+        message += "\nThe most recent record will be kept for each date."
+        return message
+    }
+    
+    private func formatLargeDuplicateMessage(_ result: ScheduleViewModel.DuplicateDetectionResult) -> String {
+        return """
+        ⚠️ LARGE DATA ISSUE DETECTED
+        
+        Found \(result.totalDuplicateCount) duplicate records across \(result.totalAffectedDates) dates.
+        
+        Due to the large number of duplicates, you must review the cleanup report before proceeding.
+        
+        This will:
+        • Keep the most recent record for each date
+        • Delete all older duplicate records
+        • Create an audit log file
+        
+        Tap "Review Report" to see what will be cleaned up.
+        """
+    }
+    
+    private func performDuplicateCleanup(_ result: ScheduleViewModel.DuplicateDetectionResult) {
+        Task {
+            do {
+                redesignLog("🧹 Starting duplicate cleanup...")
+                _ = try await viewModel.cleanupDuplicates(result)
+                
+                await MainActor.run {
+                    saveMessage = """
+                    ✅ Cleanup Complete!
+                    
+                    Removed \(result.totalDuplicateCount) duplicate records.
+                    
+                    Audit log saved to Documents folder.
+                    """
+                    showingSaveAlert = true
+                    
+                    // Reset state
+                    duplicateDetectionResult = nil
+                }
+                
+                // Reload data after cleanup
+                _ = await viewModel.saveChanges()
+            } catch {
+                await MainActor.run {
+                    saveMessage = "❌ Cleanup failed: \(error.localizedDescription)"
+                    showingSaveAlert = true
+                }
+            }
+        }
+    }
 }
 
 // MARK: - Array Extension for Calendar Grid
@@ -865,6 +993,156 @@ class ShareActivityItemSource: NSObject, UIActivityItemSource {
     
     func activityViewController(_ activityViewController: UIActivityViewController, subjectForActivityType activityType: UIActivity.ActivityType?) -> String {
         return subject
+    }
+}
+
+// MARK: - Duplicate Details Review View
+struct DuplicateDetailsView: View {
+    let result: ScheduleViewModel.DuplicateDetectionResult
+    let onCleanup: () -> Void
+    @Environment(\.dismiss) var dismiss
+    
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 20) {
+                // Header summary
+                VStack(spacing: 8) {
+                    Text("📋 Duplicate Cleanup Report")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                    
+                    Text("This is a preview. Nothing will be deleted until you confirm.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                    
+                    HStack(spacing: 20) {
+                        VStack {
+                            Text("\(result.totalAffectedDates)")
+                                .font(.title)
+                                .fontWeight(.bold)
+                                .foregroundColor(.orange)
+                            Text("Affected Dates")
+                                .font(.caption)
+                        }
+                        
+                        VStack {
+                            Text("\(result.totalDuplicateCount)")
+                                .font(.title)
+                                .fontWeight(.bold)
+                                .foregroundColor(.red)
+                            Text("Records to Delete")
+                                .font(.caption)
+                        }
+                    }
+                    .padding()
+                    .background(Color.orange.opacity(0.1))
+                    .cornerRadius(12)
+                }
+                .padding()
+                
+                // Scrollable list of duplicates
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        if !result.scheduleDuplicates.isEmpty {
+                            Text("Schedule Duplicates")
+                                .font(.headline)
+                                .padding(.horizontal)
+                            
+                            ForEach(result.scheduleDuplicates, id: \.dateKey) { group in
+                                DuplicateGroupRow(group: group, type: "Schedule")
+                            }
+                        }
+                        
+                        if !result.monthlyNoteDuplicates.isEmpty {
+                            Text("Monthly Note Duplicates")
+                                .font(.headline)
+                                .padding(.horizontal)
+                                .padding(.top, 8)
+                            
+                            ForEach(result.monthlyNoteDuplicates, id: \.dateKey) { group in
+                                DuplicateGroupRow(group: group, type: "Monthly Note")
+                            }
+                        }
+                    }
+                }
+                
+                // Action buttons
+                HStack(spacing: 16) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.gray.opacity(0.2))
+                    .cornerRadius(8)
+                    
+                    Button("Proceed with Cleanup") {
+                        onCleanup()
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.red)
+                    .foregroundColor(.white)
+                    .cornerRadius(8)
+                }
+                .padding()
+            }
+            .navigationBarTitleDisplayMode(.inline)
+        }
+    }
+}
+
+struct DuplicateGroupRow: View {
+    let group: ScheduleViewModel.DuplicateGroup
+    let type: String
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(group.dateKey)
+                .font(.subheadline)
+                .fontWeight(.semibold)
+            
+            if let keepRecord = group.recordToKeep {
+                HStack {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundColor(.green)
+                    VStack(alignment: .leading) {
+                        Text("KEEP: \(keepRecord.recordID.recordName)")
+                            .font(.caption)
+                        Text("Modified: \(formatDate(keepRecord.modificationDate ?? keepRecord.creationDate))")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+            
+            ForEach(group.recordsToDelete, id: \.recordID) { record in
+                HStack {
+                    Image(systemName: "trash.circle.fill")
+                        .foregroundColor(.red)
+                    VStack(alignment: .leading) {
+                        Text("DELETE: \(record.recordID.recordName)")
+                            .font(.caption)
+                        Text("Modified: \(formatDate(record.modificationDate ?? record.creationDate))")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+        }
+        .padding()
+        .background(Color(.secondarySystemBackground))
+        .cornerRadius(8)
+        .padding(.horizontal)
+    }
+    
+    private func formatDate(_ date: Date?) -> String {
+        guard let date = date else { return "Unknown" }
+        let formatter = DateFormatter()
+        formatter.dateStyle = .short
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
     }
 }
 

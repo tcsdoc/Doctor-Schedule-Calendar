@@ -453,5 +453,252 @@ actor SimpleCloudKitManager {
         // Create new share if none exists
         return try await createCustomZoneShare()
     }
+    
+    // MARK: - Duplicate Detection & Cleanup (Option B)
+    
+    /// Represents a duplicate record set for a specific date
+    struct DuplicateGroup {
+        let dateKey: String
+        let records: [CKRecord]
+        
+        var recordCount: Int { records.count }
+        
+        /// Returns the record to keep (most recently modified)
+        var recordToKeep: CKRecord? {
+            records.max(by: { ($0.modificationDate ?? $0.creationDate) ?? Date.distantPast < ($1.modificationDate ?? $1.creationDate) ?? Date.distantPast })
+        }
+        
+        /// Returns records to delete (all except the most recent)
+        var recordsToDelete: [CKRecord] {
+            guard let keepRecord = recordToKeep else { return records }
+            return records.filter { $0.recordID != keepRecord.recordID }
+        }
+    }
+    
+    /// Result of duplicate detection scan
+    struct DuplicateDetectionResult {
+        let scheduleDuplicates: [DuplicateGroup]
+        let monthlyNoteDuplicates: [DuplicateGroup]
+        
+        var totalDuplicateCount: Int {
+            scheduleDuplicates.reduce(0) { $0 + $1.recordsToDelete.count } +
+            monthlyNoteDuplicates.reduce(0) { $0 + $1.recordsToDelete.count }
+        }
+        
+        var totalAffectedDates: Int {
+            scheduleDuplicates.count + monthlyNoteDuplicates.count
+        }
+        
+        var hasDuplicates: Bool {
+            !scheduleDuplicates.isEmpty || !monthlyNoteDuplicates.isEmpty
+        }
+    }
+    
+    /// Scan CloudKit for duplicate records
+    func detectDuplicates() async throws -> DuplicateDetectionResult {
+        redesignLog("🔍 Starting duplicate detection scan...")
+        
+        // Fetch all raw records from CloudKit (not parsed into models)
+        let scheduleRecords = try await fetchAllRawScheduleRecords()
+        let monthlyNoteRecords = try await fetchAllRawMonthlyNoteRecords()
+        
+        redesignLog("🔍 Analyzing \(scheduleRecords.count) schedule records...")
+        let scheduleDuplicates = findDuplicatesInSchedules(scheduleRecords)
+        
+        redesignLog("🔍 Analyzing \(monthlyNoteRecords.count) monthly note records...")
+        let monthlyNoteDuplicates = findDuplicatesInMonthlyNotes(monthlyNoteRecords)
+        
+        let result = DuplicateDetectionResult(
+            scheduleDuplicates: scheduleDuplicates,
+            monthlyNoteDuplicates: monthlyNoteDuplicates
+        )
+        
+        if result.hasDuplicates {
+            redesignLog("⚠️ Found \(result.totalDuplicateCount) duplicate records across \(result.totalAffectedDates) dates")
+        } else {
+            redesignLog("✅ No duplicates detected")
+        }
+        
+        return result
+    }
+    
+    /// Delete duplicate records, keeping the most recent ones
+    func cleanupDuplicates(_ result: DuplicateDetectionResult) async throws -> String {
+        redesignLog("🧹 Starting duplicate cleanup...")
+        
+        var deletedCount = 0
+        var logEntries: [String] = []
+        logEntries.append("=== DUPLICATE CLEANUP LOG ===")
+        logEntries.append("Date: \(Date())")
+        logEntries.append("")
+        
+        // Clean up schedule duplicates
+        for duplicateGroup in result.scheduleDuplicates {
+            redesignLog("🧹 Cleaning duplicates for schedule: \(duplicateGroup.dateKey)")
+            
+            guard let keepRecord = duplicateGroup.recordToKeep else {
+                redesignLog("⚠️ Cannot determine which record to keep for \(duplicateGroup.dateKey)")
+                continue
+            }
+            
+            logEntries.append("Date: \(duplicateGroup.dateKey) (Schedule)")
+            logEntries.append("  Records found: \(duplicateGroup.recordCount)")
+            logEntries.append("  Keeping: \(keepRecord.recordID.recordName) (modified: \(keepRecord.modificationDate ?? keepRecord.creationDate ?? Date()))")
+            
+            for recordToDelete in duplicateGroup.recordsToDelete {
+                do {
+                    _ = try await privateDatabase.deleteRecord(withID: recordToDelete.recordID)
+                    deletedCount += 1
+                    logEntries.append("  ✓ Deleted: \(recordToDelete.recordID.recordName) (modified: \(recordToDelete.modificationDate ?? recordToDelete.creationDate ?? Date()))")
+                    redesignLog("  ✓ Deleted record: \(recordToDelete.recordID.recordName)")
+                } catch {
+                    logEntries.append("  ✗ Failed to delete: \(recordToDelete.recordID.recordName) - \(error.localizedDescription)")
+                    redesignLog("  ❌ Failed to delete: \(error)")
+                }
+            }
+            logEntries.append("")
+        }
+        
+        // Clean up monthly note duplicates
+        for duplicateGroup in result.monthlyNoteDuplicates {
+            redesignLog("🧹 Cleaning duplicates for monthly note: \(duplicateGroup.dateKey)")
+            
+            guard let keepRecord = duplicateGroup.recordToKeep else {
+                redesignLog("⚠️ Cannot determine which record to keep for \(duplicateGroup.dateKey)")
+                continue
+            }
+            
+            logEntries.append("Month: \(duplicateGroup.dateKey) (Monthly Note)")
+            logEntries.append("  Records found: \(duplicateGroup.recordCount)")
+            logEntries.append("  Keeping: \(keepRecord.recordID.recordName) (modified: \(keepRecord.modificationDate ?? keepRecord.creationDate ?? Date()))")
+            
+            for recordToDelete in duplicateGroup.recordsToDelete {
+                do {
+                    _ = try await privateDatabase.deleteRecord(withID: recordToDelete.recordID)
+                    deletedCount += 1
+                    logEntries.append("  ✓ Deleted: \(recordToDelete.recordID.recordName) (modified: \(recordToDelete.modificationDate ?? recordToDelete.creationDate ?? Date()))")
+                    redesignLog("  ✓ Deleted record: \(recordToDelete.recordID.recordName)")
+                } catch {
+                    logEntries.append("  ✗ Failed to delete: \(recordToDelete.recordID.recordName) - \(error.localizedDescription)")
+                    redesignLog("  ❌ Failed to delete: \(error)")
+                }
+            }
+            logEntries.append("")
+        }
+        
+        logEntries.append("=== CLEANUP COMPLETE ===")
+        logEntries.append("Total records deleted: \(deletedCount)")
+        
+        redesignLog("✅ Cleanup complete: \(deletedCount) duplicates removed")
+        
+        let logText = logEntries.joined(separator: "\n")
+        try saveCleanupLog(logText)
+        
+        return logText
+    }
+    
+    // MARK: - Private Helper Methods
+    
+    private func fetchAllRawScheduleRecords() async throws -> [CKRecord] {
+        let query = CKQuery(recordType: "CD_DailySchedule", predicate: NSPredicate(value: true))
+        var allRecords: [CKRecord] = []
+        var cursor: CKQueryOperation.Cursor? = nil
+        
+        repeat {
+            let (matchResults, moreComing) = cursor == nil
+                ? try await privateDatabase.records(matching: query, inZoneWith: zoneID)
+                : try await privateDatabase.records(continuingMatchFrom: cursor!)
+            
+            for (_, result) in matchResults {
+                if case .success(let record) = result {
+                    allRecords.append(record)
+                }
+            }
+            
+            cursor = moreComing
+        } while cursor != nil
+        
+        return allRecords
+    }
+    
+    private func fetchAllRawMonthlyNoteRecords() async throws -> [CKRecord] {
+        let query = CKQuery(recordType: "CD_MonthlyNotes", predicate: NSPredicate(value: true))
+        var allRecords: [CKRecord] = []
+        var cursor: CKQueryOperation.Cursor? = nil
+        
+        repeat {
+            let (matchResults, moreComing) = cursor == nil
+                ? try await privateDatabase.records(matching: query, inZoneWith: zoneID)
+                : try await privateDatabase.records(continuingMatchFrom: cursor!)
+            
+            for (_, result) in matchResults {
+                if case .success(let record) = result {
+                    allRecords.append(record)
+                }
+            }
+            
+            cursor = moreComing
+        } while cursor != nil
+        
+        return allRecords
+    }
+    
+    private func findDuplicatesInSchedules(_ records: [CKRecord]) -> [DuplicateGroup] {
+        // Group records by their date key (schedule_yyyy-MM-dd)
+        var groupedRecords: [String: [CKRecord]] = [:]
+        
+        for record in records {
+            if let date = record["CD_date"] as? Date {
+                let formatter = DateFormatter()
+                formatter.dateFormat = "yyyy-MM-dd"
+                formatter.timeZone = TimeZone(identifier: "UTC")
+                let dateKey = formatter.string(from: date)
+                
+                if groupedRecords[dateKey] == nil {
+                    groupedRecords[dateKey] = []
+                }
+                groupedRecords[dateKey]?.append(record)
+            }
+        }
+        
+        // Find groups with more than one record (duplicates)
+        return groupedRecords.compactMap { dateKey, records in
+            records.count > 1 ? DuplicateGroup(dateKey: dateKey, records: records) : nil
+        }.sorted { $0.dateKey < $1.dateKey }
+    }
+    
+    private func findDuplicatesInMonthlyNotes(_ records: [CKRecord]) -> [DuplicateGroup] {
+        // Group records by their month key (notes_yyyy-MM)
+        var groupedRecords: [String: [CKRecord]] = [:]
+        
+        for record in records {
+            if let month = record["CD_month"] as? Int,
+               let year = record["CD_year"] as? Int {
+                let monthKey = String(format: "%04d-%02d", year, month)
+                
+                if groupedRecords[monthKey] == nil {
+                    groupedRecords[monthKey] = []
+                }
+                groupedRecords[monthKey]?.append(record)
+            }
+        }
+        
+        // Find groups with more than one record (duplicates)
+        return groupedRecords.compactMap { monthKey, records in
+            records.count > 1 ? DuplicateGroup(dateKey: monthKey, records: records) : nil
+        }.sorted { $0.dateKey < $1.dateKey }
+    }
+    
+    private func saveCleanupLog(_ logText: String) throws {
+        let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
+        let timestamp = dateFormatter.string(from: Date())
+        let logFileName = "PSC_Duplicate_Cleanup_\(timestamp).txt"
+        let logFileURL = documentsPath.appendingPathComponent(logFileName)
+        
+        try logText.write(to: logFileURL, atomically: true, encoding: .utf8)
+        redesignLog("📄 Cleanup log saved to: \(logFileURL.path)")
+    }
 }
 

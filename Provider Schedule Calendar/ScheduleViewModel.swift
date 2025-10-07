@@ -260,6 +260,18 @@ class ScheduleViewModel: ObservableObject {
         redesignLog("🔧 ScheduleViewModel: Looking for existing share...")
         return try await cloudKitManager.fetchExistingZoneShare()
     }
+    
+    // MARK: - Duplicate Detection & Cleanup
+    typealias DuplicateDetectionResult = SimpleCloudKitManager.DuplicateDetectionResult
+    typealias DuplicateGroup = SimpleCloudKitManager.DuplicateGroup
+    
+    func checkForDuplicates() async throws -> DuplicateDetectionResult {
+        return try await cloudKitManager.detectDuplicates()
+    }
+    
+    func cleanupDuplicates(_ result: DuplicateDetectionResult) async throws -> String {
+        return try await cloudKitManager.cleanupDuplicates(result)
+    }
 }
 
 // MARK: - Data Models
