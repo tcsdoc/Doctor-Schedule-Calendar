@@ -721,7 +721,7 @@
 					<string>@executable_path/Frameworks</string>
 				</array>
 				<key>MARKETING_VERSION</key>
-				<string>4.0.1</string>
+				<string>4.1</string>
 				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
 				<string>com.gulfcoast.ProviderCalendar</string>
 				<key>PRODUCT_NAME</key>
@@ -792,7 +792,7 @@
 					<string>@executable_path/Frameworks</string>
 				</array>
 				<key>MARKETING_VERSION</key>
-				<string>4.0.1</string>
+				<string>4.1</string>
 				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
 				<string>com.gulfcoast.ProviderCalendar</string>
 				<key>PRODUCT_NAME</key>
@@ -850,7 +850,7 @@
 				<key>IPHONEOS_DEPLOYMENT_TARGET</key>
 				<string>17.0</string>
 				<key>MARKETING_VERSION</key>
-				<string>4.0.1</string>
+				<string>4.1</string>
 				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
 				<string>com.gulfcoast.ProviderCalendar.dev.Tests</string>
 				<key>PRODUCT_NAME</key>
@@ -886,7 +886,7 @@
 				<key>IPHONEOS_DEPLOYMENT_TARGET</key>
 				<string>17.0</string>
 				<key>MARKETING_VERSION</key>
-				<string>4.0.1</string>
+				<string>4.1</string>
 				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
 				<string>com.gulfcoast.ProviderCalendar.dev.Tests</string>
 				<key>PRODUCT_NAME</key>
@@ -932,7 +932,7 @@
 				<key>GENERATE_INFOPLIST_FILE</key>
 				<string>YES</string>
 				<key>MARKETING_VERSION</key>
-				<string>4.0.1</string>
+				<string>4.1</string>
 				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
 				<string>com.gulfcoast.ProviderCalendar.dev-CalendarUITests</string>
 				<key>PRODUCT_NAME</key>
@@ -964,7 +964,7 @@
 				<key>GENERATE_INFOPLIST_FILE</key>
 				<string>YES</string>
 				<key>MARKETING_VERSION</key>
-				<string>4.0.1</string>
+				<string>4.1</string>
 				<key>PRODUCT_BUNDLE_IDENTIFIER</key>
 				<string>com.gulfcoast.ProviderCalendar.dev-CalendarUITests</string>
 				<key>PRODUCT_NAME</key>
