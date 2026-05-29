@@ -136,7 +136,7 @@ class ScheduleViewModel: ObservableObject {
                 if let note = monthlyNotes[monthKey] {
                     try await cloudKitManager.saveMonthlyNote(note)
                 } else {
-                    // Note was deleted - implement delete if needed
+                    try await cloudKitManager.deleteMonthlyNote(monthKey: monthKey)
                 }
                 successCount += 1
             } catch {

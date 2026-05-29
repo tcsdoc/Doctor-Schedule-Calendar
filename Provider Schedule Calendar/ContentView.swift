@@ -62,12 +62,7 @@ struct ContentView: View {
                     .padding(.vertical, 20)
                     }
                 }
-        // Respect safe area to avoid status bar overlap
-        .onTapGesture {
-            // Dismiss keyboard when tapping outside text fields
-            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-            }
-            .onAppear {
+        .onAppear {
             initializeCurrentMonth()
             checkForDuplicatesOnLaunch()
         }
@@ -1146,11 +1141,22 @@ struct DuplicateGroupRow: View {
     }
 }
 
+// MARK: - Calendar Focus (Tab → next in-month OS)
+enum CalendarFocusField: Hashable {
+    case schedule(dateKey: String, field: ScheduleField)
+}
+
+private func normalizeProviderText(_ text: String) -> String {
+    text.uppercased().replacingOccurrences(of: "1/2", with: "½")
+}
+
 // MARK: - Month Calendar View (Editable Grid)
 struct MonthCalendarView: View {
     let month: Date
     let schedules: [String: ScheduleRecord]
     let onScheduleChange: (Date, ScheduleField, String) -> Void
+    
+    @FocusState private var focusedField: CalendarFocusField?
     
     private let calendar = Calendar.current
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 2), count: 7)
@@ -1174,7 +1180,14 @@ struct MonthCalendarView: View {
                 if calendar.isDate(date, equalTo: month, toGranularity: .month) {
                         DayEditCell(
                             date: date,
+                            dateKey: dateKey(for: date),
                             schedule: schedules[dateKey(for: date)],
+                            focusedField: $focusedField,
+                            onTabToNextDay: { currentDate in
+                                if let nextKey = nextInMonthOSDateKey(after: currentDate) {
+                                    focusedField = .schedule(dateKey: nextKey, field: .os)
+                                }
+                            },
                             onFieldChange: { field, value in
                                 onScheduleChange(date, field, value)
                             }
@@ -1189,6 +1202,19 @@ struct MonthCalendarView: View {
                 }
             }
         }
+    }
+    
+    private var inMonthDates: [Date] {
+        calendarDays.filter { calendar.isDate($0, equalTo: month, toGranularity: .month) }
+    }
+    
+    private func nextInMonthOSDateKey(after date: Date) -> String? {
+        let dates = inMonthDates
+        guard let index = dates.firstIndex(where: { calendar.isDate($0, inSameDayAs: date) }),
+              index + 1 < dates.count else {
+            return nil
+        }
+        return dateKey(for: dates[index + 1])
     }
     
     private var calendarDays: [Date] {
@@ -1220,7 +1246,10 @@ struct MonthCalendarView: View {
 // MARK: - Editable Day Cell
 struct DayEditCell: View {
     let date: Date
+    let dateKey: String
     let schedule: ScheduleRecord?
+    @FocusState.Binding var focusedField: CalendarFocusField?
+    let onTabToNextDay: (Date) -> Void
     let onFieldChange: (ScheduleField, String) -> Void
     
     @State private var osText: String = ""
@@ -1240,19 +1269,47 @@ struct DayEditCell: View {
             
             // Schedule fields (OS, CL, OFF, CALL) with color coding
             VStack(spacing: 1) {
-                ScheduleTextField(label: "OS", fieldType: .os, text: $osText) { newValue in
+                ScheduleTextField(
+                    label: "OS",
+                    fieldType: .os,
+                    text: $osText,
+                    focusValue: .schedule(dateKey: dateKey, field: .os),
+                    focusedField: $focusedField,
+                    onTab: { onTabToNextDay(date) }
+                ) { newValue in
                     onFieldChange(.os, newValue)
                 }
                 
-                ScheduleTextField(label: "CL", fieldType: .cl, text: $clText) { newValue in
+                ScheduleTextField(
+                    label: "CL",
+                    fieldType: .cl,
+                    text: $clText,
+                    focusValue: .schedule(dateKey: dateKey, field: .cl),
+                    focusedField: $focusedField,
+                    onTab: { onTabToNextDay(date) }
+                ) { newValue in
                     onFieldChange(.cl, newValue)
                 }
                 
-                ScheduleTextField(label: "OFF", fieldType: .off, text: $offText) { newValue in
+                ScheduleTextField(
+                    label: "OFF",
+                    fieldType: .off,
+                    text: $offText,
+                    focusValue: .schedule(dateKey: dateKey, field: .off),
+                    focusedField: $focusedField,
+                    onTab: { onTabToNextDay(date) }
+                ) { newValue in
                     onFieldChange(.off, newValue)
                 }
                 
-                ScheduleTextField(label: "CALL", fieldType: .call, text: $callText) { newValue in
+                ScheduleTextField(
+                    label: "CALL",
+                    fieldType: .call,
+                    text: $callText,
+                    focusValue: .schedule(dateKey: dateKey, field: .call),
+                    focusedField: $focusedField,
+                    onTab: { onTabToNextDay(date) }
+                ) { newValue in
                     onFieldChange(.call, newValue)
                 }
             }
@@ -1285,10 +1342,12 @@ struct ScheduleTextField: View {
     let label: String
     let fieldType: ScheduleField
     @Binding var text: String
+    let focusValue: CalendarFocusField
+    @FocusState.Binding var focusedField: CalendarFocusField?
+    let onTab: () -> Void
     let onCommit: (String) -> Void
     
     @State private var lastKnownText = ""
-    @FocusState private var isFocused: Bool
     
     // PSC Field Colors: OS=blue, CL=red, OFF=green, CALL=yellow
     private var fieldColor: Color {
@@ -1298,6 +1357,10 @@ struct ScheduleTextField: View {
         case .off: return .green
         case .call: return .orange // Using orange instead of yellow for better readability
         }
+    }
+    
+    private var isFocused: Bool {
+        focusedField == focusValue
     }
     
     var body: some View {
@@ -1312,21 +1375,26 @@ struct ScheduleTextField: View {
                 .foregroundColor(.black)
                 .textFieldStyle(PlainTextFieldStyle())
                 .autocapitalization(.allCharacters)
-                .focused($isFocused)
+                .focused($focusedField, equals: focusValue)
+                .onKeyPress(.tab) {
+                    onTab()
+                    return .handled
+                }
                 .onSubmit {
-                    onCommit(text.uppercased())
+                    onCommit(normalizeProviderText(text))
                 }
                 .onChange(of: text) { _, newValue in
-                    let uppercased = newValue.uppercased()
-                    if text != uppercased {
-                        text = uppercased
+                    let normalized = normalizeProviderText(newValue)
+                    if text != normalized {
+                        text = normalized
+                        return
                     }
                     // Call onCommit when text actually changes from user input
                     // Skip if this is just the initial load (lastKnownText will be empty)
                     if !lastKnownText.isEmpty || isFocused {
-                        onCommit(uppercased)
+                        onCommit(normalized)
                     }
-                    lastKnownText = uppercased
+                    lastKnownText = normalized
                 }
                 .onAppear {
                     lastKnownText = text
@@ -1385,18 +1453,19 @@ struct RedesignedMonthlyNotesView: View {
                                 .stroke(Color.blue.opacity(0.3), lineWidth: 1)
                         )
                         .onSubmit {
-                            onLine1Change(line1Text.uppercased())
+                            onLine1Change(normalizeProviderText(line1Text))
                         }
                         .onChange(of: line1Text) { _, newValue in
-                            let uppercased = newValue.uppercased()
-                            if line1Text != uppercased {
-                                line1Text = uppercased
+                            let normalized = normalizeProviderText(newValue)
+                            if line1Text != normalized {
+                                line1Text = normalized
+                                return
                             }
                             // Real-time change detection like daily schedule fields
                             if !line1LastKnown.isEmpty || line1Focused {
-                                onLine1Change(uppercased)
+                                onLine1Change(normalized)
                             }
-                            line1LastKnown = uppercased
+                            line1LastKnown = normalized
                         }
                 }
                 
@@ -1421,18 +1490,19 @@ struct RedesignedMonthlyNotesView: View {
                                 .stroke(Color.red.opacity(0.3), lineWidth: 1)
             )
             .onSubmit {
-                            onLine2Change(line2Text.uppercased())
+                            onLine2Change(normalizeProviderText(line2Text))
                         }
                         .onChange(of: line2Text) { _, newValue in
-                            let uppercased = newValue.uppercased()
-                            if line2Text != uppercased {
-                                line2Text = uppercased
+                            let normalized = normalizeProviderText(newValue)
+                            if line2Text != normalized {
+                                line2Text = normalized
+                                return
                             }
                             // Real-time change detection like daily schedule fields
                             if !line2LastKnown.isEmpty || line2Focused {
-                                onLine2Change(uppercased)
+                                onLine2Change(normalized)
                             }
-                            line2LastKnown = uppercased
+                            line2LastKnown = normalized
                         }
                 }
             }

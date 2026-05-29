@@ -245,6 +245,22 @@ actor SimpleCloudKitManager {
         redesignLog("✅ Monthly note saved: \(note.id)")
     }
     
+    func deleteMonthlyNote(monthKey: String) async throws {
+        redesignLog("🗑️ Deleting monthly note: \(monthKey)")
+        
+        let recordID = CKRecord.ID(recordName: "notes_\(monthKey)", zoneID: zoneID)
+        
+        do {
+            let _ = try await privateDatabase.deleteRecord(withID: recordID)
+            redesignLog("✅ Monthly note deleted: \(monthKey)")
+        } catch let error as CKError where error.code == .unknownItem {
+            redesignLog("ℹ️ Monthly note already deleted or never existed: \(monthKey)")
+        } catch {
+            redesignLog("❌ Monthly note delete failed: \(error)")
+            throw error
+        }
+    }
+    
     // MARK: - Sharing Operations - REMOVED DUPLICATE
     // createShare() function removed - was conflicting with createCustomZoneShare()
     // All sharing now uses createCustomZoneShare() via getOrCreateZoneShare()
