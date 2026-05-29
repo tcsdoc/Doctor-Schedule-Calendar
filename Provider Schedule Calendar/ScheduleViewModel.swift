@@ -114,6 +114,8 @@ class ScheduleViewModel: ObservableObject {
         // Track individual successes and failures
         var successCount = 0
         var failures: [String] = []
+        var savedScheduleKeys: Set<String> = []
+        var savedNoteKeys: Set<String> = []
         
         // Save only changed schedules (individual error handling)
         for dateKey in pendingChanges {
@@ -123,6 +125,7 @@ class ScheduleViewModel: ObservableObject {
                 } else {
                     try await cloudKitManager.deleteSchedule(dateKey: dateKey)
                 }
+                savedScheduleKeys.insert(dateKey)
                 successCount += 1
             } catch {
                 failures.append("Schedule \(dateKey)")
@@ -138,6 +141,7 @@ class ScheduleViewModel: ObservableObject {
                 } else {
                     try await cloudKitManager.deleteMonthlyNote(monthKey: monthKey)
                 }
+                savedNoteKeys.insert(monthKey)
                 successCount += 1
             } catch {
                 failures.append("Monthly note \(monthKey)")
@@ -146,18 +150,15 @@ class ScheduleViewModel: ObservableObject {
         }
         
         await MainActor.run {
-            // Only clear pending changes for successful saves
-            // Keep failed ones in pending for retry
-            self.pendingChanges.removeAll()
-            self.pendingNoteChanges.removeAll()
-            self.hasChanges = !failures.isEmpty
+            // Only clear pending changes for successful saves; keep failures for retry
+            self.pendingChanges.subtract(savedScheduleKeys)
+            self.pendingNoteChanges.subtract(savedNoteKeys)
+            self.hasChanges = !self.pendingChanges.isEmpty || !self.pendingNoteChanges.isEmpty
             self.isSaving = false
         }
         
         // Log results
-        if failures.isEmpty {
-            redesignLog("✅ All \(successCount) changes saved successfully")
-        } else {
+        if !failures.isEmpty {
             redesignLog("⚠️ Partial save: \(successCount) success, \(failures.count) failures")
             redesignLog("❌ Failed items: \(failures.joined(separator: ", "))")
         }
@@ -252,12 +253,10 @@ class ScheduleViewModel: ObservableObject {
     
     // MARK: - CloudKit Sharing
     func createShare() async throws -> CKShare {
-        redesignLog("🔗 ScheduleViewModel: Creating share...")
         return try await cloudKitManager.getOrCreateZoneShare()
     }
     
     func getExistingShare() async throws -> CKShare? {
-        redesignLog("🔧 ScheduleViewModel: Looking for existing share...")
         return try await cloudKitManager.fetchExistingZoneShare()
     }
     

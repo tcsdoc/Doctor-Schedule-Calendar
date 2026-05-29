@@ -188,7 +188,7 @@ struct ContentView: View {
                         .foregroundColor(.white)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
-                        .background(saveButtonColor)
+                        .background(Color.blue)
                         .cornerRadius(6)
                     }
                     
@@ -211,13 +211,12 @@ struct ContentView: View {
                             Text("Manage")
                         }
                     .font(.caption)
-                        .foregroundColor(manageButtonEnabled ? .orange : .gray)
+                        .foregroundColor(.orange)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
-                        .background(manageButtonEnabled ? Color.orange.opacity(0.1) : Color.gray.opacity(0.1))
+                        .background(Color.orange.opacity(0.1))
                         .cornerRadius(6)
                     }
-                    .disabled(!manageButtonEnabled)
                     
                     Button(action: printCalendar) {
                         HStack(spacing: 3) {
@@ -312,15 +311,6 @@ struct ContentView: View {
         return viewModel.hasChanges ? "Save" : "Saved"
     }
     
-    private var saveButtonColor: Color {
-        return viewModel.hasChanges ? .blue : .blue
-    }
-    
-    private var manageButtonEnabled: Bool {
-        // Enable manage button if we can potentially find existing shares
-        return true // We'll check for existing shares when tapped
-    }
-    
     private func saveData() {
         Task {
             if viewModel.hasChanges {
@@ -350,11 +340,20 @@ struct ContentView: View {
     private func shareCalendar() {
         // Check if there are unsaved changes that need to be saved first
         if viewModel.hasChanges {
-            // Save first, then share
             Task {
-                _ = await viewModel.saveChanges()
-                // Wait a moment for save completion, then share
-                try await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
+                let (success, savedCount, totalCount) = await viewModel.saveChanges()
+                guard success else {
+                    await MainActor.run {
+                        let failedCount = totalCount - savedCount
+                        if savedCount > 0 {
+                            saveMessage = "⚠️ Save incomplete: \(savedCount)/\(totalCount) saved\n\(failedCount) records failed — fix before sharing"
+                        } else {
+                            saveMessage = "❌ Save failed — cannot share until all changes are saved"
+                        }
+                        showingSaveAlert = true
+                    }
+                    return
+                }
                 await performShare()
             }
         } else {
@@ -367,7 +366,6 @@ struct ContentView: View {
     
     private func performShare() async {
         do {
-            redesignLog("🔗 Starting CloudKit share creation...")
             let share = try await viewModel.createShare()
             
         guard let shareURL = share.url else {
@@ -378,7 +376,6 @@ struct ContentView: View {
             return
         }
         
-            redesignLog("✅ Share URL obtained: \(shareURL.absoluteString)")
             
             // Present standard iOS share sheet with CloudKit URL (original working pattern)
         let shareText = "You're invited to view my Provider Schedule Calendar. Open the link below on your iOS device to access the shared calendar."
@@ -411,7 +408,6 @@ struct ContentView: View {
                    let window = windowScene.windows.first,
                    let rootViewController = window.rootViewController {
         rootViewController.present(activityViewController, animated: true)
-                    redesignLog("✅ Standard iOS share sheet presented")
                 }
             }
             
@@ -427,28 +423,15 @@ struct ContentView: View {
     private func manageShares() {
         Task {
             do {
-                redesignLog("🔧 Looking for existing share to manage...")
                 
                 // Try to fetch existing share first
                 if let existingShare = try await viewModel.getExistingShare() {
                     await MainActor.run {
-                        redesignLog("✅ Found existing share:")
-                        redesignLog("   - Share URL: \(existingShare.url?.absoluteString ?? "NO URL")")
-                        redesignLog("   - Share title: \(existingShare[CKShare.SystemFieldKey.title] ?? "NO TITLE")")
-                        redesignLog("   - Public permission: \(existingShare.publicPermission.rawValue)")
-                        redesignLog("   - Participants count: \(existingShare.participants.count)")
-                        
-                        for (index, participant) in existingShare.participants.enumerated() {
-                            redesignLog("   - Participant \(index): \(participant.userIdentity.userRecordID?.recordName ?? "UNKNOWN")")
-                            redesignLog("   - Role: \(participant.role.rawValue), Permission: \(participant.permission.rawValue)")
-                        }
-                        
                         self.existingShare = existingShare
                         
                         // Trigger sheet presentation via onChange
                         if existingShare.url != nil {
                             self.shareReadyForManagement = true
-                            redesignLog("🔧 Share ready for management interface...")
                         } else {
                             redesignLog("❌ Share has no URL, cannot open management interface")
                             saveMessage = "❌ Share is invalid - cannot manage"
@@ -460,7 +443,6 @@ struct ContentView: View {
                     await MainActor.run {
                         saveMessage = "ℹ️ No active shares found to manage. Create a share first using the Share button."
                         showingSaveAlert = true
-                        redesignLog("ℹ️ No existing share found")
                     }
                 }
                 
@@ -884,7 +866,6 @@ struct ContentView: View {
     private func performDuplicateCleanup(_ result: ScheduleViewModel.DuplicateDetectionResult) {
         Task {
             do {
-                redesignLog("🧹 Starting duplicate cleanup...")
                 _ = try await viewModel.cleanupDuplicates(result)
                 
                 await MainActor.run {
@@ -901,8 +882,28 @@ struct ContentView: View {
                     duplicateDetectionResult = nil
                 }
                 
-                // Reload data after cleanup
-                _ = await viewModel.saveChanges()
+                // Save any remaining local edits after cleanup
+                let (saveSuccess, savedCount, totalCount) = await viewModel.saveChanges()
+                if !saveSuccess {
+                    await MainActor.run {
+                        let failedCount = totalCount - savedCount
+                        if savedCount > 0 {
+                            saveMessage = """
+                            ✅ Cleanup complete — removed \(result.totalDuplicateCount) duplicate records.
+                            
+                            ⚠️ Partial save: \(savedCount)/\(totalCount) saved
+                            \(failedCount) records still pending — tap Save to retry.
+                            """
+                        } else if totalCount > 0 {
+                            saveMessage = """
+                            ✅ Cleanup complete — removed \(result.totalDuplicateCount) duplicate records.
+                            
+                            ❌ Pending changes could not be saved — tap Save to retry.
+                            """
+                        }
+                        showingSaveAlert = true
+                    }
+                }
             } catch {
                 await MainActor.run {
                     saveMessage = "❌ Cleanup failed: \(error.localizedDescription)"
@@ -954,11 +955,9 @@ class CloudKitSharingDelegate: NSObject, UICloudSharingControllerDelegate {
     }
     
     func cloudSharingControllerDidSaveShare(_ csc: UICloudSharingController) {
-        redesignLog("✅ Share management saved successfully")
     }
     
     func cloudSharingControllerDidStopSharing(_ csc: UICloudSharingController) {
-        redesignLog("🔗 Sharing stopped via management interface")
     }
 }
 
@@ -1422,12 +1421,6 @@ struct RedesignedMonthlyNotesView: View {
     @State private var line2LastKnown: String = ""
     @FocusState private var line1Focused: Bool
     @FocusState private var line2Focused: Bool
-    
-    private var monthName: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMMM yyyy"
-        return formatter.string(from: month)
-    }
     
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
