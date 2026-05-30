@@ -72,7 +72,7 @@ CloudKit Console stuck on `iCloud.com.gulfcoast.Calendar`; cannot select `iCloud
 
 1. Duplicate records — wrong duplicate wins on fetch
 2. Save overwrote CALL with empty
-3. Partial save bug (`ScheduleViewModel.saveChanges` clears pending even on partial failure)
+3. Partial save bug — **fixed in v4.2** (pending retry); was hypothesis for missing CALL
 4. Display/scroll vs true CloudKit loss
 
 **Critical check (no dashboard needed):** PSC on admin iPad → May 2026 → CALL on May 29–31.
@@ -99,7 +99,19 @@ CloudKit Console stuck on `iCloud.com.gulfcoast.Calendar`; cannot select `iCloud
 
 ## Other Known PSC Issue (Deferred)
 
-**Idle tap failure:** After days idle, TextFields won't accept tap; iPad reboot fixes. Suspects: full-screen `onTapGesture`, LazyVGrid hit-testing. Dormant after reinstall; fix deferred due to risk.
+**Idle tap failure:** ~~After days idle, TextFields won't accept tap~~ **Addressed in v4.2** — removed full-screen `onTapGesture`. **Watch during one-week admin test** (May 28, 2026 start). Rollback: App Store v4.1.
+
+---
+
+## v4.2 Status (May 28, 2026)
+
+**Branch:** `fix-ui-bug` | **Tag:** `v4.2-week-testing` | **Admin:** Xcode install, data OK, admin approved UX
+
+See **`PSC_v4.2_WEEK_TESTING_HANDOFF.md`** for full notes, Git refs, and post-week checklist.
+
+**Fixed in v4.2:** focus/Tab/`½`, monthly note CloudKit delete, partial save retry, debug/repo cleanup.
+
+**`main`:** not merged until week testing completes.
 
 ---
 
@@ -124,7 +136,7 @@ CloudKit Console stuck on `iCloud.com.gulfcoast.Calendar`; cannot select `iCloud
 **PSC:** `/Users/mark/Desktop/Provider Schedule Calendar/`  
 - `SimpleCloudKitManager.swift` — CloudKit fetch/save, zone `ProviderScheduleZone`  
 - `ScheduleViewModel.swift` — manual save  
-- `ContentView.swift` — UI, tap gesture  
+- `ContentView.swift` — UI, focus/Tab, Save/Share/Print  
 
 **SV:** `/Users/mark/Desktop/ScheduleViewer/`  
 - `CloudKitManager.swift` — read-only shared zone  
