@@ -53,7 +53,7 @@ CloudKit Console stuck on `iCloud.com.gulfcoast.Calendar`; cannot select `iCloud
 | **Database** | Private Database |
 | **Zone** | `ProviderScheduleZone` (legacy v3: `user_com.gulfcoast.ProviderCalendar`) |
 | **Daily records** | `CD_DailySchedule` — OS=`CD_line1`, CL=`CD_line2`, OFF=`CD_line3`, CALL=`CD_line4` |
-| **Monthly notes** | `CD_MonthlyNotes` — `CD_line1`, `CD_line2`, `CD_line3` |
+| **Monthly notes** | `CD_MonthlyNotes` — `CD_line1`, `CD_line2`, `CD_line3` (UI shows 2 lines only; see v4.2 handoff) |
 
 ### Act As workflow (when console works)
 

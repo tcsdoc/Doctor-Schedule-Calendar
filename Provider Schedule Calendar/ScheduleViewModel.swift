@@ -310,6 +310,7 @@ struct MonthlyNote: Identifiable, Codable, CustomStringConvertible {
     let year: Int
     var line1: String?
     var line2: String?
+    /// Not shown in UI (grid height); still read/written for CloudKit schema compatibility.
     var line3: String?
     
     var description: String {

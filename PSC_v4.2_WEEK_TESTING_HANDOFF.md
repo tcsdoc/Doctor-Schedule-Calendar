@@ -44,6 +44,16 @@
 - Dead UI helpers removed
 - Historical builds/docs moved to `_archive/`
 
+### Monthly notes — two lines in UI, three in CloudKit (by design)
+
+**UI shows Line 1 and Line 2 only.** A third line was removed so the **6-week calendar fits on iPad without scrolling** while keeping day cells legible — admin/layout decision, not an oversight.
+
+**CloudKit / model still include `line3` (`CD_line3`):**
+
+- Schema compatibility with existing records and ScheduleViewer
+- No migration or field removal planned
+- **Do not** delete `line3` from model or save/fetch in future “cleanup” work
+
 ---
 
 ## GitHub Backup
@@ -98,7 +108,13 @@ Ask Lisa to notice (no special test script — normal work):
 
 ---
 
-## Charter (unchanged)
+## Future exploration (after week test)
+
+- **Under the hood only** — reliability/integrity (Save, launch, Share); admin wants **no new features**
+- New work on a **separate branch** from `fix-ui-bug`; keep `fix-ui-bug` frozen during admin week test
+- **`line3` is out of scope** for cleanup (see above)
+
+---
 
 - One admin, one iPad, manual Save
 - No code without explicit approval
