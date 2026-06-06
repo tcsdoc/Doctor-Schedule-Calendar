@@ -21,6 +21,10 @@ struct ContentView: View {
     @State private var showingDuplicateDetails = false
     @State private var isDuplicateCheckComplete = false
     
+    /// Recreated when returning from background so TextFields regain focus after overnight resume.
+    @State private var editorRefreshID = UUID()
+    @Environment(\.scenePhase) private var scenePhase
+    
     // Note: Share functionality now uses standard iOS share sheet directly
     
     private let calendar = Calendar.current
@@ -40,7 +44,7 @@ struct ContentView: View {
                         viewModel: viewModel,
                         monthKey: monthKey(for: currentMonth)
                     )
-                    .id("\(monthKey(for: currentMonth))-\(viewModel.monthlyNotes.count)") // Force refresh when data changes
+                    .id("\(monthKey(for: currentMonth))-\(viewModel.monthlyNotes.count)-\(editorRefreshID)")
                 }
                 
                 // Calendar content - FULL WIDTH with keyboard awareness
@@ -52,6 +56,7 @@ struct ContentView: View {
                                 schedules: viewModel.schedules,
                                 onScheduleChange: viewModel.updateSchedule
                             )
+                            .id(editorRefreshID)
                             .padding(.horizontal, 20) // Only horizontal padding for calendar
                         } else {
                             Text("No data available")
@@ -113,6 +118,20 @@ struct ContentView: View {
             if shareReadyForManagement && existingShare != nil {
                 showingManageSheet = true
                 shareReadyForManagement = false // Reset for next use
+            }
+        }
+        .onChange(of: scenePhase) { oldPhase, newPhase in
+            switch newPhase {
+            case .background:
+                // Clear keyboard before suspend; safe here (not a full-screen tap handler).
+                UIApplication.shared.sendAction(
+                    #selector(UIResponder.resignFirstResponder),
+                    to: nil, from: nil, for: nil
+                )
+            case .active where oldPhase == .background:
+                editorRefreshID = UUID()
+            default:
+                break
             }
         }
     }
