@@ -196,17 +196,17 @@ struct ContentView: View {
                     Text("⚠️ Cloud Issue").font(.caption)
                         .foregroundColor(.red)
                 } else if viewModel.hasChanges {
-                    Text("⚠️ UNSAVED")
+                    Text("⚠️ Saved on iPad — not to Cloud")
                         .font(.caption)
-                        .fontWeight(.bold)
-                        .foregroundColor(.white)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
-                        .background(Color.red)
+                        .background(Color.yellow.opacity(0.85))
                         .cornerRadius(6)
                         .overlay(
                             RoundedRectangle(cornerRadius: 6)
-                                .stroke(Color.red.opacity(0.8), lineWidth: 2)
+                                .stroke(Color.orange.opacity(0.5), lineWidth: 1)
                         )
                 } else {
                     Text("✅ Ready").font(.caption)

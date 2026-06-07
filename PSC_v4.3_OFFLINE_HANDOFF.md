@@ -1,7 +1,37 @@
 # PSC v4.3 — Offline Local Cache
 
 **Branch:** `reliability-offline`  
-**Version:** 4.3 (build 4)
+**Version:** 4.3 (build 5)  
+**Status:** Test iPad validated — ready for admin iPad install before merge to `main`
+
+---
+
+## Test iPad results (build 4–5)
+
+All core tests passed:
+
+- Online Save + Documents PDF
+- Edit survives force quit (local cache)
+- Offline Save + force quit (June 4 scenario)
+- Airplane mode on/off without closing app (banner + sync)
+- Focus after background
+- Cold launch offline (optional)
+
+One month exercised; same code path for all dates/months.
+
+---
+
+## Status messages (build 5)
+
+| Header | Meaning |
+|--------|---------|
+| **Saved on iPad — not to Cloud** (yellow) | Edits on iPad (memory + cache); tap **Save** when online for Cloud |
+| **📴 Offline — schedule as of …** | No network path |
+| **Syncing with Cloud…** | Cloud merge in progress |
+| **✅ Ready** | iPad and Cloud in sync |
+| **⚠️ Cloud Issue** | Cloud problem (red) |
+
+User-facing text says **Cloud**, not CloudKit.
 
 ---
 
@@ -9,57 +39,34 @@
 
 - **`isOffline`** tracks network path (NWPathMonitor), not cache writes
 - Turning airplane mode **off** clears offline banner and **Syncing with Cloud…** runs automatically (path monitor only — no sync on every foreground)
-- **`scenePhase` active:** editor refresh only when returning from background (build 6 focus fix); no Cloud sync
+- **`scenePhase` active:** editor refresh only when returning from background (focus fix); no Cloud sync
 
 ---
 
-## Local persistence (build 3 fix)
+## Local persistence (build 3)
 
 - **Every edit** writes the JSON cache (schedules, notes, pending keys) — survives force quit offline
-- **Save offline:** saved locally on iPad; alert says **not saved to the Cloud** (no internet). JSON cache + Documents PDF path unchanged until online full Save.
-- **User-facing text:** says **Cloud**, not CloudKit.
-- **Save online (full success):** iCloud + cache + PDF
-- **Launch CloudKit sync:** pending local edits are **not** overwritten by cloud data  
-**Status:** In development — install from Xcode for admin test after one online launch seeds cache
+- **Save offline:** saved locally on iPad; alert says **not saved to the Cloud** (no internet). JSON cache + Documents PDF updated.
+- **Save online (full success):** Cloud + cache + PDF
+- **Launch Cloud sync:** pending local edits are **not** overwritten by Cloud data
 
 ---
 
-## Master PDF backup (Lisa request)
+## Master PDF backup
 
-On every **full successful Save**:
+On every **full successful Save** (and offline-only Save):
 
 - Writes **`Provider Schedule Master.pdf`** to **Documents** (overwrite single file)
-- Same 12-month layout as Print, with first-page stamp: **Updated June 6th, 08:32AM**
-- Print button uses the same generator (stamp = time of print)
-- iCloud Drive backup of Documents can sync PDF to Lisa’s other devices
-- PDF failure is logged only — does not fail Save (CloudKit already succeeded)
-
----
-
-## Purpose
-
-PSC previously loaded saved schedule data **only from CloudKit**. No network on cold launch = empty calendar. Unacceptable during storms when admin must answer schedule/location calls.
-
-**v4.3 adds an on-iPad JSON cache** in Application Support. CloudKit remains backup + share; local cache enables **offline read** (and normal editing in memory; Save still requires iCloud when online).
-
----
-
-## Behavior
-
-| Event | What happens |
-|-------|----------------|
-| **Launch with cache** | Grid fills **immediately** from cache; header may show “Syncing with iCloud…” |
-| **CloudKit load succeeds** | Memory updated from CloudKit; cache rewritten; ✅ Ready |
-| **CloudKit load fails (offline)** | Keep cache data; header **📴 Offline — schedule as of [date/time]** |
-| **Launch with no cache (first install)** | Same as before — “Loading from CloudKit…” until fetch or failure |
-| **Successful Save (all items)** | CloudKit + local cache updated; offline banner clears if set |
-| **Partial Save** | Pending retry unchanged; cache **not** updated until full Save |
+- Same 12-month layout as Print, with first-page stamp
+- PDF failure is logged only — does not fail Save
 
 ---
 
 ## First install of v4.3
 
-Lisa should open PSC **once with network** after installing 4.3 so the cache file is created from CloudKit. After that, offline cold launch works.
+Open PSC **once with network** after installing so the cache file is created from Cloud. After that, offline cold launch works.
+
+**Do not delete the app** when updating from Xcode — Run over existing install preserves local cache.
 
 ---
 
@@ -68,8 +75,9 @@ Lisa should open PSC **once with network** after installing 4.3 so the cache fil
 | File | Role |
 |------|------|
 | `ScheduleLocalCache.swift` | Read/write `schedule_cache.json` |
-| `ScheduleViewModel.swift` | Cache-first load, persist after sync/Save |
-| `ContentView.swift` | Offline / syncing header states |
+| `ScheduleViewModel.swift` | Cache-first load, network monitor, persist on edit/Save |
+| `ContentView.swift` | Header states, Save alerts, focus refresh |
+| `CalendarPDFGenerator.swift` | Print + Documents PDF |
 
 ---
 
@@ -78,14 +86,9 @@ Lisa should open PSC **once with network** after installing 4.3 so the cache fil
 - Launch scan consolidation (four → two CloudKit queries)
 - Duplicate winner rule unification
 - ScheduleViewer offline cache
-- Queued Save while offline
 
 ---
 
-## Charter
+## Next step
 
-- Memory master while editing; Save pushes to CloudKit when possible
-- iPad keeps local copy of last **fully saved** snapshot
-- **Share / Manage:** zone access only — independent of Save (no save-before-share gate)
-- Printed master = ultimate integrity reference
-- Grid layout unchanged
+Admin iPad install from `reliability-offline` → merge to `main` + tag **v4.3** when Lisa sign-off complete.
