@@ -165,7 +165,7 @@ struct ContentView: View {
                 } else if viewModel.isLoading {
                     HStack(spacing: 6) {
                         ProgressView().scaleEffect(1.0)
-                        Text("Loading from CloudKit...").font(.headline).fontWeight(.semibold)
+                        Text("Loading from Cloud...").font(.headline).fontWeight(.semibold)
                     }
                     .foregroundColor(.blue)
                     .padding(.horizontal, 12)
@@ -183,7 +183,7 @@ struct ContentView: View {
                 } else if viewModel.isSyncingFromCloud {
                     HStack(spacing: 4) {
                         ProgressView().scaleEffect(0.7)
-                        Text("Syncing with iCloud...").font(.caption)
+                        Text("Syncing with Cloud...").font(.caption)
                     }
                     .foregroundColor(.blue)
                 } else if let cacheDate = viewModel.offlineCacheDate {
@@ -194,7 +194,7 @@ struct ContentView: View {
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 8)
                 } else if !viewModel.isCloudKitAvailable {
-                    Text("⚠️ CloudKit Issue").font(.caption)
+                    Text("⚠️ Cloud Issue").font(.caption)
                         .foregroundColor(.red)
                 } else if viewModel.hasChanges {
                     Text("⚠️ UNSAVED")
@@ -353,17 +353,20 @@ struct ContentView: View {
     private func saveData() {
         Task {
             if viewModel.hasChanges {
-                let (success, savedCount, totalCount) = await viewModel.saveChanges()
+                let (cloudSuccess, savedCount, totalCount, savedLocallyOnly) = await viewModel.saveChanges()
                 await MainActor.run {
-                    if success {
+                    if cloudSuccess {
                         saveMessage = "✅ All \(totalCount) changes saved successfully!"
+                    } else if savedLocallyOnly {
+                        saveMessage = """
+                        ✅ Saved locally on this iPad.
+                        
+                        Not saved to the Cloud (no internet). Your data is on this device; the PDF in Documents is updated for backup.
+                        Tap Save when you're online to sync to the Cloud.
+                        """
                     } else {
                         let failedCount = totalCount - savedCount
-                        if savedCount > 0 {
-                            saveMessage = "⚠️ Partial save: \(savedCount)/\(totalCount) saved\n\(failedCount) records failed - please retry"
-                        } else {
-                            saveMessage = "❌ Save failed: All \(totalCount) records failed"
-                        }
+                        saveMessage = "⚠️ Partial save: \(savedCount)/\(totalCount) on the Cloud\n\(failedCount) still pending — tap Save to retry"
                     }
                     showingSaveAlert = true
                         }
@@ -599,24 +602,20 @@ struct ContentView: View {
                 }
                 
                 // Save any remaining local edits after cleanup
-                let (saveSuccess, savedCount, totalCount) = await viewModel.saveChanges()
-                if !saveSuccess {
+                let (cloudSuccess, savedCount, totalCount, _) = await viewModel.saveChanges()
+                if !cloudSuccess && savedCount == 0 {
+                    await MainActor.run {
+                        saveMessage = """
+                        ✅ Saved locally on this iPad.
+                        
+                        Not saved to the Cloud yet. Tap Save when online to sync.
+                        """
+                        showingSaveAlert = true
+                    }
+                } else if !cloudSuccess {
                     await MainActor.run {
                         let failedCount = totalCount - savedCount
-                        if savedCount > 0 {
-                            saveMessage = """
-                            ✅ Cleanup complete — removed \(result.totalDuplicateCount) duplicate records.
-                            
-                            ⚠️ Partial save: \(savedCount)/\(totalCount) saved
-                            \(failedCount) records still pending — tap Save to retry.
-                            """
-                        } else if totalCount > 0 {
-                            saveMessage = """
-                            ✅ Cleanup complete — removed \(result.totalDuplicateCount) duplicate records.
-                            
-                            ❌ Pending changes could not be saved — tap Save to retry.
-                            """
-                        }
+                        saveMessage = "⚠️ Partial save: \(savedCount)/\(totalCount) saved\n\(failedCount) records still pending — tap Save to retry."
                         showingSaveAlert = true
                     }
                 }

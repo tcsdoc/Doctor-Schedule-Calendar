@@ -1,7 +1,17 @@
 # PSC v4.3 — Offline Local Cache
 
 **Branch:** `reliability-offline`  
-**Version:** 4.3 (build 2)  
+**Version:** 4.3 (build 3)
+
+---
+
+## Local persistence (build 3 fix)
+
+- **Every edit** writes the JSON cache (schedules, notes, pending keys) — survives force quit offline
+- **Save offline:** saved locally on iPad; alert says **not saved to the Cloud** (no internet). JSON cache + Documents PDF path unchanged until online full Save.
+- **User-facing text:** says **Cloud**, not CloudKit.
+- **Save online (full success):** iCloud + cache + PDF
+- **Launch CloudKit sync:** pending local edits are **not** overwritten by cloud data  
 **Status:** In development — install from Xcode for admin test after one online launch seeds cache
 
 ---

@@ -52,6 +52,9 @@ class ScheduleViewModel: ObservableObject {
         if let cache = ScheduleLocalCache.load() {
             schedules = cache.schedules
             monthlyNotes = cache.monthlyNotes
+            pendingChanges = Set(cache.pendingScheduleKeys)
+            pendingNoteChanges = Set(cache.pendingNoteKeys)
+            hasChanges = !pendingChanges.isEmpty || !pendingNoteChanges.isEmpty
             offlineCacheDate = cache.savedAt
             isLoading = false
             isInitializing = false
@@ -66,16 +69,10 @@ class ScheduleViewModel: ObservableObject {
                 let loadedNotes = try await cloudKitManager.fetchAllMonthlyNotes()
 
                 await MainActor.run {
-                    self.schedules = loadedSchedules
-                    self.monthlyNotes = loadedNotes
-                    self.offlineCacheDate = nil
-                    self.hasChanges = false
-                    self.pendingChanges.removeAll()
-                    self.pendingNoteChanges.removeAll()
+                    self.mergeCloudKitData(loadedSchedules: loadedSchedules, loadedNotes: loadedNotes)
                     self.isInitializing = false
                     self.isLoading = false
                     self.isSyncingFromCloud = false
-                    self.persistLocalCache()
                 }
             } catch {
                 redesignLog("❌ CloudKit load failed: \(error)")
@@ -91,8 +88,54 @@ class ScheduleViewModel: ObservableObject {
         }
     }
 
+    private func mergeCloudKitData(
+        loadedSchedules: [String: ScheduleRecord],
+        loadedNotes: [String: MonthlyNote]
+    ) {
+        let localSchedules = schedules
+        let localNotes = monthlyNotes
+        let pendingSchedules = pendingChanges
+        let pendingNotes = pendingNoteChanges
+
+        schedules = loadedSchedules
+        monthlyNotes = loadedNotes
+
+        for key in pendingSchedules {
+            if let local = localSchedules[key] {
+                schedules[key] = local
+            } else {
+                schedules.removeValue(forKey: key)
+            }
+        }
+        for key in pendingNotes {
+            if let local = localNotes[key] {
+                monthlyNotes[key] = local
+            } else {
+                monthlyNotes.removeValue(forKey: key)
+            }
+        }
+
+        pendingChanges = pendingSchedules
+        pendingNoteChanges = pendingNotes
+        hasChanges = !pendingChanges.isEmpty || !pendingNoteChanges.isEmpty
+
+        if hasChanges {
+            offlineCacheDate = ScheduleLocalCache.load()?.savedAt ?? offlineCacheDate
+        } else {
+            offlineCacheDate = nil
+        }
+
+        persistLocalCache()
+    }
+
     private func persistLocalCache() {
-        ScheduleLocalCache.save(schedules: schedules, monthlyNotes: monthlyNotes)
+        ScheduleLocalCache.save(
+            schedules: schedules,
+            monthlyNotes: monthlyNotes,
+            pendingScheduleKeys: pendingChanges,
+            pendingNoteKeys: pendingNoteChanges
+        )
+        offlineCacheDate = Date()
     }
     
     
@@ -126,12 +169,13 @@ class ScheduleViewModel: ObservableObject {
         // Track change
         pendingChanges.insert(dateKey)
         hasChanges = !pendingChanges.isEmpty || !pendingNoteChanges.isEmpty
+        persistLocalCache()
     }
     
-    func saveChanges() async -> (success: Bool, savedCount: Int, totalCount: Int) {
+    func saveChanges() async -> (cloudSuccess: Bool, savedCount: Int, totalCount: Int, savedLocallyOnly: Bool) {
         let totalChanges = pendingChanges.count + pendingNoteChanges.count
         guard totalChanges > 0 else {
-            return (true, 0, 0)
+            return (true, 0, 0, false)
         }
         
         isSaving = true
@@ -182,11 +226,10 @@ class ScheduleViewModel: ObservableObject {
             self.isSaving = false
         }
         
-        // Log results
-        if !failures.isEmpty {
-            redesignLog("⚠️ Partial save: \(successCount) success, \(failures.count) failures")
-            redesignLog("❌ Failed items: \(failures.joined(separator: ", "))")
-        } else {
+        let cloudSuccess = failures.isEmpty
+        let savedLocallyOnly = !cloudSuccess && successCount == 0
+
+        if cloudSuccess {
             offlineCacheDate = nil
             persistLocalCache()
             let savedAt = Date()
@@ -196,9 +239,21 @@ class ScheduleViewModel: ObservableObject {
                 months: availableMonths,
                 updatedAt: savedAt
             )
+        } else {
+            redesignLog("⚠️ Partial save: \(successCount) success, \(failures.count) failures")
+            redesignLog("❌ Failed items: \(failures.joined(separator: ", "))")
+            persistLocalCache()
+            if savedLocallyOnly {
+                CalendarPDFGenerator.writeMasterPDFToDocuments(
+                    schedules: schedules,
+                    monthlyNotes: monthlyNotes,
+                    months: availableMonths,
+                    updatedAt: Date()
+                )
+            }
         }
 
-        return (failures.isEmpty, successCount, totalChanges)
+        return (cloudSuccess, successCount, totalChanges, savedLocallyOnly)
     }
     
     // MARK: - Monthly Notes Methods (2 Lines)
@@ -229,6 +284,7 @@ class ScheduleViewModel: ObservableObject {
         if valueChanged {
             pendingNoteChanges.insert(monthKey)
             hasChanges = !pendingChanges.isEmpty || !pendingNoteChanges.isEmpty
+            persistLocalCache()
         }
     }
     
@@ -259,6 +315,7 @@ class ScheduleViewModel: ObservableObject {
         if valueChanged {
             pendingNoteChanges.insert(monthKey)
             hasChanges = !pendingChanges.isEmpty || !pendingNoteChanges.isEmpty
+            persistLocalCache()
         }
     }
     
