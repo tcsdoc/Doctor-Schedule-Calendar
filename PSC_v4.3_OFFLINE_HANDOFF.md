@@ -1,7 +1,15 @@
 # PSC v4.3 — Offline Local Cache
 
 **Branch:** `reliability-offline`  
-**Version:** 4.3 (build 3)
+**Version:** 4.3 (build 4)
+
+---
+
+## Dynamic offline banner (build 4)
+
+- **`isOffline`** tracks network path (NWPathMonitor), not cache writes
+- Turning airplane mode **off** clears offline banner and **Syncing with Cloud…** runs automatically (path monitor only — no sync on every foreground)
+- **`scenePhase` active:** editor refresh only when returning from background (build 6 focus fix); no Cloud sync
 
 ---
 

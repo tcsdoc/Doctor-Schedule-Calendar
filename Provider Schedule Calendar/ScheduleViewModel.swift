@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 import CloudKit
+import Network
 
 // MARK: - Modern MVVM ViewModel for PSC
 @MainActor
@@ -14,7 +15,9 @@ class ScheduleViewModel: ObservableObject {
     @Published var isSyncingFromCloud = false
     @Published var isCloudKitAvailable = false
     @Published var hasChanges = false
-    /// Set when displaying from local cache because CloudKit sync failed or is unavailable.
+    /// True when the device has no network path to the Cloud.
+    @Published var isOffline = false
+    /// Local snapshot time shown only while `isOffline` is true.
     @Published var offlineCacheDate: Date?
     
     // MARK: - Private Properties
@@ -22,6 +25,8 @@ class ScheduleViewModel: ObservableObject {
     private var pendingChanges: Set<String> = []
     private var pendingNoteChanges: Set<String> = []
     private var isInitializing = true
+    private var networkMonitor: NWPathMonitor?
+    private var cloudSyncInFlight = false
     
     // MARK: - Computed Properties
     var availableMonths: [Date] {
@@ -43,6 +48,7 @@ class ScheduleViewModel: ObservableObject {
     
     // MARK: - Initialization (Load CloudKit once)
     init() {
+        startNetworkMonitoring()
         checkCloudKitStatus()
         loadInitialData()
     }
@@ -55,7 +61,6 @@ class ScheduleViewModel: ObservableObject {
             pendingChanges = Set(cache.pendingScheduleKeys)
             pendingNoteChanges = Set(cache.pendingNoteKeys)
             hasChanges = !pendingChanges.isEmpty || !pendingNoteChanges.isEmpty
-            offlineCacheDate = cache.savedAt
             isLoading = false
             isInitializing = false
             isSyncingFromCloud = true
@@ -77,6 +82,7 @@ class ScheduleViewModel: ObservableObject {
             } catch {
                 redesignLog("❌ CloudKit load failed: \(error)")
                 await MainActor.run {
+                    self.markOffline()
                     self.isLoading = false
                     self.isSyncingFromCloud = false
                     self.isInitializing = false
@@ -86,6 +92,32 @@ class ScheduleViewModel: ObservableObject {
                 }
             }
         }
+    }
+
+    /// Refresh from Cloud when network returns (NWPathMonitor only).
+    private func syncFromCloudIfNeeded() async {
+        guard !isLoading, !cloudSyncInFlight, !isInitializing else { return }
+        guard isNetworkReachable() else {
+            markOffline()
+            return
+        }
+
+        cloudSyncInFlight = true
+        isSyncingFromCloud = true
+
+        do {
+            let loadedSchedules = try await cloudKitManager.fetchAllSchedules()
+            let loadedNotes = try await cloudKitManager.fetchAllMonthlyNotes()
+            mergeCloudKitData(loadedSchedules: loadedSchedules, loadedNotes: loadedNotes)
+            isOffline = false
+            offlineCacheDate = nil
+        } catch {
+            redesignLog("❌ Cloud sync failed: \(error)")
+            markOffline()
+        }
+
+        isSyncingFromCloud = false
+        cloudSyncInFlight = false
     }
 
     private func mergeCloudKitData(
@@ -118,14 +150,40 @@ class ScheduleViewModel: ObservableObject {
         pendingChanges = pendingSchedules
         pendingNoteChanges = pendingNotes
         hasChanges = !pendingChanges.isEmpty || !pendingNoteChanges.isEmpty
-
-        if hasChanges {
-            offlineCacheDate = ScheduleLocalCache.load()?.savedAt ?? offlineCacheDate
-        } else {
-            offlineCacheDate = nil
-        }
-
+        isOffline = false
+        offlineCacheDate = nil
         persistLocalCache()
+    }
+
+    private func markOffline() {
+        isOffline = true
+        offlineCacheDate = ScheduleLocalCache.load()?.savedAt ?? offlineCacheDate ?? Date()
+    }
+
+    private func startNetworkMonitoring() {
+        let monitor = NWPathMonitor()
+        monitor.pathUpdateHandler = { [weak self] path in
+            Task { @MainActor in
+                self?.handleNetworkPathUpdate(path.status == .satisfied)
+            }
+        }
+        monitor.start(queue: DispatchQueue(label: "com.gulfcoast.psc.network"))
+        networkMonitor = monitor
+    }
+
+    private func handleNetworkPathUpdate(isConnected: Bool) {
+        if isConnected {
+            isOffline = false
+            offlineCacheDate = nil
+            checkCloudKitStatus()
+            Task { await syncFromCloudIfNeeded() }
+        } else {
+            markOffline()
+        }
+    }
+
+    private func isNetworkReachable() -> Bool {
+        networkMonitor?.currentPath.status == .satisfied
     }
 
     private func persistLocalCache() {
@@ -135,7 +193,6 @@ class ScheduleViewModel: ObservableObject {
             pendingScheduleKeys: pendingChanges,
             pendingNoteKeys: pendingNoteChanges
         )
-        offlineCacheDate = Date()
     }
     
     
@@ -230,6 +287,7 @@ class ScheduleViewModel: ObservableObject {
         let savedLocallyOnly = !cloudSuccess && successCount == 0
 
         if cloudSuccess {
+            isOffline = false
             offlineCacheDate = nil
             persistLocalCache()
             let savedAt = Date()
@@ -244,6 +302,7 @@ class ScheduleViewModel: ObservableObject {
             redesignLog("❌ Failed items: \(failures.joined(separator: ", "))")
             persistLocalCache()
             if savedLocallyOnly {
+                markOffline()
                 CalendarPDFGenerator.writeMasterPDFToDocuments(
                     schedules: schedules,
                     monthlyNotes: monthlyNotes,

@@ -130,7 +130,6 @@ struct ContentView: View {
         .onChange(of: scenePhase) { oldPhase, newPhase in
             switch newPhase {
             case .background:
-                // Clear keyboard before suspend; safe here (not a full-screen tap handler).
                 UIApplication.shared.sendAction(
                     #selector(UIResponder.resignFirstResponder),
                     to: nil, from: nil, for: nil
@@ -186,7 +185,7 @@ struct ContentView: View {
                         Text("Syncing with Cloud...").font(.caption)
                     }
                     .foregroundColor(.blue)
-                } else if let cacheDate = viewModel.offlineCacheDate {
+                } else if viewModel.isOffline, let cacheDate = viewModel.offlineCacheDate {
                     Text("📴 Offline — schedule as of \(offlineCacheFormatter.string(from: cacheDate))")
                         .font(.caption)
                         .fontWeight(.semibold)
