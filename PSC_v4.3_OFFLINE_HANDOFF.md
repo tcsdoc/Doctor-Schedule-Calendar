@@ -1,8 +1,20 @@
 # PSC v4.3 — Offline Local Cache
 
 **Branch:** `reliability-offline`  
-**Version:** 4.3 (build 1)  
+**Version:** 4.3 (build 2)  
 **Status:** In development — install from Xcode for admin test after one online launch seeds cache
+
+---
+
+## Master PDF backup (Lisa request)
+
+On every **full successful Save**:
+
+- Writes **`Provider Schedule Master.pdf`** to **Documents** (overwrite single file)
+- Same 12-month layout as Print, with first-page stamp: **Updated June 6th, 08:32AM**
+- Print button uses the same generator (stamp = time of print)
+- iCloud Drive backup of Documents can sync PDF to Lisa’s other devices
+- PDF failure is logged only — does not fail Save (CloudKit already succeeded)
 
 ---
 

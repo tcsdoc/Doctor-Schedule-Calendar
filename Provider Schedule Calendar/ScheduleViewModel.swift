@@ -189,6 +189,13 @@ class ScheduleViewModel: ObservableObject {
         } else {
             offlineCacheDate = nil
             persistLocalCache()
+            let savedAt = Date()
+            CalendarPDFGenerator.writeMasterPDFToDocuments(
+                schedules: schedules,
+                monthlyNotes: monthlyNotes,
+                months: availableMonths,
+                updatedAt: savedAt
+            )
         }
 
         return (failures.isEmpty, successCount, totalChanges)
