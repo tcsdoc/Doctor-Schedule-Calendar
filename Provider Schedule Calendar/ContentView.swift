@@ -377,29 +377,8 @@ struct ContentView: View {
     }
     
     private func shareCalendar() {
-        // Check if there are unsaved changes that need to be saved first
-        if viewModel.hasChanges {
-            Task {
-                let (success, savedCount, totalCount) = await viewModel.saveChanges()
-                guard success else {
-                    await MainActor.run {
-                        let failedCount = totalCount - savedCount
-                        if savedCount > 0 {
-                            saveMessage = "⚠️ Save incomplete: \(savedCount)/\(totalCount) saved\n\(failedCount) records failed — fix before sharing"
-                        } else {
-                            saveMessage = "❌ Save failed — cannot share until all changes are saved"
-                        }
-                        showingSaveAlert = true
-                    }
-                    return
-                }
-                await performShare()
-            }
-        } else {
-            // Data is already saved, proceed immediately with sharing
-            Task {
-                await performShare()
-            }
+        Task {
+            await performShare()
         }
     }
     

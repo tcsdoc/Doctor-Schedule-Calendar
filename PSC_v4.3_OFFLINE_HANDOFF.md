@@ -56,5 +56,6 @@ Lisa should open PSC **once with network** after installing 4.3 so the cache fil
 
 - Memory master while editing; Save pushes to CloudKit when possible
 - iPad keeps local copy of last **fully saved** snapshot
+- **Share / Manage:** zone access only — independent of Save (no save-before-share gate)
 - Printed master = ultimate integrity reference
 - Grid layout unchanged
