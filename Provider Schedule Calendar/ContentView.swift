@@ -35,6 +35,12 @@ struct ContentView: View {
         return formatter
     }()
     private var offlineCacheFormatter: DateFormatter { Self.offlineCacheFormatter }
+
+    private var appVersionLabel: String {
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "4.3"
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
+        return "📅 PSC v\(version) (\(build))"
+    }
     
     var body: some View {
         // FULL SCREEN iPad Layout - No NavigationView constraints
@@ -148,7 +154,7 @@ struct ContentView: View {
             // ULTRA-COMPACT: Single row with essentials only
             HStack(spacing: 16) {
                 // Left: App name only
-                Text("📅 PSC v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "4.0.1")")
+                Text(appVersionLabel)
                     .font(.headline)
                     .fontWeight(.bold)
                 
