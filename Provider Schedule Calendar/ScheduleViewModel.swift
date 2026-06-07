@@ -164,7 +164,7 @@ class ScheduleViewModel: ObservableObject {
         let monitor = NWPathMonitor()
         monitor.pathUpdateHandler = { [weak self] path in
             Task { @MainActor in
-                self?.handleNetworkPathUpdate(path.status == .satisfied)
+                self?.handleNetworkPathUpdate(isConnected: path.status == .satisfied)
             }
         }
         monitor.start(queue: DispatchQueue(label: "com.gulfcoast.psc.network"))
