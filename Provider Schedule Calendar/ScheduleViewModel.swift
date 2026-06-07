@@ -11,8 +11,11 @@ class ScheduleViewModel: ObservableObject {
     @Published var monthlyNotes: [String: MonthlyNote] = [:]
     @Published var isLoading = false
     @Published var isSaving = false
+    @Published var isSyncingFromCloud = false
     @Published var isCloudKitAvailable = false
     @Published var hasChanges = false
+    /// Set when displaying from local cache because CloudKit sync failed or is unavailable.
+    @Published var offlineCacheDate: Date?
     
     // MARK: - Private Properties
     private let cloudKitManager = SimpleCloudKitManager()
@@ -44,30 +47,52 @@ class ScheduleViewModel: ObservableObject {
         loadInitialData()
     }
     
-    // MARK: - Initial Data Load (STARTUP ONLY)
+    // MARK: - Initial Data Load
     private func loadInitialData() {
-        isLoading = true
-        
+        if let cache = ScheduleLocalCache.load() {
+            schedules = cache.schedules
+            monthlyNotes = cache.monthlyNotes
+            offlineCacheDate = cache.savedAt
+            isLoading = false
+            isInitializing = false
+            isSyncingFromCloud = true
+        } else {
+            isLoading = true
+        }
+
         Task {
             do {
                 let loadedSchedules = try await cloudKitManager.fetchAllSchedules()
                 let loadedNotes = try await cloudKitManager.fetchAllMonthlyNotes()
-                
+
                 await MainActor.run {
                     self.schedules = loadedSchedules
                     self.monthlyNotes = loadedNotes
-                    self.isLoading = false
+                    self.offlineCacheDate = nil
                     self.hasChanges = false
                     self.pendingChanges.removeAll()
                     self.pendingNoteChanges.removeAll()
                     self.isInitializing = false
+                    self.isLoading = false
+                    self.isSyncingFromCloud = false
+                    self.persistLocalCache()
                 }
             } catch {
+                redesignLog("❌ CloudKit load failed: \(error)")
                 await MainActor.run {
                     self.isLoading = false
+                    self.isSyncingFromCloud = false
+                    self.isInitializing = false
+                    if self.schedules.isEmpty && self.monthlyNotes.isEmpty {
+                        self.offlineCacheDate = nil
+                    }
                 }
             }
         }
+    }
+
+    private func persistLocalCache() {
+        ScheduleLocalCache.save(schedules: schedules, monthlyNotes: monthlyNotes)
     }
     
     
@@ -161,8 +186,11 @@ class ScheduleViewModel: ObservableObject {
         if !failures.isEmpty {
             redesignLog("⚠️ Partial save: \(successCount) success, \(failures.count) failures")
             redesignLog("❌ Failed items: \(failures.joined(separator: ", "))")
+        } else {
+            offlineCacheDate = nil
+            persistLocalCache()
         }
-        
+
         return (failures.isEmpty, successCount, totalChanges)
     }
     

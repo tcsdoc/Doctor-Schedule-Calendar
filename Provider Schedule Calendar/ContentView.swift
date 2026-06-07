@@ -28,6 +28,13 @@ struct ContentView: View {
     // Note: Share functionality now uses standard iOS share sheet directly
     
     private let calendar = Calendar.current
+    private static let offlineCacheFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter
+    }()
+    private var offlineCacheFormatter: DateFormatter { Self.offlineCacheFormatter }
     
     var body: some View {
         // FULL SCREEN iPad Layout - No NavigationView constraints
@@ -173,6 +180,19 @@ struct ContentView: View {
                     .onDisappear {
                         isFlashing = false
                     }
+                } else if viewModel.isSyncingFromCloud {
+                    HStack(spacing: 4) {
+                        ProgressView().scaleEffect(0.7)
+                        Text("Syncing with iCloud...").font(.caption)
+                    }
+                    .foregroundColor(.blue)
+                } else if let cacheDate = viewModel.offlineCacheDate {
+                    Text("📴 Offline — schedule as of \(offlineCacheFormatter.string(from: cacheDate))")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.orange)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 8)
                 } else if !viewModel.isCloudKitAvailable {
                     Text("⚠️ CloudKit Issue").font(.caption)
                         .foregroundColor(.red)
