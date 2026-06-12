@@ -2,7 +2,9 @@
 
 **Branch:** `reliability-offline`  
 **Version:** 4.3 (build 5)  
-**Status:** Test iPad validated — ready for admin iPad install before merge to `main`
+**Status:** Admin iPad (Lisa) testing in progress — **flawless so far** (June 2026). Merge to `main` + tag **v4.3** after a few more days of normal use.
+
+**Master status doc:** see **`PSC_STATUS.md`** for full accomplishments and next phase.
 
 ---
 
@@ -91,4 +93,4 @@ Open PSC **once with network** after installing so the cache file is created fro
 
 ## Next step
 
-Admin iPad install from `reliability-offline` → merge to `main` + tag **v4.3** when Lisa sign-off complete.
+Admin testing continues on build 5 → merge to `main` + tag **v4.3** when sign-off complete → **next dev phase:** launch scan consolidation (4→2 CloudKit queries). See **`PSC_STATUS.md`**.
