@@ -11,11 +11,13 @@
 | Item | Status |
 |------|--------|
 | **Production branch (`main`)** | **v4.3** (build 5) — local cache, offline Save, network monitor, Documents PDF |
-| **Active dev branch** | None — next phase TBD (launch scan consolidation) |
+| **App Store** | v4.3 submission in progress (Mark, July 2026) — replaces Xcode dev install |
+| **Active dev branch** | **`v4.4-dev`** — improvement roadmap below; `main` stays untouched as working backup |
 | **Admin iPad (Lisa)** | v4.3 (5) — **admin testing complete**; merged to `main`, tag **v4.3** |
 | **Test iPad** | v4.3 validated (offline, banner, force quit, focus) |
 | **Git tag** | **`v4.3`** on `main` |
 | **ScheduleViewer** | Unchanged — no SV release required for PSC v4.3 |
+| **May 2026 CALL issue** | **CLOSED** July 2026 — one-time glitch, never recurred (see support handoff doc) |
 
 **Header on admin build:** `PSC v4.3 (5)`
 
@@ -113,10 +115,29 @@
 
 ---
 
-## Next phase — launch scan consolidation (post–v4.3 merge)
+## v4.4 improvement roadmap (agreed July 2026)
 
-**Branch:** TBD from merged `main` (e.g. `launch-streamline` or `v4.4-*`)  
-**Goal:** Safer, leaner foundation — not new features.
+**Branch:** `v4.4-dev` from `main` (v4.3). `main` = working backup; no direct commits.
+**Goal:** Safer, leaner foundation — not new features. Grid layout sacred.
+**Per-phase approval required before any code.**
+
+| Phase | Work | Why |
+|-------|------|-----|
+| **1** | **Edit-session merge guard** — defer Cloud merge while a field is focused or keystroke within last N seconds; apply when idle | Closes the last race window: reconnect-triggered sync landing mid-edit (Lisa's interruption scenario) |
+| **2** | **Launch scan consolidation** (4→2 queries) + **one duplicate winner rule** everywhere | Approved in v4.2 handoff §2; fetch loop and cleanup currently disagree on which duplicate wins |
+| **3** | **Preserve CloudKit recordName on parse** (~26 lines, from `PSC_DUPLICATE_INVESTIGATION.md`) | Closes last known duplicate-creation path; proposed Nov 2024, never implemented |
+| **4** | **Unit tests** for merge/save/cache logic | Ends reliance on week-long iPad soak tests for confidence |
+| **5** | **ContentView decomposition** (1,300 lines → focused files) | Isolates the sacred grid; safer future edits |
+
+Race-condition history (context for Phase 1): background CloudKit refresh used to
+overwrite text Lisa was typing when interruptions left sessions open. Fixed
+incrementally: pending-keys protection (committed edits safe) → v4.3 removed
+foreground sync (refresh only at launch + network reconnect). Remaining window:
+reconnect sync during active editing. Manual Save model is deliberate and stays.
+
+---
+
+## Next phase detail — launch scan consolidation (Phase 2)
 
 ### Problem: four CloudKit zone scans on every launch
 

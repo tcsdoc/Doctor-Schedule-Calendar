@@ -64,26 +64,18 @@ CloudKit Console stuck on `iCloud.com.gulfcoast.Calendar`; cannot select `iCloud
 
 ---
 
-## Open Investigation: Missing CALL Data
+## CLOSED: Missing CALL Data (July 2026)
 
 **Reported:** May 2026 CALL empty on May 29–30 in screenshot; May 31 may be off-screen (scroll).
 
-**Leading hypotheses (discussion only — no code changes approved):**
+**Resolution (July 3, 2026):** Closed as a one-time glitch per user decision. The issue
+never recurred through the full v4.3 test cycle (June–July 2026, admin testing flawless).
+Root cause never confirmed; most likely the v4.2 partial-save fix (failed saves now stay
+pending and retry) or a display/scroll artifact in ScheduleViewer.
 
-1. Duplicate records — wrong duplicate wins on fetch
-2. Save overwrote CALL with empty
-3. Partial save bug — **fixed in v4.2** (pending retry); was hypothesis for missing CALL
-4. Display/scroll vs true CloudKit loss
-
-**Critical check (no dashboard needed):** PSC on admin iPad → May 2026 → CALL on May 29–31.
-
-| iPad shows CALL | Dashboard empty | Conclusion |
-|-----------------|-----------------|------------|
-| Yes | Yes | Dashboard/access issue |
-| No | No | Real data issue |
-| Yes | — | SV/share/display issue if SV differs |
-
-**Printed master schedule** = ultimate integrity reference per charter.
+**If it ever recurs:** check PSC on admin iPad against the printed master first, then run
+the in-app duplicate scan before any repair. Printed master schedule = ultimate integrity
+reference per charter.
 
 ---
 
