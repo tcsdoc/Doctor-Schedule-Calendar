@@ -1,6 +1,6 @@
 # PSC — Project Status & Roadmap
 
-**Updated:** June 2026  
+**Updated:** July 2026  
 **Repo:** https://github.com/tcsdoc/Doctor-Schedule-Calendar  
 **Charter:** One admin (Lisa), one iPad, manual Save, memory master while editing, Cloud backup + zone share for ScheduleViewer, printed master = ultimate integrity reference, KISS, grid layout sacred, no code without explicit approval. User-facing text says **Cloud**, not CloudKit.
 
@@ -10,11 +10,11 @@
 
 | Item | Status |
 |------|--------|
-| **Production branch (`main`)** | **v4.2** (build 6) — focus fix, Tab/`½`, partial save retry, monthly note delete |
-| **Active dev branch** | **`reliability-offline`** — **v4.3** (build 5) |
-| **Admin iPad (Lisa)** | v4.3 (5) installed from Xcode; **testing in progress — flawless so far** |
+| **Production branch (`main`)** | **v4.3** (build 5) — local cache, offline Save, network monitor, Documents PDF |
+| **Active dev branch** | None — next phase TBD (launch scan consolidation) |
+| **Admin iPad (Lisa)** | v4.3 (5) — **admin testing complete**; merged to `main`, tag **v4.3** |
 | **Test iPad** | v4.3 validated (offline, banner, force quit, focus) |
-| **Merge to `main`** | Pending — a few more days of admin testing, then merge + tag **v4.3** |
+| **Git tag** | **`v4.3`** on `main` |
 | **ScheduleViewer** | Unchanged — no SV release required for PSC v4.3 |
 
 **Header on admin build:** `PSC v4.3 (5)`
@@ -42,7 +42,7 @@
 
 ---
 
-### v4.3 — on `reliability-offline` (not yet merged)
+### v4.3 — shipped on `main` (tag `v4.3`)
 
 **Problem solved:** Cold launch with no network showed empty calendar; offline Save could lose data on force quit.
 
@@ -149,12 +149,12 @@ Steps 3–4 re-fetch what 1–2 already pulled (`checkForDuplicatesOnLaunch` in 
 
 ## Resume checklist
 
-### When admin testing completes (merge v4.3)
+### v4.3 merge — complete (July 2026)
 
-1. Confirm no issues reported over remaining test days
-2. Merge `reliability-offline` → `main`
-3. Tag **v4.3**
-4. Plan App Store submission for Lisa (Xcode dev install is not long-term distribution)
+1. ~~Admin testing~~ — complete, no issues reported
+2. ~~Merge `reliability-offline` → `main`~~ — done
+3. ~~Tag **v4.3**~~ — done
+4. **Next:** Plan App Store submission for Lisa (Xcode dev install is not long-term distribution)
 
 ### When starting next PSC dev phase
 
@@ -167,7 +167,7 @@ Steps 3–4 re-fetch what 1–2 already pulled (`checkForDuplicatesOnLaunch` in 
 
 - **File → Open Folder** → other project
 - **New Agent** — keep PSC context in this chat / PSC folder history
-- PSC state is in this repo + GitHub branch `reliability-offline`
+- PSC state is in this repo + GitHub `main` (tag `v4.3`)
 
 ---
 

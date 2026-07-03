@@ -1,8 +1,8 @@
 # PSC v4.3 — Offline Local Cache
 
-**Branch:** `reliability-offline`  
+**Branch:** merged to `main` (July 2026)  
 **Version:** 4.3 (build 5)  
-**Status:** Admin iPad (Lisa) testing in progress — **flawless so far** (June 2026). Merge to `main` + tag **v4.3** after a few more days of normal use.
+**Status:** Admin testing complete. Merged to `main` and tagged **v4.3**.
 
 **Master status doc:** see **`PSC_STATUS.md`** for full accomplishments and next phase.
 
@@ -93,4 +93,4 @@ Open PSC **once with network** after installing so the cache file is created fro
 
 ## Next step
 
-Admin testing continues on build 5 → merge to `main` + tag **v4.3** when sign-off complete → **next dev phase:** launch scan consolidation (4→2 CloudKit queries). See **`PSC_STATUS.md`**.
+~~Admin testing + merge~~ — complete (July 2026). **Next dev phase:** launch scan consolidation (4→2 CloudKit queries). See **`PSC_STATUS.md`**.
