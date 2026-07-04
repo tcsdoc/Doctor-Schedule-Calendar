@@ -12,7 +12,7 @@
 |------|--------|
 | **Production branch (`main`)** | **v4.3** (build 5) — local cache, offline Save, network monitor, Documents PDF |
 | **App Store** | v4.3 submission in progress (Mark, July 2026) — replaces Xcode dev install |
-| **Active dev branch** | **`v4.4-dev`** — Phases 1–2 complete (build 4.4 (2), July 4, 2026); Phase 1 validated on admin iPad. Phases 3–5 pending approval. `main` stays untouched as working backup |
+| **Active dev branch** | **`v4.4-dev`** — Phases 1–3 complete (build 4.4 (3), July 4, 2026). Phases 4–5 pending approval. `main` stays untouched as working backup |
 | **Admin iPad (Lisa)** | **v4.4 (2)** installed July 4, 2026 — smoke test passed same day (edits, Save, offline, reconnect); **initial Cloud sync noticeably faster**. Soaking in normal use |
 | **Test iPad** | v4.3 validated (offline, banner, force quit, focus) |
 | **Git tag** | **`v4.3`** on `main` |
@@ -125,7 +125,7 @@
 |-------|------|-----|
 | **1** ✅ | **Edit-session merge guard** — DONE July 3, 2026. Merge deferred while a field is focused or keystroke within last 30s; re-check every 10s; 5-min cap. Also: `ITSAppUsesNonExemptEncryption=false` in Info.plist; deployment target 17.0 → 26.0 | Closes the last race window: reconnect-triggered sync landing mid-edit (Lisa's interruption scenario). Typed data protected by pending keys regardless; guard removes mid-session view disruption |
 | **2** ✅ | **Launch scan consolidation** — DONE July 4, 2026, build 4.4 (2). One `fetchAllData()` scan per record type; most-recently-modified duplicate wins in both display and cleanup; duplicate alert driven by load result; grid re-syncs after "Fix Now" | Approved in v4.2 handoff §2; fetch loop and cleanup previously disagreed on which duplicate wins |
-| **3** | **Preserve CloudKit recordName on parse** (~26 lines, from `PSC_DUPLICATE_INVESTIGATION.md`) | Closes last known duplicate-creation path; proposed Nov 2024, never implemented |
+| **3** ✅ | **Preserve CloudKit recordName on parse** — DONE July 4, 2026, build 4.4 (3). Parsed records carry true `recordID.recordName`; deletes target captured true IDs (with deterministic fallback); clear-then-refill before Save keeps original identity | Closes last known duplicate-creation path (Oct 2024 outbreak mechanism); proposed Nov 2024 in `PSC_DUPLICATE_INVESTIGATION.md` |
 | **4** | **Unit tests** for merge/save/cache logic | Ends reliance on week-long iPad soak tests for confidence |
 | **5** | **ContentView decomposition** (1,300 lines → focused files) | Isolates the sacred grid; safer future edits |
 

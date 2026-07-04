@@ -25,6 +25,8 @@ class ScheduleViewModel: ObservableObject {
     private let cloudKitManager = SimpleCloudKitManager()
     private var pendingChanges: Set<String> = []
     private var pendingNoteChanges: Set<String> = []
+    private var pendingScheduleDeletionIDs: [String: String] = [:]  // dateKey -> recordName
+    private var pendingNoteDeletionIDs: [String: String] = [:]      // monthKey -> recordName
     private var isInitializing = true
     private var networkMonitor: NWPathMonitor?
     private var cloudSyncInFlight = false
@@ -231,7 +233,8 @@ class ScheduleViewModel: ObservableObject {
         let dateKey = dateKey(for: date)
         
         // Get existing schedule or create new one
-        var schedule = schedules[dateKey] ?? ScheduleRecord(date: date)
+        let existing = schedules[dateKey]
+        var schedule = existing ?? ScheduleRecord(date: date)
         
         // Update the specific field
         switch field {
@@ -247,8 +250,15 @@ class ScheduleViewModel: ObservableObject {
         
         // Update local data
         if schedule.isEmpty {
+            if let existing {
+                pendingScheduleDeletionIDs[dateKey] = existing.id
+            }
             schedules.removeValue(forKey: dateKey)
         } else {
+            if let capturedID = pendingScheduleDeletionIDs.removeValue(forKey: dateKey) {
+                schedule = ScheduleRecord(id: capturedID, date: schedule.date, os: schedule.os,
+                                          cl: schedule.cl, off: schedule.off, call: schedule.call)
+            }
             schedules[dateKey] = schedule
         }
         
@@ -278,7 +288,8 @@ class ScheduleViewModel: ObservableObject {
                 if let schedule = schedules[dateKey] {
                     try await cloudKitManager.saveSchedule(schedule)
                 } else {
-                    try await cloudKitManager.deleteSchedule(dateKey: dateKey)
+                    try await cloudKitManager.deleteSchedule(recordName: pendingScheduleDeletionIDs[dateKey] ?? "schedule_\(dateKey)")
+                    pendingScheduleDeletionIDs.removeValue(forKey: dateKey)
                 }
                 savedScheduleKeys.insert(dateKey)
                 successCount += 1
@@ -294,7 +305,8 @@ class ScheduleViewModel: ObservableObject {
                 if let note = monthlyNotes[monthKey] {
                     try await cloudKitManager.saveMonthlyNote(note)
                 } else {
-                    try await cloudKitManager.deleteMonthlyNote(monthKey: monthKey)
+                    try await cloudKitManager.deleteMonthlyNote(recordName: pendingNoteDeletionIDs[monthKey] ?? "notes_\(monthKey)")
+                    pendingNoteDeletionIDs.removeValue(forKey: monthKey)
                 }
                 savedNoteKeys.insert(monthKey)
                 successCount += 1
@@ -355,7 +367,8 @@ class ScheduleViewModel: ObservableObject {
         let year = calendar.component(.year, from: date)
         
         // Get existing note or create new one
-        var note = monthlyNotes[monthKey] ?? MonthlyNote(month: month, year: year)
+        let existing = monthlyNotes[monthKey]
+        var note = existing ?? MonthlyNote(month: month, year: year)
         let oldLine1 = note.line1
         note.line1 = line1.isEmpty ? nil : line1
         
@@ -364,8 +377,15 @@ class ScheduleViewModel: ObservableObject {
         
         // Remove note if both lines are empty
         if (note.line1?.isEmpty ?? true) && (note.line2?.isEmpty ?? true) {
+            if let existing {
+                pendingNoteDeletionIDs[monthKey] = existing.id
+            }
             monthlyNotes.removeValue(forKey: monthKey)
         } else {
+            if let capturedID = pendingNoteDeletionIDs.removeValue(forKey: monthKey) {
+                note = MonthlyNote(id: capturedID, month: note.month, year: note.year,
+                                   line1: note.line1, line2: note.line2, line3: note.line3)
+            }
             monthlyNotes[monthKey] = note
         }
         
@@ -387,7 +407,8 @@ class ScheduleViewModel: ObservableObject {
         let year = calendar.component(.year, from: date)
         
         // Get existing note or create new one
-        var note = monthlyNotes[monthKey] ?? MonthlyNote(month: month, year: year)
+        let existing = monthlyNotes[monthKey]
+        var note = existing ?? MonthlyNote(month: month, year: year)
         let oldLine2 = note.line2
         note.line2 = line2.isEmpty ? nil : line2
         
@@ -396,8 +417,15 @@ class ScheduleViewModel: ObservableObject {
         
         // Remove note if both lines are empty
         if (note.line1?.isEmpty ?? true) && (note.line2?.isEmpty ?? true) {
+            if let existing {
+                pendingNoteDeletionIDs[monthKey] = existing.id
+            }
             monthlyNotes.removeValue(forKey: monthKey)
         } else {
+            if let capturedID = pendingNoteDeletionIDs.removeValue(forKey: monthKey) {
+                note = MonthlyNote(id: capturedID, month: note.month, year: note.year,
+                                   line1: note.line1, line2: note.line2, line3: note.line3)
+            }
             monthlyNotes[monthKey] = note
         }
         
@@ -465,18 +493,22 @@ struct ScheduleRecord: Identifiable, Codable, Equatable {
     var off: String?
     var call: String?
     
-    init(date: Date, os: String? = nil, cl: String? = nil, off: String? = nil, call: String? = nil) {
+    init(id: String? = nil, date: Date, os: String? = nil, cl: String? = nil, off: String? = nil, call: String? = nil) {
         self.date = date
         self.os = os
         self.cl = cl
         self.off = off
         self.call = call
         
-        // Generate deterministic ID
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        formatter.timeZone = TimeZone(identifier: "UTC")
-        self.id = "schedule_\(formatter.string(from: date))"
+        if let id {
+            self.id = id
+        } else {
+            // Generate deterministic ID
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyy-MM-dd"
+            formatter.timeZone = TimeZone(identifier: "UTC")
+            self.id = "schedule_\(formatter.string(from: date))"
+        }
     }
     
     var isEmpty: Bool {
@@ -500,13 +532,17 @@ struct MonthlyNote: Identifiable, Codable, CustomStringConvertible {
         return "MonthlyNote(id: \(id), month: \(month), year: \(year), line1: \(line1 ?? "nil"), line2: \(line2 ?? "nil"), line3: \(line3 ?? "nil"))"
     }
     
-    init(month: Int, year: Int, line1: String? = nil, line2: String? = nil, line3: String? = nil) {
+    init(id: String? = nil, month: Int, year: Int, line1: String? = nil, line2: String? = nil, line3: String? = nil) {
         self.month = month
         self.year = year
         self.line1 = line1
         self.line2 = line2
         self.line3 = line3
-        self.id = "notes_\(year)-\(String(format: "%02d", month))"
+        if let id {
+            self.id = id
+        } else {
+            self.id = "notes_\(year)-\(String(format: "%02d", month))"
+        }
     }
     
     var isEmpty: Bool {

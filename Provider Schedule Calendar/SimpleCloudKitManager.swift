@@ -88,9 +88,9 @@ actor SimpleCloudKitManager {
         let _ = try await privateDatabase.save(record)
     }
     
-    func deleteSchedule(dateKey: String) async throws {
+    func deleteSchedule(recordName: String) async throws {
         
-        let recordID = CKRecord.ID(recordName: "schedule_\(dateKey)", zoneID: zoneID)
+        let recordID = CKRecord.ID(recordName: recordName, zoneID: zoneID)
         
         do {
             let _ = try await privateDatabase.deleteRecord(withID: recordID)
@@ -139,9 +139,9 @@ actor SimpleCloudKitManager {
         let _ = try await privateDatabase.save(record)
     }
     
-    func deleteMonthlyNote(monthKey: String) async throws {
+    func deleteMonthlyNote(recordName: String) async throws {
         
-        let recordID = CKRecord.ID(recordName: "notes_\(monthKey)", zoneID: zoneID)
+        let recordID = CKRecord.ID(recordName: recordName, zoneID: zoneID)
         
         do {
             let _ = try await privateDatabase.deleteRecord(withID: recordID)
@@ -164,6 +164,7 @@ actor SimpleCloudKitManager {
         }
         
         return ScheduleRecord(
+            id: record.recordID.recordName,
             date: date,
             os: record["CD_line1"] as? String,
             cl: record["CD_line2"] as? String,
@@ -180,6 +181,7 @@ actor SimpleCloudKitManager {
         }
         
         return MonthlyNote(
+            id: record.recordID.recordName,
             month: month,
             year: year,
             line1: record["CD_line1"] as? String,
