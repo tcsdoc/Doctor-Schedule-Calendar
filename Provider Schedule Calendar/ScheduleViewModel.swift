@@ -98,7 +98,7 @@ class ScheduleViewModel: ObservableObject {
     }
 
     /// Refresh from Cloud when network returns (NWPathMonitor only).
-    private func syncFromCloudIfNeeded() async {
+    func syncFromCloudIfNeeded() async {
         guard !isLoading, !cloudSyncInFlight, !isInitializing else { return }
         guard isNetworkReachable() else {
             markOffline()
@@ -446,13 +446,13 @@ class ScheduleViewModel: ObservableObject {
     typealias DuplicateDetectionResult = SimpleCloudKitManager.DuplicateDetectionResult
     typealias DuplicateGroup = SimpleCloudKitManager.DuplicateGroup
     
-    func checkForDuplicates() async throws -> DuplicateDetectionResult {
-        latestDuplicateResult
-            ?? SimpleCloudKitManager.DuplicateDetectionResult(scheduleDuplicates: [], monthlyNoteDuplicates: [])
-    }
-    
     func cleanupDuplicates(_ result: DuplicateDetectionResult) async throws -> String {
         return try await cloudKitManager.cleanupDuplicates(result)
+    }
+
+    func refreshAfterCleanup() async {
+        latestDuplicateResult = nil
+        await syncFromCloudIfNeeded()
     }
 }
 

@@ -83,7 +83,6 @@ struct ContentView: View {
                 }
         .onAppear {
             initializeCurrentMonth()
-            checkForDuplicatesOnLaunch()
         }
         .alert("Save Status", isPresented: $showingSaveAlert) {
             Button("OK") {}
@@ -146,6 +145,13 @@ struct ContentView: View {
             default:
                 break
             }
+        }
+        .onChange(of: viewModel.latestDuplicateResult?.hasDuplicates) { _, hasDuplicates in
+            guard hasDuplicates == true, !isDuplicateCheckComplete,
+                  let result = viewModel.latestDuplicateResult else { return }
+            isDuplicateCheckComplete = true
+            duplicateDetectionResult = result
+            showingDuplicateAlert = true
         }
     }
     
@@ -534,27 +540,6 @@ struct ContentView: View {
 
     // MARK: - Duplicate Detection Functions
     
-    private func checkForDuplicatesOnLaunch() {
-        // Don't run multiple times
-        guard !isDuplicateCheckComplete else { return }
-        isDuplicateCheckComplete = true
-        
-        Task {
-            do {
-                let result = try await viewModel.checkForDuplicates()
-                
-                await MainActor.run {
-                    if result.hasDuplicates {
-                        self.duplicateDetectionResult = result
-                        self.showingDuplicateAlert = true
-                    }
-                }
-            } catch {
-                redesignLog("❌ Duplicate detection failed: \(error)")
-            }
-        }
-    }
-    
     private func formatSimpleDuplicateMessage(_ result: ScheduleViewModel.DuplicateDetectionResult) -> String {
         var message = "⚠️ Found \(result.totalDuplicateCount) duplicate records across \(result.totalAffectedDates) dates.\n\n"
         message += "This may cause incorrect data in ScheduleViewer.\n\n"
@@ -625,6 +610,8 @@ struct ContentView: View {
                         showingSaveAlert = true
                     }
                 }
+
+                await viewModel.refreshAfterCleanup()
             } catch {
                 await MainActor.run {
                     saveMessage = "❌ Cleanup failed: \(error.localizedDescription)"
