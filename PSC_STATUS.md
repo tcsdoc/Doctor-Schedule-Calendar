@@ -14,12 +14,19 @@
 | **App Store** | v4.3 submission in progress (Mark, July 2026) — replaces Xcode dev install |
 | **Active dev branch** | **`v4.4-dev`** — Phases 1–3 complete (build 4.4 (3), July 4, 2026). Phases 4–5 pending approval. `main` stays untouched as working backup |
 | **Admin iPad (Lisa)** | **v4.4 (3)** installed July 4, 2026 — full test pass same day (launch, edit/save/relaunch, delete-and-relaunch, clear-then-refill); **data integrity confirmed**. Soaking in normal use |
-| **Test iPad** | v4.3 validated (offline, banner, force quit, focus) |
+| **Test iPad (testbed)** | **v4.4 (3)** validated July 4, 2026 — separate Apple ID (tcsdoc@mac.com), disposable data. 4-round test: (1) 20 entries verified field-by-field in CloudKit via `cktool`; (2) delete + clear-then-refill; (3) force-quit with unsaved edit survives via cache, save lands server-side; (4) **duplicate injection**: UUID-named twin injected via cktool → app detected it, Fix Now kept most-recent winner, and editing the UUID-named survivor updated in place (no new duplicate) — direct proof of the Phase 3 fix against the Oct 2024 failure mode |
 | **Git tag** | **`v4.3`** on `main` |
 | **ScheduleViewer** | Unchanged — no SV release required for PSC v4.3 |
 | **May 2026 CALL issue** | **CLOSED** July 2026 — one-time glitch, never recurred (see support handoff doc) |
 
-**Header on admin build:** `PSC v4.4 (2)`
+**Header on admin build:** `PSC v4.4 (3)`
+
+**CloudKit CLI access (for server-side verification):** `xcrun cktool` with a user token
+(`xcrun cktool save-token --type user` — interactive, token lasts hours). Team `KSFQHNX4S8`,
+container `iCloud.com.gulfcoast.ProviderCalendar`, environment **production** (entitlements pin
+Production even for Xcode installs), private DB, zone `ProviderScheduleZone`. Note: CloudKit web
+console container picker is broken (reverts to default container) — use cktool instead.
+Containers can never be deleted from an Apple developer team; ignore the strays.
 
 ---
 
