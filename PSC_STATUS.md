@@ -12,7 +12,7 @@
 |------|--------|
 | **Production branch (`main`)** | **v4.3** (build 5) — local cache, offline Save, network monitor, Documents PDF |
 | **App Store** | v4.3 submission in progress (Mark, July 2026) — replaces Xcode dev install |
-| **Active dev branch** | **`v4.4-dev`** — improvement roadmap below; `main` stays untouched as working backup |
+| **Active dev branch** | **`v4.4-dev`** — Phase 1 (edit-session merge guard) complete July 3, 2026; **Mark testing**. Phases 2–5 pending approval. `main` stays untouched as working backup |
 | **Admin iPad (Lisa)** | v4.3 (5) — **admin testing complete**; merged to `main`, tag **v4.3** |
 | **Test iPad** | v4.3 validated (offline, banner, force quit, focus) |
 | **Git tag** | **`v4.3`** on `main` |
