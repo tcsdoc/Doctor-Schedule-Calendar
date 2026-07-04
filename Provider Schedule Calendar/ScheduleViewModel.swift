@@ -138,7 +138,7 @@ class ScheduleViewModel: ObservableObject {
         cloudSyncInFlight = false
     }
 
-    private func mergeCloudKitData(
+    func mergeCloudKitData(
         loadedSchedules: [String: ScheduleRecord],
         loadedNotes: [String: MonthlyNote]
     ) {
