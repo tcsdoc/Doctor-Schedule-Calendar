@@ -52,46 +52,6 @@ actor SimpleCloudKitManager {
     }
     
     // MARK: - Schedule Operations
-    func fetchAllSchedules() async throws -> [String: ScheduleRecord] {
-        try await ensureCustomZoneExists()
-        
-        
-        let query = CKQuery(recordType: "CD_DailySchedule", predicate: NSPredicate(value: true))
-        var schedules: [String: ScheduleRecord] = [:]
-        var cursor: CKQueryOperation.Cursor? = nil
-        var totalFetched = 0
-        var batchCount = 0
-        
-        repeat {
-            batchCount += 1
-            
-            let (matchResults, moreComing) = cursor == nil 
-                ? try await privateDatabase.records(matching: query, inZoneWith: zoneID)
-                : try await privateDatabase.records(continuingMatchFrom: cursor!)
-            
-            // Process this batch of results
-            for (_, result) in matchResults {
-                switch result {
-                case .success(let record):
-                    if let schedule = parseScheduleRecord(record) {
-                        let dateKey = dateKey(for: schedule.date)
-                        schedules[dateKey] = schedule
-                        totalFetched += 1
-                    }
-                case .failure(let error):
-                    redesignLog("❌ Failed to process schedule record: \(error)")
-                }
-            }
-            
-            
-            // Update cursor for next batch
-            cursor = moreComing
-            
-        } while cursor != nil
-        
-        return schedules
-    }
-    
     func saveSchedule(_ schedule: ScheduleRecord) async throws {
         try await ensureCustomZoneExists()
         
@@ -143,47 +103,6 @@ actor SimpleCloudKitManager {
     }
     
     // MARK: - Monthly Notes Operations
-    func fetchAllMonthlyNotes() async throws -> [String: MonthlyNote] {
-        try await ensureCustomZoneExists()
-        
-        
-        let query = CKQuery(recordType: "CD_MonthlyNotes", predicate: NSPredicate(value: true))
-        var notes: [String: MonthlyNote] = [:]
-        var cursor: CKQueryOperation.Cursor? = nil
-        var totalFetched = 0
-        var batchCount = 0
-        
-        repeat {
-            batchCount += 1
-            
-            let (matchResults, moreComing) = cursor == nil 
-                ? try await privateDatabase.records(matching: query, inZoneWith: zoneID)
-                : try await privateDatabase.records(continuingMatchFrom: cursor!)
-            
-            // Process this batch of results
-            for (_, result) in matchResults {
-                switch result {
-                case .success(let record):
-                    if let note = parseMonthlyNoteRecord(record) {
-                        // Store using monthKey format (yyyy-MM) instead of note.id (notes_yyyy-MM)
-                        let monthKey = String(format: "%04d-%02d", note.year, note.month)
-                        notes[monthKey] = note
-                        totalFetched += 1
-                    }
-                case .failure(let error):
-                    redesignLog("❌ Failed to process monthly note record: \(error)")
-                }
-            }
-            
-            
-            // Update cursor for next batch
-            cursor = moreComing
-            
-        } while cursor != nil
-        
-        return notes
-    }
-    
     func saveMonthlyNote(_ note: MonthlyNote) async throws {
         try await ensureCustomZoneExists()
         
@@ -397,6 +316,19 @@ actor SimpleCloudKitManager {
     
     // MARK: - Duplicate Detection & Cleanup (Option B)
     
+    struct ZoneFetchResult {
+        let schedules: [String: ScheduleRecord]
+        let monthlyNotes: [String: MonthlyNote]
+        let duplicates: DuplicateDetectionResult
+    }
+    
+    static func winningRecord(of records: [CKRecord]) -> CKRecord? {
+        records.max(by: {
+            (($0.modificationDate ?? $0.creationDate) ?? Date.distantPast) <
+            (($1.modificationDate ?? $1.creationDate) ?? Date.distantPast)
+        })
+    }
+    
     /// Represents a duplicate record set for a specific date
     struct DuplicateGroup {
         let dateKey: String
@@ -406,7 +338,7 @@ actor SimpleCloudKitManager {
         
         /// Returns the record to keep (most recently modified)
         var recordToKeep: CKRecord? {
-            records.max(by: { ($0.modificationDate ?? $0.creationDate) ?? Date.distantPast < ($1.modificationDate ?? $1.creationDate) ?? Date.distantPast })
+            SimpleCloudKitManager.winningRecord(of: records)
         }
         
         /// Returns records to delete (all except the most recent)
@@ -435,28 +367,65 @@ actor SimpleCloudKitManager {
         }
     }
     
-    /// Scan CloudKit for duplicate records
-    func detectDuplicates() async throws -> DuplicateDetectionResult {
+    func fetchAllData() async throws -> ZoneFetchResult {
+        try await ensureCustomZoneExists()
         
-        // Fetch all raw records from CloudKit (not parsed into models)
-        let scheduleRecords = try await fetchAllRawScheduleRecords()
-        let monthlyNoteRecords = try await fetchAllRawMonthlyNoteRecords()
+        let rawSchedules = try await fetchAllRawScheduleRecords()
+        let rawNotes = try await fetchAllRawMonthlyNoteRecords()
         
-        let scheduleDuplicates = findDuplicatesInSchedules(scheduleRecords)
+        var schedules: [String: ScheduleRecord] = [:]
+        var scheduleGroups: [String: [CKRecord]] = [:]
         
-        let monthlyNoteDuplicates = findDuplicatesInMonthlyNotes(monthlyNoteRecords)
+        for record in rawSchedules {
+            guard let date = record["CD_date"] as? Date else {
+                redesignLog("❌ Invalid schedule record - missing date")
+                continue
+            }
+            let key = dateKey(for: date)
+            scheduleGroups[key, default: []].append(record)
+        }
         
-        let result = DuplicateDetectionResult(
+        for (key, group) in scheduleGroups {
+            guard let winner = Self.winningRecord(of: group),
+                  let schedule = parseScheduleRecord(winner) else { continue }
+            schedules[key] = schedule
+        }
+        
+        var monthlyNotes: [String: MonthlyNote] = [:]
+        var noteGroups: [String: [CKRecord]] = [:]
+        
+        for record in rawNotes {
+            guard let month = record["CD_month"] as? Int,
+                  let year = record["CD_year"] as? Int else {
+                redesignLog("❌ Invalid monthly note record - missing month/year integers")
+                continue
+            }
+            let key = String(format: "%04d-%02d", year, month)
+            noteGroups[key, default: []].append(record)
+        }
+        
+        for (key, group) in noteGroups {
+            guard let winner = Self.winningRecord(of: group),
+                  let note = parseMonthlyNoteRecord(winner) else { continue }
+            monthlyNotes[key] = note
+        }
+        
+        let scheduleDuplicates = findDuplicatesInSchedules(rawSchedules)
+        let monthlyNoteDuplicates = findDuplicatesInMonthlyNotes(rawNotes)
+        let duplicates = DuplicateDetectionResult(
             scheduleDuplicates: scheduleDuplicates,
             monthlyNoteDuplicates: monthlyNoteDuplicates
         )
         
-        if result.hasDuplicates {
-            redesignLog("⚠️ Found \(result.totalDuplicateCount) duplicate records across \(result.totalAffectedDates) dates")
-        } else {
+        if duplicates.hasDuplicates {
+            redesignLog("⚠️ Found \(duplicates.totalDuplicateCount) duplicate records across \(duplicates.totalAffectedDates) dates")
         }
         
-        return result
+        return ZoneFetchResult(
+            schedules: schedules,
+            monthlyNotes: monthlyNotes,
+            duplicates: duplicates
+        )
     }
     
     /// Delete duplicate records, keeping the most recent ones

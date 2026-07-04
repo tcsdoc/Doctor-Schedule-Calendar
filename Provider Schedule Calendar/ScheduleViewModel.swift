@@ -19,6 +19,7 @@ class ScheduleViewModel: ObservableObject {
     @Published var isOffline = false
     /// Local snapshot time shown only while `isOffline` is true.
     @Published var offlineCacheDate: Date?
+    @Published private(set) var latestDuplicateResult: DuplicateDetectionResult?
     
     // MARK: - Private Properties
     private let cloudKitManager = SimpleCloudKitManager()
@@ -72,11 +73,11 @@ class ScheduleViewModel: ObservableObject {
 
         Task {
             do {
-                let loadedSchedules = try await cloudKitManager.fetchAllSchedules()
-                let loadedNotes = try await cloudKitManager.fetchAllMonthlyNotes()
+                let result = try await cloudKitManager.fetchAllData()
 
                 await MainActor.run {
-                    self.mergeCloudKitData(loadedSchedules: loadedSchedules, loadedNotes: loadedNotes)
+                    self.mergeCloudKitData(loadedSchedules: result.schedules, loadedNotes: result.monthlyNotes)
+                    self.latestDuplicateResult = result.duplicates
                     self.isInitializing = false
                     self.isLoading = false
                     self.isSyncingFromCloud = false
@@ -121,9 +122,9 @@ class ScheduleViewModel: ObservableObject {
         isSyncingFromCloud = true
 
         do {
-            let loadedSchedules = try await cloudKitManager.fetchAllSchedules()
-            let loadedNotes = try await cloudKitManager.fetchAllMonthlyNotes()
-            mergeCloudKitData(loadedSchedules: loadedSchedules, loadedNotes: loadedNotes)
+            let result = try await cloudKitManager.fetchAllData()
+            mergeCloudKitData(loadedSchedules: result.schedules, loadedNotes: result.monthlyNotes)
+            latestDuplicateResult = result.duplicates
             isOffline = false
             offlineCacheDate = nil
         } catch {
@@ -446,7 +447,8 @@ class ScheduleViewModel: ObservableObject {
     typealias DuplicateGroup = SimpleCloudKitManager.DuplicateGroup
     
     func checkForDuplicates() async throws -> DuplicateDetectionResult {
-        return try await cloudKitManager.detectDuplicates()
+        latestDuplicateResult
+            ?? SimpleCloudKitManager.DuplicateDetectionResult(scheduleDuplicates: [], monthlyNoteDuplicates: [])
     }
     
     func cleanupDuplicates(_ result: DuplicateDetectionResult) async throws -> String {
