@@ -13,7 +13,7 @@
 | **Production branch (`main`)** | **v4.3** (build 5) — local cache, offline Save, network monitor, Documents PDF |
 | **App Store** | v4.3 submission in progress (Mark, July 2026) — replaces Xcode dev install |
 | **Active dev branch** | **`v4.4-dev`** — Phases 1–2 complete (build 4.4 (2), July 4, 2026); Phase 1 validated on admin iPad. Phases 3–5 pending approval. `main` stays untouched as working backup |
-| **Admin iPad (Lisa)** | **v4.4 (2)** installed July 4, 2026 (Xcode, over existing install) — Phases 1–2 in live testing |
+| **Admin iPad (Lisa)** | **v4.4 (2)** installed July 4, 2026 — smoke test passed same day (edits, Save, offline, reconnect); **initial Cloud sync noticeably faster**. Soaking in normal use |
 | **Test iPad** | v4.3 validated (offline, banner, force quit, focus) |
 | **Git tag** | **`v4.3`** on `main` |
 | **ScheduleViewer** | Unchanged — no SV release required for PSC v4.3 |
