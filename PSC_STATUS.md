@@ -13,13 +13,13 @@
 | **Production branch (`main`)** | **v4.3** (build 5) — local cache, offline Save, network monitor, Documents PDF |
 | **App Store** | v4.3 submission in progress (Mark, July 2026) — replaces Xcode dev install |
 | **Active dev branch** | **`v4.4-dev`** — Phases 1–2 complete (build 4.4 (2), July 4, 2026); Phase 1 validated on admin iPad. Phases 3–5 pending approval. `main` stays untouched as working backup |
-| **Admin iPad (Lisa)** | **v4.4 (1)** installed July 3, 2026 (Xcode, over existing install) — Phase 1 merge guard in live testing |
+| **Admin iPad (Lisa)** | **v4.4 (2)** installed July 4, 2026 (Xcode, over existing install) — Phases 1–2 in live testing |
 | **Test iPad** | v4.3 validated (offline, banner, force quit, focus) |
 | **Git tag** | **`v4.3`** on `main` |
 | **ScheduleViewer** | Unchanged — no SV release required for PSC v4.3 |
 | **May 2026 CALL issue** | **CLOSED** July 2026 — one-time glitch, never recurred (see support handoff doc) |
 
-**Header on admin build:** `PSC v4.4 (1)`
+**Header on admin build:** `PSC v4.4 (2)`
 
 ---
 
