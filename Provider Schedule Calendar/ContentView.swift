@@ -67,7 +67,8 @@ struct ContentView: View {
                             MonthCalendarView(
                                 month: currentMonth,
                                 schedules: viewModel.schedules,
-                                onScheduleChange: viewModel.updateSchedule
+                                onScheduleChange: viewModel.updateSchedule,
+                                onFocusChange: { viewModel.editorFocusChanged("calendar", isFocused: $0) }
                             )
                             .id(editorRefreshID)
                             .padding(.horizontal, 20) // Only horizontal padding for calendar
@@ -874,6 +875,7 @@ struct MonthCalendarView: View {
     let month: Date
     let schedules: [String: ScheduleRecord]
     let onScheduleChange: (Date, ScheduleField, String) -> Void
+    let onFocusChange: (Bool) -> Void
     
     @FocusState private var focusedField: CalendarFocusField?
     
@@ -921,6 +923,7 @@ struct MonthCalendarView: View {
                 }
             }
         }
+        .onChange(of: focusedField) { onFocusChange(focusedField != nil) }
     }
     
     private var inMonthDates: [Date] {
@@ -1133,6 +1136,7 @@ struct RedesignedMonthlyNotesView: View {
     let line2: String
     let onLine1Change: (String) -> Void
     let onLine2Change: (String) -> Void
+    let onFocusChange: (Bool) -> Void
     
     @State private var line1Text: String = ""
     @State private var line2Text: String = ""
@@ -1253,6 +1257,12 @@ struct RedesignedMonthlyNotesView: View {
                 line2Text = newValue
             }
         }
+        .onChange(of: line1Focused) { _, _ in
+            onFocusChange(line1Focused || line2Focused)
+        }
+        .onChange(of: line2Focused) { _, _ in
+            onFocusChange(line1Focused || line2Focused)
+        }
     }
 }
 
@@ -1274,7 +1284,8 @@ struct MonthlyNotesContainer: View {
             },
             onLine2Change: { newLine2 in
                 viewModel.updateMonthlyNotesLine2(for: currentMonth, line2: newLine2)
-            }
+            },
+            onFocusChange: { viewModel.editorFocusChanged("notes", isFocused: $0) }
         )
         .padding(.horizontal, 20)
         .padding(.top, 4)

@@ -27,6 +27,8 @@ class ScheduleViewModel: ObservableObject {
     private var isInitializing = true
     private var networkMonitor: NWPathMonitor?
     private var cloudSyncInFlight = false
+    private var focusedEditors: Set<String> = []
+    private var lastEditAt: Date = .distantPast
     
     // MARK: - Computed Properties
     var availableMonths: [Date] {
@@ -103,6 +105,19 @@ class ScheduleViewModel: ObservableObject {
         }
 
         cloudSyncInFlight = true
+
+        var deferralIterations = 0
+        while isEditSessionActive && deferralIterations < 30 {
+            try? await Task.sleep(for: .seconds(10))
+            deferralIterations += 1
+        }
+
+        guard isNetworkReachable() else {
+            markOffline()
+            cloudSyncInFlight = false
+            return
+        }
+
         isSyncingFromCloud = true
 
         do {
@@ -186,6 +201,18 @@ class ScheduleViewModel: ObservableObject {
         networkMonitor?.currentPath.status == .satisfied
     }
 
+    private var isEditSessionActive: Bool {
+        !focusedEditors.isEmpty || Date().timeIntervalSince(lastEditAt) < 30
+    }
+
+    func editorFocusChanged(_ id: String, isFocused: Bool) {
+        if isFocused {
+            focusedEditors.insert(id)
+        } else {
+            focusedEditors.remove(id)
+        }
+    }
+
     private func persistLocalCache() {
         ScheduleLocalCache.save(
             schedules: schedules,
@@ -198,6 +225,7 @@ class ScheduleViewModel: ObservableObject {
     
     func updateSchedule(date: Date, field: ScheduleField, value: String) {
         guard !isInitializing else { return }
+        lastEditAt = Date()
         
         let dateKey = dateKey(for: date)
         
@@ -318,6 +346,7 @@ class ScheduleViewModel: ObservableObject {
     // MARK: - Monthly Notes Methods (2 Lines)
     func updateMonthlyNotesLine1(for date: Date, line1: String) {
         guard !isInitializing else { return }
+        lastEditAt = Date()
         
         let monthKey = monthKey(for: date)
         let calendar = Calendar.current
@@ -349,6 +378,7 @@ class ScheduleViewModel: ObservableObject {
     
     func updateMonthlyNotesLine2(for date: Date, line2: String) {
         guard !isInitializing else { return }
+        lastEditAt = Date()
         
         let monthKey = monthKey(for: date)
         let calendar = Calendar.current

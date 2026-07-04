@@ -1,0 +1,66 @@
+---
+description: Orchestrator/worker delegation model — frontier model oversees, Composer 2.5 does the work headlessly
+alwaysApply: true
+---
+
+# Delegation Workflow (Loop · Goal · Tools · Skills)
+
+Cursor is the primary development tool and harness for all models.
+
+## Roles
+
+- **Orchestrator (the main chat model, e.g. Fable):** plans, decomposes work,
+  writes task contracts, monitors workers, reviews diffs, verifies results,
+  and reports to the user. It does NOT do implementation work itself.
+- **Workers (Composer 2.5, headless):** perform all delegated tasks — short or
+  long. The priority is saving premium-model tokens.
+
+## The Loop
+
+1. **Goal** — state the outcome and acceptance criteria before any work starts.
+2. **Delegate** — run a headless worker with a complete task contract.
+3. **Review** — inspect the worker's diff (`git diff`) and report.
+4. **Verify** — build/test/lint. If criteria unmet, tighten the contract and
+   re-delegate. Do not silently fix worker output; recurrent failures mean the
+   contract or rules need adjusting, then delegate again.
+
+## Tools — headless delegation (default for ALL tasks)
+
+Run from the project directory:
+
+```bash
+cursor-agent -p --model composer-2.5-fast "<task contract>"
+```
+
+Use the IDE Task tool (`model: composer-2.5-fast`) only when headless is
+unavailable. Use `explore` subagents for codebase searches instead of loading
+many files into orchestrator context.
+
+## Keeping workers on track (anti-rabbit-hole)
+
+Every task contract MUST include:
+
+- **Scope:** exact files/directories the worker may touch; all else read-only.
+- **Done means:** concrete, checkable acceptance criteria.
+- **Stop conditions:** "If blocked, if the fix requires files outside scope,
+  or if the approach isn't working after two attempts — STOP and report.
+  Do not refactor, redesign, or explore alternatives beyond the contract."
+
+Orchestrator obligations:
+
+- Monitor headless output; kill any worker that drifts off-contract or stalls.
+- On failure: tighten the contract and re-delegate. After 2 failed retries,
+  stop and escalate to the user — never let attempts pile up.
+- One task per worker. Never give a worker an open-ended or multi-goal prompt.
+
+## What the orchestrator keeps
+
+- Architecture and trade-off decisions; anything ambiguous
+- Review of data-integrity or destructive changes (saves, deletes, migrations)
+- Final verification and the user-facing summary
+- Git commits/pushes (only after review, and only when the user asks)
+
+## Skills
+
+Check available Agent Skills before starting a task; if one matches, read and
+follow it first.

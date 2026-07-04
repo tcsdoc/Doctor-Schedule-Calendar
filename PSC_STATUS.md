@@ -123,7 +123,7 @@
 
 | Phase | Work | Why |
 |-------|------|-----|
-| **1** | **Edit-session merge guard** — defer Cloud merge while a field is focused or keystroke within last N seconds; apply when idle | Closes the last race window: reconnect-triggered sync landing mid-edit (Lisa's interruption scenario) |
+| **1** ✅ | **Edit-session merge guard** — DONE July 3, 2026. Merge deferred while a field is focused or keystroke within last 30s; re-check every 10s; 5-min cap. Also: `ITSAppUsesNonExemptEncryption=false` in Info.plist; deployment target 17.0 → 26.0 | Closes the last race window: reconnect-triggered sync landing mid-edit (Lisa's interruption scenario). Typed data protected by pending keys regardless; guard removes mid-session view disruption |
 | **2** | **Launch scan consolidation** (4→2 queries) + **one duplicate winner rule** everywhere | Approved in v4.2 handoff §2; fetch loop and cleanup currently disagree on which duplicate wins |
 | **3** | **Preserve CloudKit recordName on parse** (~26 lines, from `PSC_DUPLICATE_INVESTIGATION.md`) | Closes last known duplicate-creation path; proposed Nov 2024, never implemented |
 | **4** | **Unit tests** for merge/save/cache logic | Ends reliance on week-long iPad soak tests for confidence |
