@@ -280,11 +280,11 @@ struct ContentView: View {
                             manageShares()
                         }
                         Button("Reset Share Link") {
-                            shareCalendar()
+                            Task { await performShare(reset: true) }
                         }
                         Button("Cancel", role: .cancel) {}
                     } message: {
-                        Text("Reset creates a new ScheduleViewer link and invalidates the previous one. Use this if viewers see “Share not found”.")
+                        Text("Manage shows the current link. Reset creates a new link and permanently disables the old one — only use it if a link has stopped working.")
                     }
                     
                     Button(action: printCalendar) {
@@ -415,7 +415,7 @@ struct ContentView: View {
         }
     }
     
-    private func performShare() async {
+    private func performShare(reset: Bool = false) async {
         await MainActor.run { isPreparingShare = true }
         defer {
             Task { @MainActor in
@@ -424,9 +424,8 @@ struct ContentView: View {
         }
         
         do {
-            // Always issue a fresh .readOnly link share so SV can accept it.
-            // Reusing stale CloudKit short tokens causes "Share not found".
-            let share = try await viewModel.createShare()
+            // Share reuses the permanent link; Reset issues a fresh one and invalidates the old link.
+            let share = try await (reset ? viewModel.recreateShare() : viewModel.createShare())
             
             guard let shareURL = share.url else {
                 await MainActor.run {

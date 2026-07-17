@@ -241,8 +241,7 @@ actor SimpleCloudKitManager {
         
         // Create zone-level share for ScheduleViewer (anyone with the link can read)
         let share = CKShare(recordZoneID: zoneID)
-        let currentYear = Calendar.current.component(.year, from: Date())
-        share[CKShare.SystemFieldKey.title] = "Provider Schedule \(currentYear)" as CKRecordValue
+        share[CKShare.SystemFieldKey.title] = "Provider Schedule Calendar" as CKRecordValue
         share.publicPermission = .readOnly
         
         let savedRecords = try await privateDatabase.modifyRecords(saving: [share], deleting: [])
@@ -308,23 +307,20 @@ actor SimpleCloudKitManager {
     func getOrCreateZoneShare() async throws -> CKShare {
         // First try to fetch existing share
         if let existingShare = try await fetchExistingZoneShare() {
-            let currentYear = Calendar.current.component(.year, from: Date())
-            let title = existingShare[CKShare.SystemFieldKey.title] as? String ?? ""
             let isLinkShare = existingShare.publicPermission == .readOnly
             let hasURL = existingShare.url != nil
-            let isCurrentYear = title.contains(String(currentYear))
             
             // Link shares normally have only the owner as a participant.
             // Do NOT treat owner-only as broken — that was deleting valid shares
             // and leaving recipients with dead "Share not found" URLs.
-            if isLinkShare && hasURL && isCurrentYear {
+            if isLinkShare && hasURL {
                 redesignLog("✅ Reusing existing link share: \(existingShare.url?.absoluteString ?? "nil")")
                 redesignLog("   participants=\(existingShare.participants.count), publicPermission=readOnly")
                 return existingShare
             }
             
-            // Invite-only, missing URL, or stale prior-year share — replace with a fresh link share
-            redesignLog("🚨 Replacing unusable share (link=\(isLinkShare), url=\(hasURL), yearOK=\(isCurrentYear), participants=\(existingShare.participants.count), title=\(title))")
+            // Invite-only or missing URL — replace with a fresh link share
+            redesignLog("🚨 Replacing unusable share (link=\(isLinkShare), url=\(hasURL), participants=\(existingShare.participants.count))")
             try await deleteBrokenShare()
             return try await createCustomZoneShare()
         }
@@ -333,7 +329,7 @@ actor SimpleCloudKitManager {
         return try await createCustomZoneShare()
     }
     
-    /// Force-delete any existing zone share and create a fresh .readOnly link share.
+    /// Backs the explicit Reset Share Link action only — force-delete any existing zone share and create a fresh .readOnly link share.
     func recreateZoneShare() async throws -> CKShare {
         redesignLog("🔄 Force recreating zone share for ScheduleViewer...")
         do {

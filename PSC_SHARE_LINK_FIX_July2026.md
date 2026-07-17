@@ -27,13 +27,21 @@ The `#Provider_Schedule_2025` fragment showed PSC was still issuing (or reusing)
 
 ## Fix (PSC)
 
-### Behavior
+### Behavior (final — permanent link model, July 17, 2026)
 
 | Action | Behavior |
 |--------|----------|
-| **Share** | Always **deletes** any existing zone share, then creates a **fresh** `.readOnly` link share with a new URL. Shows “Preparing…” while CloudKit works. |
-| **Manage → Reset Share Link** | Same as Share (fresh link; old URL invalidated). |
+| **Share** | **Reuses the permanent link** — returns the existing `.readOnly` zone share's URL every time (creates one only if none exists, or replaces one that is invite-only/URL-less). Tapping Share never breaks existing viewers. Shows “Preparing…” while CloudKit works. |
+| **Manage → Reset Share Link** | The **only** destructive path: deletes the share, issues a fresh link, permanently disables all previously distributed URLs. |
 | **Manage → Manage Existing Share** | Opens `UICloudSharingController` for the current share (unchanged). |
+
+> Earlier on July 17 the fix briefly made **Share** always recreate the link. That
+> was reversed the same day: one stable link forever, Reset is the only kill switch.
+> The title-year check (which would have silently invalidated the link every
+> January) was also removed; the share title is now year-less
+> (“Provider Schedule Calendar”). Security posture is deliberate: the link grants
+> read-only schedule access and distribution is tightly controlled by the clinic —
+> aggressive link rotation is unnecessary and was causing the breakage.
 
 Share message text now tells the recipient to paste the link into ScheduleViewer **Add Share**.
 
