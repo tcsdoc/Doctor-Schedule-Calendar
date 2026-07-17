@@ -1,6 +1,6 @@
 # PSC — Project Status & Roadmap
 
-**Updated:** July 2026  
+**Updated:** July 17, 2026  
 **Repo:** https://github.com/tcsdoc/Doctor-Schedule-Calendar  
 **Charter:** One admin (Lisa), one iPad, manual Save, memory master while editing, Cloud backup + zone share for ScheduleViewer, printed master = ultimate integrity reference, KISS, grid layout sacred, no code without explicit approval. User-facing text says **Cloud**, not CloudKit.
 
@@ -12,12 +12,13 @@
 |------|--------|
 | **Production branch (`main`)** | **v4.3** (build 5) — local cache, offline Save, network monitor, Documents PDF |
 | **App Store** | v4.3 submission in progress (Mark, July 2026) — replaces Xcode dev install |
-| **Active dev branch** | **`v4.4-dev`** — **All 5 phases complete and device-verified** (July 4, 2026); 19 unit tests green; build 4.4 (4) passed full 6-point check on testbed (grid, editing, notes, save round-trip, sharing sheet, print/PDF). **Now soaking in real-world use. Next steps when Mark returns: merge `v4.4-dev` → `main`, tag `v4.4`, submit to App Store** |
+| **Active dev branch** | **`v4.4-dev`** — Phases 1–5 complete (July 4, 2026). **July 17, 2026:** ScheduleViewer “Share not found” fix — Share always issues a fresh `.readOnly` link; Manage → Reset Share Link. See `PSC_SHARE_LINK_FIX_July2026.md`. Still pending: device verify share accept on SV, then merge → `main` / App Store when ready |
 | **Admin iPad (Lisa)** | **v4.4 (3)** installed July 4, 2026 — full test pass same day (launch, edit/save/relaunch, delete-and-relaunch, clear-then-refill); **data integrity confirmed**. Soaking in normal use |
 | **Test iPad (testbed)** | **v4.4 (3)** validated July 4, 2026 — separate Apple ID (tcsdoc@mac.com), disposable data. 4-round test: (1) 20 entries verified field-by-field in CloudKit via `cktool`; (2) delete + clear-then-refill; (3) force-quit with unsaved edit survives via cache, save lands server-side; (4) **duplicate injection**: UUID-named twin injected via cktool → app detected it, Fix Now kept most-recent winner, and editing the UUID-named survivor updated in place (no new duplicate) — direct proof of the Phase 3 fix against the Oct 2024 failure mode |
 | **Git tag** | **`v4.3`** on `main` |
-| **ScheduleViewer** | Unchanged — no SV release required for PSC v4.3 |
+| **ScheduleViewer** | Unchanged for this fix — PSC must issue a new workable link; paste into SV Add Share |
 | **May 2026 CALL issue** | **CLOSED** July 2026 — one-time glitch, never recurred (see support handoff doc) |
+| **SV share accept (July 2026)** | **In progress** — root cause was stale/dead PSC short tokens + wrong owner-only “broken share” delete logic; fix on `v4.4-dev` (not pushed) |
 
 **Header on admin build:** `PSC v4.4 (3)`
 
@@ -216,6 +217,7 @@ Steps 3–4 re-fetch what 1–2 already pulled (`checkForDuplicatesOnLaunch` in 
 | Document | Contents |
 |----------|----------|
 | **`PSC_STATUS.md`** (this file) | Master status, accomplishments, roadmap |
+| `PSC_SHARE_LINK_FIX_July2026.md` | July 2026 SV “Share not found” fix — fresh `.readOnly` links |
 | `PSC_v4.3_OFFLINE_HANDOFF.md` | v4.3 technical handoff |
 | `PSC_v4.2_WEEK_TESTING_HANDOFF.md` | v4.2 testing + post-v4.2 direction |
 | `PSC_DUPLICATE_INVESTIGATION.md` | Duplicate root-cause notes |

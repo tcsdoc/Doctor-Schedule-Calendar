@@ -462,8 +462,15 @@ class ScheduleViewModel: ObservableObject {
     }
     
     // MARK: - CloudKit Sharing
+    
+    /// Issues a fresh workable ScheduleViewer link share (deletes any stale share first).
     func createShare() async throws -> CKShare {
-        return try await cloudKitManager.getOrCreateZoneShare()
+        return try await cloudKitManager.recreateZoneShare()
+    }
+    
+    /// Same as createShare — kept for explicit "reset link" call sites.
+    func recreateShare() async throws -> CKShare {
+        return try await cloudKitManager.recreateZoneShare()
     }
     
     func getExistingShare() async throws -> CKShare? {

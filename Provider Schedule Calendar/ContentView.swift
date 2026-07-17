@@ -12,6 +12,8 @@ struct ContentView: View {
     @State private var showingManageSheet = false
     @State private var existingShare: CKShare?
     @State private var shareReadyForManagement = false
+    @State private var showingShareActions = false
+    @State private var isPreparingShare = false
     @State private var isFlashing = false
     
     // Duplicate detection states
@@ -244,28 +246,45 @@ struct ContentView: View {
                     
                     Button(action: shareCalendar) {
                         HStack(spacing: 3) {
-                            Image(systemName: "person.badge.plus")
-                                Text("Share")
+                            if isPreparingShare {
+                                ProgressView()
+                                    .scaleEffect(0.7)
+                            } else {
+                                Image(systemName: "person.badge.plus")
                             }
+                            Text(isPreparingShare ? "Preparing…" : "Share")
+                        }
                         .font(.caption)
-                            .foregroundColor(.green)
+                        .foregroundColor(.green)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
                         .background(Color.green.opacity(0.1))
-                            .cornerRadius(6)
+                        .cornerRadius(6)
                     }
+                    .disabled(isPreparingShare)
                     
-                    Button(action: manageShares) {
+                    Button(action: { showingShareActions = true }) {
                         HStack(spacing: 3) {
                             Image(systemName: "person.2.circle")
                             Text("Manage")
                         }
-                    .font(.caption)
+                        .font(.caption)
                         .foregroundColor(.orange)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
                         .background(Color.orange.opacity(0.1))
                         .cornerRadius(6)
+                    }
+                    .confirmationDialog("Share Options", isPresented: $showingShareActions, titleVisibility: .visible) {
+                        Button("Manage Existing Share") {
+                            manageShares()
+                        }
+                        Button("Reset Share Link") {
+                            shareCalendar()
+                        }
+                        Button("Cancel", role: .cancel) {}
+                    } message: {
+                        Text("Reset creates a new ScheduleViewer link and invalidates the previous one. Use this if viewers see “Share not found”.")
                     }
                     
                     Button(action: printCalendar) {
@@ -397,49 +416,67 @@ struct ContentView: View {
     }
     
     private func performShare() async {
+        await MainActor.run { isPreparingShare = true }
+        defer {
+            Task { @MainActor in
+                isPreparingShare = false
+            }
+        }
+        
         do {
+            // Always issue a fresh .readOnly link share so SV can accept it.
+            // Reusing stale CloudKit short tokens causes "Share not found".
             let share = try await viewModel.createShare()
             
-        guard let shareURL = share.url else {
+            guard let shareURL = share.url else {
                 await MainActor.run {
                     saveMessage = "❌ No share URL available. Please try again."
                     showingSaveAlert = true
                 }
-            return
-        }
-        
-            
-            // Present standard iOS share sheet with CloudKit URL (original working pattern)
-        let shareText = "You're invited to view my Provider Schedule Calendar. Open the link below on your iOS device to access the shared calendar."
-        
-        // Create a custom activity item source for better email formatting
-        let customItem = ShareActivityItemSource(
-            text: shareText,
-            url: shareURL,
-            subject: "Provider Schedule Calendar - Shared Access"
-        )
-        
-            await MainActor.run {
-        let activityViewController = UIActivityViewController(
-            activityItems: [customItem],
-            applicationActivities: nil
-        )
-        
-        // Configure for iPad
-        if let popover = activityViewController.popoverPresentationController {
-            if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-               let window = windowScene.windows.first {
-                popover.sourceView = window
-                popover.sourceRect = CGRect(x: window.bounds.midX, y: window.bounds.midY, width: 0, height: 0)
-                popover.permittedArrowDirections = []
+                return
             }
-        }
-        
-                // Present the standard iOS share sheet
+            
+            guard share.publicPermission == .readOnly else {
+                await MainActor.run {
+                    saveMessage = "❌ Share was created without link access. Please use Reset Share Link and try again."
+                    showingSaveAlert = true
+                }
+                return
+            }
+            
+            redesignLog("✅ Issuing workable share URL: \(shareURL.absoluteString)")
+            
+            let shareText = """
+            You're invited to view the Provider Schedule Calendar.
+
+            In the ScheduleViewer app, tap Add Share and paste this link:
+            """
+            
+            let customItem = ShareActivityItemSource(
+                text: shareText,
+                url: shareURL,
+                subject: "Provider Schedule Calendar - Shared Access"
+            )
+            
+            await MainActor.run {
+                let activityViewController = UIActivityViewController(
+                    activityItems: [customItem],
+                    applicationActivities: nil
+                )
+                
+                if let popover = activityViewController.popoverPresentationController {
+                    if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                       let window = windowScene.windows.first {
+                        popover.sourceView = window
+                        popover.sourceRect = CGRect(x: window.bounds.midX, y: window.bounds.midY, width: 0, height: 0)
+                        popover.permittedArrowDirections = []
+                    }
+                }
+                
                 if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
                    let window = windowScene.windows.first,
                    let rootViewController = window.rootViewController {
-        rootViewController.present(activityViewController, animated: true)
+                    rootViewController.present(activityViewController, animated: true)
                 }
             }
             
