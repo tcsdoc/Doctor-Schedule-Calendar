@@ -38,6 +38,30 @@ CloudKit Console stuck on `iCloud.com.gulfcoast.Calendar`; cannot select `iCloud
 - "No Containers" when personal Mark Harvey team selected (wrong team — need Marlix)
 - Only `_defaultZone` visible before correct container selected
 
+### July 22, 2026 — root cause isolated, evidence submitted to Apple
+
+Apple followed up suggesting "team assignment." Investigation disproved that and
+pinned the failure precisely:
+
+1. **All 10 team containers verified under Marlix Holdings (KSFQHNX4S8)** —
+   including `ProviderCalendar`. Console opens the other 9 fine; ONLY the data
+   container fails, so it cannot be a team/session problem.
+2. **Smoking gun (Safari Web Inspector):** console API call
+   `https://api.icloud.apple.com/teams/KSFQHNX4S8/containers?q=iCloud.com.gulfcoast.ProviderCalendar&showHidden=true`
+   fails CORS preflight with **HTTP 403 "due to access control checks"** —
+   server-side ACL rejection for this one container on the console API.
+3. **Counter-proof container is healthy:** production apps work daily, and
+   `cktool` (user token, same team/Apple ID) had full private-DB read/write on
+   July 4, 2026 (testbed audit + duplicate injection).
+4. **Container cleanup (done July 22):** visibility toggled OFF for all
+   containers except `ProviderCalendar` (containers can never be deleted; ET
+   uses AWS, so `marlixholdings.expensetracker` hidden too). `.dev` container
+   explained: relic of an old `com.gulfcoast.ProviderCalendar.dev` bundle ID
+   (test targets still carry fossil `.dev.Tests` bundle IDs — harmless).
+
+**Full evidence summary + screenshot submitted to Apple July 22, 2026.**
+Awaiting server-side ACL repair for `ProviderCalendar` console access.
+
 ---
 
 ## Correct CloudKit Configuration (Reference)
