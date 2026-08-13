@@ -1,7 +1,7 @@
 # PSC CloudKit Support Handoff
 
 **Created:** May 25, 2026  
-**Purpose:** Resume PSC/SV work when Apple Developer Support responds, or when admin iPad check is done.
+**Purpose:** CloudKit Console access reference and Apple ticket history. Console access restored August 13, 2026 (ticket **102899427910**).
 
 ---
 
@@ -11,6 +11,7 @@
 |-------|--------|
 | **Ticket #** | **102899427910** |
 | **Submitted** | May 25, 2026 |
+| **Status** | **RESOLVED** August 13, 2026 — CloudKit Console can open `ProviderCalendar`; Act As Lisa works |
 | **Topic** | Development and Technical (email) |
 | **Issue** | CloudKit Console will not switch containers |
 
@@ -60,7 +61,27 @@ pinned the failure precisely:
    (test targets still carry fossil `.dev.Tests` bundle IDs — harmless).
 
 **Full evidence summary + screenshot submitted to Apple July 22, 2026.**
-Awaiting server-side ACL repair for `ProviderCalendar` console access.
+
+**Resolved August 13, 2026** — see section below. Server-side ACL repair for `ProviderCalendar` console access is complete.
+
+### August 13, 2026 — resolved
+
+Apple asked for:
+
+- `X-Apple-Request-UUID`
+- Full response body
+- Full response headers (`Access-Control-Allow-Origin`, `Access-Control-Allow-Methods`, `X-ACP-*`)
+- Which row is 403 (OPTIONS vs GET)
+
+User opened Safari Web Inspector → **Network** to capture; found they were on the **Console** tab first, then **Network** with Method/Status columns.
+
+**Result — console working:**
+
+1. Container `iCloud.com.gulfcoast.ProviderCalendar` now selectable. Header showed **Production**. Private Database, zone `ProviderScheduleZone`, record type `CD_DailySchedule` — query returned schedule records.
+2. First query was developer/test data (`tcsdoc@mac.com`). **Act As iCloud Account** for `lisalisa_39564@yahoo.com` succeeded. Banner shows an internal number (expected, not her email). Lisa's Production private data visible.
+3. **No failing 403 to capture.** User will post a close-the-ticket reply to Apple.
+
+**Likely cause:** Apple repaired server-side console ACL for this container after the July 22 evidence. Apps were never broken.
 
 ---
 
@@ -79,7 +100,7 @@ Awaiting server-side ACL repair for `ProviderCalendar` console access.
 | **Daily records** | `CD_DailySchedule` — OS=`CD_line1`, CL=`CD_line2`, OFF=`CD_line3`, CALL=`CD_line4` |
 | **Monthly notes** | `CD_MonthlyNotes` — `CD_line1`, `CD_line2`, `CD_line3` (UI shows 2 lines only; see v4.2 handoff) |
 
-### Act As workflow (when console works)
+### Act As workflow (working procedure)
 
 1. Select container + **Production** FIRST (before Act As)
 2. Act As → `lisalisa_39564@yahoo.com`
@@ -131,19 +152,25 @@ See **`PSC_v4.2_WEEK_TESTING_HANDOFF.md`** for full notes, Git refs, and post-we
 
 ---
 
-## When Apple Responds — Next Steps
+## Verification — DONE August 13, 2026
 
-1. Note what they asked you to try; reference ticket **102899427910**
-2. Confirm console opens `ProviderCalendar` + Production
-3. Act As Lisa → query `CD_DailySchedule` in `ProviderScheduleZone`
-4. Check `CD_line4` for May 29–31, 2026; look for duplicate records same date
-5. Resume discussion with agent; no PSC code until user approves
+Ticket **102899427910** — console access confirmed working:
 
-## If Console Never Fixed — Alternatives
+1. ~~Note what they asked you to try; reference ticket **102899427910**~~ — Apple requested network capture details (see August 13 section); no 403 to capture
+2. ~~Confirm console opens `ProviderCalendar` + Production~~ — **DONE**
+3. ~~Act As Lisa → query `CD_DailySchedule` in `ProviderScheduleZone`~~ — **DONE**
+4. Check `CD_line4` for May 29–31, 2026; look for duplicate records same date — optional follow-up if needed
+5. Close ticket with Apple — user to post close-the-ticket reply
+
+Use the **Act As workflow** above as the working procedure (select container + Production first; do not change container after Act As).
+
+## Fallback — If Console Regresses
+
+Short-term alternatives if console access breaks again:
 
 - Admin iPad PSC as source of truth
 - Printed master schedule
-- `cktool` with management token (CloudKit Console → profile Settings) — future option
+- `cktool` with user or management token — valid CLI option (see `PSC_STATUS.md`)
 
 ---
 

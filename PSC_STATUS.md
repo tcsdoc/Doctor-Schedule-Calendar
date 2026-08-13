@@ -1,6 +1,6 @@
 # PSC — Project Status & Roadmap
 
-**Updated:** July 17, 2026  
+**Updated:** August 13, 2026  
 **Repo:** https://github.com/tcsdoc/Doctor-Schedule-Calendar  
 **Charter:** One admin (Lisa), one iPad, manual Save, memory master while editing, Cloud backup + zone share for ScheduleViewer, printed master = ultimate integrity reference, KISS, grid layout sacred, no code without explicit approval. User-facing text says **Cloud**, not CloudKit.
 
@@ -19,14 +19,15 @@
 | **ScheduleViewer** | Unchanged for this fix — PSC must issue a new workable link; paste into SV Add Share |
 | **May 2026 CALL issue** | **CLOSED** July 2026 — one-time glitch, never recurred (see support handoff doc) |
 | **SV share accept (July 2026)** | **In progress** — root cause was stale/dead PSC short tokens + wrong owner-only “broken share” delete logic; fix on `v4.4-dev` (not pushed) |
+| **CloudKit Console access** | **Restored August 13, 2026** — ticket **#102899427910** resolved; `ProviderCalendar` selectable, Act As Lisa works. See `PSC_CLOUDKIT_SUPPORT_HANDOFF.md` |
 
 **Header on admin build:** `PSC v4.4 (3)`
 
 **CloudKit CLI access (for server-side verification):** `xcrun cktool` with a user token
 (`xcrun cktool save-token --type user` — interactive, token lasts hours). Team `KSFQHNX4S8`,
 container `iCloud.com.gulfcoast.ProviderCalendar`, environment **production** (entitlements pin
-Production even for Xcode installs), private DB, zone `ProviderScheduleZone`. Note: CloudKit web
-console container picker is broken (reverts to default container) — use cktool instead.
+Production even for Xcode installs), private DB, zone `ProviderScheduleZone`. Note: CloudKit web console access restored August 13, 2026 (ticket **#102899427910**).
+`cktool` remains a valid CLI option for server-side verification, not the only option.
 Containers can never be deleted from an Apple developer team; ignore the strays.
 
 ---
@@ -172,7 +173,7 @@ Steps 3–4 re-fetch what 1–2 already pulled (`checkForDuplicatesOnLaunch` in 
 ### Not in scope (later / separate)
 
 - ScheduleViewer offline cache
-- Apple ticket **#102899427910** (CloudKit Dashboard access — observability only)
+- ~~Apple ticket **#102899427910** (CloudKit Dashboard access — observability only)~~ — **RESOLVED** August 13, 2026; see `PSC_CLOUDKIT_SUPPORT_HANDOFF.md`
 
 ---
 
